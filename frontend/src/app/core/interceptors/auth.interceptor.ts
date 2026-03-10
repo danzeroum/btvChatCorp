@@ -1,50 +1,87 @@
-import { HttpInterceptorFn, HttpRequest, HttpHandlerFn, HttpErrorResponse } from '@angular/common/http';
+import { Injectable } from '@angular/core';
+import {
+  HttpRequest,
+  HttpHandler,
+  HttpEvent,
+  HttpInterceptor,
+  HttpErrorResponse,
+} from '@angular/common/http';
+import { Observable, throwError, BehaviorSubject } from 'rxjs';
+import { catchError, filter, switchMap, take } from 'rxjs/operators';
 import { inject } from '@angular/core';
-import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
-export const authInterceptor: HttpInterceptorFn = (
-  req: HttpRequest<unknown>,
-  next: HttpHandlerFn
-) => {
-  const auth = inject(AuthService);
-  const token = auth.accessToken;
-  const workspaceId = auth.workspaceId;
+@Injectable()
+export class AuthInterceptor implements HttpInterceptor {
+  private authService = inject(AuthService);
+  private isRefreshing = false;
+  private refreshTokenSubject = new BehaviorSubject<string | null>(null);
 
-  // Não intercepta chamadas de auth
-  if (req.url.includes('/api/auth/')) {
-    return next(req);
+  intercept(
+    request: HttpRequest<unknown>,
+    next: HttpHandler
+  ): Observable<HttpEvent<unknown>> {
+    const token = this.authService.getAccessToken();
+    const workspaceId = this.authService.getWorkspaceId();
+
+    if (token) {
+      request = this.addHeaders(request, token, workspaceId);
+    }
+
+    return next.handle(request).pipe(
+      catchError((error: HttpErrorResponse) => {
+        if (error.status === 401 && !request.url.includes('/auth/refresh')) {
+          return this.handle401Error(request, next);
+        }
+        return throwError(() => error);
+      })
+    );
   }
 
-  const authReq = addHeaders(req, token, workspaceId);
+  private addHeaders(
+    request: HttpRequest<unknown>,
+    token: string,
+    workspaceId: string | null
+  ): HttpRequest<unknown> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    if (workspaceId) {
+      headers['X-Workspace-ID'] = workspaceId;
+    }
+    return request.clone({ setHeaders: headers });
+  }
 
-  return next(authReq).pipe(
-    catchError((error: HttpErrorResponse) => {
-      if (error.status === 401) {
-        // Tenta refresh automático
-        return auth.refreshToken().pipe(
-          switchMap(tokens => {
-            const retryReq = addHeaders(req, tokens.accessToken, workspaceId);
-            return next(retryReq);
-          }),
-          catchError(() => {
-            auth.logout();
-            return throwError(() => error);
-          })
-        );
-      }
-      return throwError(() => error);
-    })
-  );
-};
+  private handle401Error(
+    request: HttpRequest<unknown>,
+    next: HttpHandler
+  ): Observable<HttpEvent<unknown>> {
+    if (!this.isRefreshing) {
+      this.isRefreshing = true;
+      this.refreshTokenSubject.next(null);
 
-function addHeaders(
-  req: HttpRequest<unknown>,
-  token: string | null,
-  workspaceId: string | null
-): HttpRequest<unknown> {
-  const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (workspaceId) headers['X-Workspace-ID'] = workspaceId;
-  return req.clone({ setHeaders: headers });
+      return this.authService.refreshToken().pipe(
+        switchMap((token: string) => {
+          this.isRefreshing = false;
+          this.refreshTokenSubject.next(token);
+          const workspaceId = this.authService.getWorkspaceId();
+          return next.handle(this.addHeaders(request, token, workspaceId));
+        }),
+        catchError((err) => {
+          this.isRefreshing = false;
+          this.authService.logout();
+          return throwError(() => err);
+        })
+      );
+    }
+
+    return this.refreshTokenSubject.pipe(
+      filter((token) => token !== null),
+      take(1),
+      switchMap((token) => {
+        const workspaceId = this.authService.getWorkspaceId();
+        return next.handle(this.addHeaders(request, token!, workspaceId));
+      })
+    );
+  }
 }
