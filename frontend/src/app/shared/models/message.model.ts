@@ -1,12 +1,14 @@
+import { DataClassification } from './data-classification.model';
+
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 export interface RAGSource {
   documentId: string;
   documentName: string;
-  chunkId: string;
+  chunkIndex: number;
+  score: number;
   sectionTitle?: string;
-  similarityScore: number;
-  excerpt: string;
+  snippet: string;
 }
 
 export interface ChatMessage {
@@ -15,18 +17,26 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   sources?: RAGSource[];
-  classification?: string;
-  piiDetected?: boolean;
+  classification?: DataClassification;
   isStreaming?: boolean;
-  interactionId?: string; // ID no banco para feedback
+  feedbackId?: string;       // Referência ao feedback submetido
+  interactionId?: string;    // ID do par pergunta/resposta para treino
 }
 
-export interface Conversation {
-  id: string;
+export interface StreamChunk {
+  type: 'token' | 'sources' | 'done' | 'error';
+  data: string | RAGSource[] | null;
+  interactionId?: string;
+}
+
+export interface SendMessageRequest {
+  content: string;
   workspaceId: string;
-  projectId: string;
   userId: string;
-  messages: ChatMessage[];
-  createdAt: string;
-  updatedAt: string;
+  knowledgeBaseId: string | null;
+  classification: DataClassification;
+  piiDetected: boolean;
+  eligibleForTraining: boolean;
+  originalHash: string;
+  timestamp: string;
 }
