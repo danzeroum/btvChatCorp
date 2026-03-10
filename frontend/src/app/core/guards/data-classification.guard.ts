@@ -1,34 +1,70 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router, ActivatedRouteSnapshot } from '@angular/router';
-import { WorkspaceContextService } from '../services/workspace-context.service';
 import { AuthService } from '../services/auth.service';
 
 /**
- * Bloqueia rotas com base no nível de classificação do dado.
- * Uso: { data: { requiredClassification: 'CONFIDENTIAL' }, canActivate: [dataClassificationGuard] }
+ * Guard que bloqueia acesso a rotas baseado no nível de classificação
+ * de dados do usuário e do workspace.
+ *
+ * Níveis: PUBLIC < INTERNAL < CONFIDENTIAL < RESTRICTED
+ *
+ * Uso:
+ * {
+ *   path: 'restricted-docs',
+ *   canActivate: [dataClassificationGuard],
+ *   data: { requiredClearance: 'CONFIDENTIAL' }
+ * }
  */
 export const dataClassificationGuard: CanActivateFn = (
   route: ActivatedRouteSnapshot
 ) => {
-  const ctx = inject(WorkspaceContextService);
-  const auth = inject(AuthService);
+  const authService = inject(AuthService);
   const router = inject(Router);
 
-  const required = route.data?.['requiredClassification'] as string | undefined;
+  const requiredClearance: DataClassificationLevel =
+    route.data['requiredClearance'] ?? 'INTERNAL';
 
-  if (!required) return true;
+  const userClearance = authService.getUserClearanceLevel();
 
-  // RESTRICTED: apenas admins
-  if (required === 'RESTRICTED' && !auth.hasRole('admin')) {
-    router.navigate(['/unauthorized']);
-    return false;
+  if (hasRequiredClearance(userClearance, requiredClearance)) {
+    return true;
   }
 
-  // CONFIDENTIAL: admins e curadores
-  if (required === 'CONFIDENTIAL' && !auth.hasRole('curator')) {
-    router.navigate(['/unauthorized']);
-    return false;
-  }
+  console.warn(
+    `[DataClassificationGuard] Acesso negado. ` +
+    `Requerido: ${requiredClearance}, Usuário: ${userClearance}`
+  );
 
-  return true;
+  router.navigate(['/access-denied'], {
+    queryParams: {
+      required: requiredClearance,
+      current: userClearance,
+    },
+  });
+
+  return false;
 };
+
+/**
+ * Verifica se o clearance do usuário atinge o nível requerido.
+ * A hierarquia é: PUBLIC(0) < INTERNAL(1) < CONFIDENTIAL(2) < RESTRICTED(3)
+ */
+function hasRequiredClearance(
+  userLevel: DataClassificationLevel,
+  requiredLevel: DataClassificationLevel
+): boolean {
+  return CLEARANCE_HIERARCHY[userLevel] >= CLEARANCE_HIERARCHY[requiredLevel];
+}
+
+const CLEARANCE_HIERARCHY: Record<DataClassificationLevel, number> = {
+  PUBLIC: 0,
+  INTERNAL: 1,
+  CONFIDENTIAL: 2,
+  RESTRICTED: 3,
+};
+
+export type DataClassificationLevel =
+  | 'PUBLIC'
+  | 'INTERNAL'
+  | 'CONFIDENTIAL'
+  | 'RESTRICTED';
