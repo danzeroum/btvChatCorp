@@ -1,8 +1,11 @@
-import { Pipe, PipeTransform } from '@angular/core';
+import { Pipe, PipeTransform, SecurityContext } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { inject } from '@angular/core';
 
 /**
- * Pipe para renderizar Markdown em HTML seguro.
- * Uso: <div [innerHTML]="msg.content | markdownRender"></div>
+ * Converte Markdown para HTML sanitizado.
+ * Suporta: bold, italic, código inline, blocos de código, listas, headers.
+ * Uso: <div [innerHTML]="message.content | markdownRender"></div>
  */
 @Pipe({
   name: 'markdownRender',
@@ -10,31 +13,46 @@ import { Pipe, PipeTransform } from '@angular/core';
   pure: true,
 })
 export class MarkdownRenderPipe implements PipeTransform {
+  private sanitizer = inject(DomSanitizer);
 
-  transform(value: string | null | undefined): string {
+  transform(value: string | null | undefined): SafeHtml {
     if (!value) return '';
-    return this.render(value);
-  }
 
-  private render(md: string): string {
-    return md
+    let html = value
+      // Bloco de código (deve vir antes de inline)
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
       // Código inline
       .replace(/`([^`]+)`/g, '<code>$1</code>')
-      // Bold
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      // Italic
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-      // Heading 3
+      // Headers
       .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      // Heading 2
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-      // Heading 1
       .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-      // Bullet list
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      // Quebra de linha dupla = parágrafo
+      // Bold + italic
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Italic
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      // Listas não ordenadas
+      .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
+      // Listas ordenadas
+      .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+      // Links
+      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      // Quebras de linha
       .replace(/\n\n/g, '</p><p>')
-      // Wrap em parágrafo
-      .replace(/^(.+)$/, '<p>$1</p>');
+      .replace(/\n/g, '<br>');
+
+    // Envolve em parágrafo se não tiver tags de bloco
+    if (!html.startsWith('<h') && !html.startsWith('<pre') && !html.startsWith('<ul')) {
+      html = `<p>${html}</p>`;
+    }
+
+    // Wrap li em ul
+    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+
+    return this.sanitizer.bypassSecurityTrustHtml(
+      this.sanitizer.sanitize(SecurityContext.HTML, html) ?? ''
+    );
   }
 }

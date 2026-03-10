@@ -1,62 +1,55 @@
-export interface WorkspaceContext {
-  workspaceId: string;
-  userId: string;
-  autoAnonymize: boolean;
-  sensitiveKeywords: string[];
-  modelConfig: () => ModelConfig;
+export type ClassificationLevel =
+  | 'PUBLIC'
+  | 'INTERNAL'
+  | 'CONFIDENTIAL'
+  | 'RESTRICTED';
+
+export interface DataClassification {
+  level: ClassificationLevel;
+  reason: string;
+  canTrain: boolean;
+  detectedKeywords?: string[];
 }
 
-export interface ModelConfig {
-  version: () => string;
-  temperature: number;
-  maxTokens: number;
-  topK: number;
+export interface PIIDetection {
+  type: PIIType;
+  position: number;
+  length: number;
+  // Nunca armazenar o valor real — apenas posição e tipo
 }
+
+export type PIIType =
+  | 'CPF'
+  | 'CNPJ'
+  | 'EMAIL'
+  | 'PHONE'
+  | 'CARD'
+  | 'RG'
+  | 'CEP';
 
 export interface FilteredMessage {
   content: string;
   originalHash: string;
-  classification: Classification;
+  classification: DataClassification;
   piiDetected: boolean;
-  piiTypes: string[];
+  piiTypes: PIIType[];
   workspaceId: string;
   userId: string;
   timestamp: string;
   eligibleForTraining: boolean;
 }
 
-export interface PIIDetection {
-  type: string;
-  position: number;
-  length: number;
-}
+/** Mapa de hierarquia para comparação de níveis */
+export const CLASSIFICATION_HIERARCHY: Record<ClassificationLevel, number> = {
+  PUBLIC: 0,
+  INTERNAL: 1,
+  CONFIDENTIAL: 2,
+  RESTRICTED: 3,
+};
 
-export interface Classification {
-  level: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
-  reason: string;
-  canTrain: boolean;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  classification?: Classification;
-  sources?: RAGSource[];
-  timestamp: string;
-}
-
-export interface RAGSource {
-  documentId: string;
-  documentName: string;
-  chunkText: string;
-  similarity: number;
-}
-
-export interface FeedbackPayload {
-  interactionId: string;
-  rating: 'positive' | 'negative';
-  correction: string | null;
-  categories: string[];
-  userId: string;
+export function meetsMinimumLevel(
+  userLevel: ClassificationLevel,
+  requiredLevel: ClassificationLevel
+): boolean {
+  return CLASSIFICATION_HIERARCHY[userLevel] >= CLASSIFICATION_HIERARCHY[requiredLevel];
 }
