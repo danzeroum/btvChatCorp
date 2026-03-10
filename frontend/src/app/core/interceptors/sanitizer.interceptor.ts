@@ -1,48 +1,68 @@
-import { HttpInterceptorFn, HttpRequest, HttpHandlerFn } from '@angular/common/http';
+import { Injectable } from '@angular/core';
+import {
+  HttpRequest,
+  HttpHandler,
+  HttpEvent,
+  HttpInterceptor,
+} from '@angular/common/http';
+import { Observable } from 'rxjs';
 
-/** Sanitiza TODA request de saída: remove caracteres perigosos e limita tamanho */
-export const sanitizerInterceptor: HttpInterceptorFn = (
-  req: HttpRequest<unknown>,
-  next: HttpHandlerFn
-) => {
-  if (req.method === 'GET' || req.method === 'DELETE') {
-    return next(req);
-  }
+/**
+ * Sanitiza TODA request que sai do frontend.
+ * Remove caracteres perigosos, injections e normaliza encoding.
+ * Atua como segunda camada de defesa (a primeira é o DataFilterService).
+ */
+@Injectable()
+export class SanitizerInterceptor implements HttpInterceptor {
 
-  try {
-    const body = req.body;
-    if (body && typeof body === 'object') {
-      const sanitized = deepSanitize(body);
-      return next(req.clone({ body: sanitized }));
+  intercept(
+    request: HttpRequest<unknown>,
+    next: HttpHandler
+  ): Observable<HttpEvent<unknown>> {
+    if (request.body && typeof request.body === 'object') {
+      const sanitizedBody = this.sanitizeObject(request.body as Record<string, unknown>);
+      request = request.clone({ body: sanitizedBody });
     }
-  } catch {
-    // Se falhar na sanitização, deixa passar e loga
-    console.warn('[SanitizerInterceptor] Falha ao sanitizar request:', req.url);
+    return next.handle(request);
   }
 
-  return next(req);
-};
+  private sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+      if (typeof value === 'string') {
+        result[key] = this.sanitizeString(value);
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        result[key] = this.sanitizeObject(value as Record<string, unknown>);
+      } else if (Array.isArray(value)) {
+        result[key] = value.map((item) =>
+          typeof item === 'string'
+            ? this.sanitizeString(item)
+            : typeof item === 'object' && item !== null
+            ? this.sanitizeObject(item as Record<string, unknown>)
+            : item
+        );
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
 
-function deepSanitize(obj: unknown): unknown {
-  if (typeof obj === 'string') {
-    return sanitizeString(obj);
+  private sanitizeString(input: string): string {
+    return input
+      // Remove null bytes
+      .replace(/\x00/g, '')
+      // Escapa tags HTML (XSS)
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      // Remove sequências de SQL injection mais comuns
+      .replace(/('\s*(or|and)\s*'1'\s*='1')/gi, '')
+      // Remove script tags (extra safety)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      // Normaliza quebras de linha
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .trim();
   }
-  if (Array.isArray(obj)) {
-    return obj.map(deepSanitize);
-  }
-  if (obj !== null && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [k, deepSanitize(v)])
-    );
-  }
-  return obj;
-}
-
-function sanitizeString(str: string): string {
-  return str
-    .replace(/<script[\s\S]*?<\/script>/gi, '')  // Remove scripts
-    .replace(/javascript:/gi, '')                  // Remove JS inline
-    .replace(/on\w+\s*=/gi, '')                    // Remove event handlers
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control chars
-    .slice(0, 50_000);                              // Limite de 50k chars
 }
