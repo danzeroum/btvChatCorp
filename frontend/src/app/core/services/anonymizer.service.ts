@@ -1,69 +1,102 @@
 import { Injectable } from '@angular/core';
 
 export interface AnonymizationResult {
-  text: string;
-  replacements: { original: string; placeholder: string; type: string }[];
-  reversible: boolean;
+  anonymizedText: string;
+  replacements: Replacement[];
+  reversalMap: Map<string, string>; // token → valor original
 }
 
+export interface Replacement {
+  token: string;       // ex: [CPF_1]
+  original: string;    // valor real (guardado apenas em memória)
+  type: string;        // 'CPF', 'EMAIL', etc.
+  position: number;
+}
+
+/**
+ * Anonimização client-side de dados pessoais (PII).
+ * O valor real NUNCA sai do navegador — apenas tokens são enviados ao backend.
+ * O mapa de reversal fica em memória durante a sessão para exibir ao usuário local.
+ */
 @Injectable({ providedIn: 'root' })
 export class AnonymizerService {
-
   private readonly patterns: { type: string; regex: RegExp }[] = [
     { type: 'CPF',     regex: /\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g },
     { type: 'CNPJ',    regex: /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g },
     { type: 'EMAIL',   regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}/g },
     { type: 'PHONE',   regex: /(?:\+55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}-?\d{4}/g },
     { type: 'CARD',    regex: /\d{4}\s?\d{4}\s?\d{4}\s?\d{4}/g },
-    { type: 'CEP',     regex: /\d{5}-?\d{3}/g },
     { type: 'RG',      regex: /\d{1,2}\.?\d{3}\.?\d{3}-?[0-9Xx]/g },
+    { type: 'CEP',     regex: /\d{5}-?\d{3}/g },
   ];
 
-  /**
-   * Anonimiza texto substituindo PII por placeholders.
-   * Modo reversível guarda mapa de substituições em memória (nunca persiste).
-   */
-  anonymize(text: string, reversible = false): AnonymizationResult {
+  // Contador por tipo para gerar tokens únicos ([CPF_1], [CPF_2]...)
+  private counters: Record<string, number> = {};
+
+  anonymize(text: string): AnonymizationResult {
     let result = text;
-    const replacements: AnonymizationResult['replacements'] = [];
-    const seen = new Map<string, string>();
+    const replacements: Replacement[] = [];
+    const reversalMap = new Map<string, string>();
+
+    // Coleta todas as detecções com posição
+    const detections: { type: string; match: string; index: number }[] = [];
 
     for (const { type, regex } of this.patterns) {
-      result = result.replace(regex, (match) => {
-        if (seen.has(match)) return seen.get(match)!;
-        const placeholder = `[${type}_REDACTED_${replacements.length + 1}]`;
-        replacements.push({ original: reversible ? match : '***', placeholder, type });
-        seen.set(match, placeholder);
-        return placeholder;
-      });
+      regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(text)) !== null) {
+        detections.push({ type, match: m[0], index: m.index });
+      }
     }
 
-    return { text: result, replacements, reversible };
+    // Ordena por posição DESC para substituir de trás pra frente
+    detections.sort((a, b) => b.index - a.index);
+
+    for (const det of detections) {
+      const count = (this.counters[det.type] = (this.counters[det.type] ?? 0) + 1);
+      const token = `[${det.type}_${count}]`;
+
+      result =
+        result.slice(0, det.index) +
+        token +
+        result.slice(det.index + det.match.length);
+
+      replacements.push({
+        token,
+        original: det.match,
+        type: det.type,
+        position: det.index,
+      });
+
+      reversalMap.set(token, det.match);
+    }
+
+    return { anonymizedText: result, replacements, reversalMap };
   }
 
-  /** Reverte anonimização (apenas se reversible=true e replacements disponíveis) */
-  deanonymize(text: string, replacements: AnonymizationResult['replacements']): string {
+  /** Reverte tokens para valores originais (apenas para exibição local) */
+  deanonymize(text: string, reversalMap: Map<string, string>): string {
     let result = text;
-    for (const rep of replacements) {
-      if (rep.original !== '***') {
-        result = result.replace(rep.placeholder, rep.original);
-      }
+    for (const [token, original] of reversalMap.entries()) {
+      result = result.replaceAll(token, original);
     }
     return result;
   }
 
-  /** Apenas detecta, sem substituir */
-  detect(text: string): { type: string; value: string; index: number }[] {
-    const findings: { type: string; value: string; index: number }[] = [];
+  /** Detecta PII sem anonimizar (para warnings ao usuário) */
+  detectOnly(text: string): { type: string; count: number }[] {
+    const counts: Record<string, number> = {};
     for (const { type, regex } of this.patterns) {
-      for (const match of text.matchAll(regex)) {
-        findings.push({ type, value: match[0], index: match.index! });
+      regex.lastIndex = 0;
+      const matches = text.match(regex);
+      if (matches?.length) {
+        counts[type] = (counts[type] ?? 0) + matches.length;
       }
     }
-    return findings.sort((a, b) => a.index - b.index);
+    return Object.entries(counts).map(([type, count]) => ({ type, count }));
   }
 
-  hasPII(text: string): boolean {
-    return this.detect(text).length > 0;
+  resetCounters(): void {
+    this.counters = {};
   }
 }

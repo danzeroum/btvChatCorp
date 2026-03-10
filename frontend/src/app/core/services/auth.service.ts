@@ -1,15 +1,14 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
-import { Router } from '@angular/router';
+import { Observable, tap } from 'rxjs';
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'curator' | 'user';
+  roles: string[];
+  clearanceLevel: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   workspaceId: string;
-  workspaceName: string;
 }
 
 export interface AuthTokens {
@@ -20,71 +19,78 @@ export interface AuthTokens {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private http = inject(HttpClient);
-  private router = inject(Router);
+  private readonly ACCESS_TOKEN_KEY = 'btv_access_token';
+  private readonly REFRESH_TOKEN_KEY = 'btv_refresh_token';
+  private readonly USER_KEY = 'btv_user';
 
-  private currentUserSubject = new BehaviorSubject<AuthUser | null>(null);
-  currentUser$ = this.currentUserSubject.asObservable();
+  private _user = signal<AuthUser | null>(this.loadUserFromStorage());
 
-  private refreshTimer: any;
+  readonly user = this._user.asReadonly();
+  readonly isAuthenticated = computed(() => this._user() !== null);
 
-  get currentUser(): AuthUser | null {
-    return this.currentUserSubject.value;
-  }
-
-  get accessToken(): string | null {
-    return localStorage.getItem('access_token');
-  }
-
-  get workspaceId(): string | null {
-    return this.currentUser?.workspaceId ?? localStorage.getItem('workspace_id');
-  }
+  constructor(private http: HttpClient) {}
 
   login(email: string, password: string): Observable<AuthTokens> {
-    return this.http.post<AuthTokens>('/api/auth/login', { email, password }).pipe(
-      tap(tokens => this.handleTokens(tokens))
-    );
+    return this.http
+      .post<AuthTokens>('/api/auth/login', { email, password })
+      .pipe(tap((tokens) => this.storeTokens(tokens)));
   }
 
-  loginWithGoogle(idToken: string): Observable<AuthTokens> {
-    return this.http.post<AuthTokens>('/api/auth/google', { id_token: idToken }).pipe(
-      tap(tokens => this.handleTokens(tokens))
-    );
+  loginWithSSO(provider: 'google' | 'microsoft' | 'saml'): void {
+    window.location.href = `/api/auth/sso/${provider}`;
   }
 
-  refreshToken(): Observable<AuthTokens> {
-    const refresh = localStorage.getItem('refresh_token');
-    return this.http.post<AuthTokens>('/api/auth/refresh', { refresh_token: refresh }).pipe(
-      tap(tokens => this.handleTokens(tokens))
-    );
+  refreshToken(): Observable<string> {
+    const refresh = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    return this.http
+      .post<AuthTokens>('/api/auth/refresh', { refreshToken: refresh })
+      .pipe(
+        tap((tokens) => this.storeTokens(tokens)),
+        // retorna apenas o novo access token
+        tap((tokens) => tokens.accessToken)
+      ) as unknown as Observable<string>;
   }
 
   logout(): void {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('workspace_id');
-    this.currentUserSubject.next(null);
-    clearTimeout(this.refreshTimer);
-    this.router.navigate(['/login']);
+    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    localStorage.removeItem(this.USER_KEY);
+    this._user.set(null);
+    window.location.href = '/login';
   }
 
-  loadProfile(): Observable<AuthUser> {
-    return this.http.get<AuthUser>('/api/auth/me').pipe(
-      tap(user => this.currentUserSubject.next(user))
-    );
+  getAccessToken(): string | null {
+    return localStorage.getItem(this.ACCESS_TOKEN_KEY);
   }
 
-  private handleTokens(tokens: AuthTokens): void {
-    localStorage.setItem('access_token', tokens.accessToken);
-    localStorage.setItem('refresh_token', tokens.refreshToken);
-    // Agenda refresh 1 minuto antes de expirar
-    const refreshIn = (tokens.expiresIn - 60) * 1000;
-    this.refreshTimer = setTimeout(() => this.refreshToken().subscribe(), refreshIn);
+  getWorkspaceId(): string | null {
+    return this._user()?.workspaceId ?? null;
   }
 
-  hasRole(role: 'admin' | 'curator' | 'user'): boolean {
-    const roleHierarchy = { admin: 3, curator: 2, user: 1 };
-    const userRole = this.currentUser?.role ?? 'user';
-    return roleHierarchy[userRole] >= roleHierarchy[role];
+  getUserRoles(): string[] {
+    return this._user()?.roles ?? [];
+  }
+
+  getUserClearanceLevel(): 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED' {
+    return this._user()?.clearanceLevel ?? 'INTERNAL';
+  }
+
+  setUser(user: AuthUser): void {
+    this._user.set(user);
+    localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+  }
+
+  private storeTokens(tokens: AuthTokens): void {
+    localStorage.setItem(this.ACCESS_TOKEN_KEY, tokens.accessToken);
+    localStorage.setItem(this.REFRESH_TOKEN_KEY, tokens.refreshToken);
+  }
+
+  private loadUserFromStorage(): AuthUser | null {
+    try {
+      const raw = localStorage.getItem(this.USER_KEY);
+      return raw ? (JSON.parse(raw) as AuthUser) : null;
+    } catch {
+      return null;
+    }
   }
 }

@@ -1,7 +1,6 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
-import { AuthService } from './auth.service';
+import { Observable, tap } from 'rxjs';
 
 export interface WorkspaceContext {
   workspaceId: string;
@@ -10,56 +9,73 @@ export interface WorkspaceContext {
   autoAnonymize: boolean;
   sensitiveKeywords: string[];
   activeProjectId: string | null;
-  activeLoraVersion: string;
-  modelConfig: {
-    temperature: number;
-    maxTokens: number;
-    topK: number;
-  };
-  branding: {
-    logoUrl: string;
-    primaryColor: string;
-    displayName: string;
-  };
-  features: {
-    trainingEnabled: boolean;
-    apiAccessEnabled: boolean;
-    ssoEnabled: boolean;
-  };
+  activeLoraVersion: string | null;
+  sector: string;             // 'legal', 'health', 'hr', 'generic'
+  dataRetentionDays: number;
+  allowTraining: boolean;
+  branding: WorkspaceBranding;
+}
+
+export interface WorkspaceBranding {
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  displayName: string;
+  faviconUrl: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceContextService {
-  private http = inject(HttpClient);
-  private auth = inject(AuthService);
+  private _context = signal<WorkspaceContext | null>(null);
 
-  private contextSubject = new BehaviorSubject<WorkspaceContext | null>(null);
-  context$ = this.contextSubject.asObservable();
+  readonly context = this._context.asReadonly();
+  readonly isLoaded = computed(() => this._context() !== null);
 
-  get context(): WorkspaceContext | null {
-    return this.contextSubject.value;
+  // Atalhos computados
+  readonly workspaceId = computed(() => this._context()?.workspaceId ?? '');
+  readonly autoAnonymize = computed(() => this._context()?.autoAnonymize ?? true);
+  readonly sector = computed(() => this._context()?.sector ?? 'generic');
+  readonly allowTraining = computed(() => this._context()?.allowTraining ?? true);
+  readonly branding = computed(() => this._context()?.branding ?? null);
+
+  constructor(private http: HttpClient) {}
+
+  /** Carrega o contexto do workspace após login */
+  load(workspaceId: string): Observable<WorkspaceContext> {
+    return this.http
+      .get<WorkspaceContext>(`/api/workspaces/${workspaceId}/context`)
+      .pipe(tap((ctx) => this.setContext(ctx)));
   }
 
-  load(): Observable<WorkspaceContext> {
-    return this.http.get<WorkspaceContext>('/api/workspace/context').pipe(
-      tap(ctx => {
-        this.contextSubject.next(ctx);
-        this.applyBranding(ctx.branding);
-      })
+  setContext(ctx: WorkspaceContext): void {
+    this._context.set(ctx);
+    // Aplica branding CSS imediatamente
+    this.applyBranding(ctx.branding);
+  }
+
+  updateActiveProject(projectId: string): void {
+    this._context.update((ctx) =>
+      ctx ? { ...ctx, activeProjectId: projectId } : ctx
     );
   }
 
-  setActiveProject(projectId: string): void {
-    const ctx = this.context;
-    if (ctx) {
-      this.contextSubject.next({ ...ctx, activeProjectId: projectId });
-    }
+  clear(): void {
+    this._context.set(null);
   }
 
-  private applyBranding(branding: WorkspaceContext['branding']): void {
-    document.documentElement.style.setProperty('--color-primary', branding.primaryColor);
-    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (link && branding.logoUrl) link.href = branding.logoUrl;
-    document.title = branding.displayName || 'AI Platform';
+  /** Aplica CSS custom do workspace (white-label) */
+  private applyBranding(branding: WorkspaceBranding): void {
+    const root = document.documentElement;
+    root.style.setProperty('--color-primary', branding.primaryColor);
+    root.style.setProperty('--color-secondary', branding.secondaryColor);
+
+    if (branding.faviconUrl) {
+      const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (favicon) favicon.href = branding.faviconUrl;
+    }
+
+    if (branding.displayName) {
+      document.title = branding.displayName;
+    }
   }
 }
