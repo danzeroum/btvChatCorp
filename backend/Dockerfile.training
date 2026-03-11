@@ -1,0 +1,20 @@
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3-pip python3.11-dev cron curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY training/requirements.txt .
+RUN pip3 install --no-cache-dir \
+    unsloth==2024.12.4 \
+    trl transformers peft datasets \
+    psycopg2-binary httpx
+
+COPY . .
+
+# Ativa cron
+RUN chmod 0644 /app/training/cron/ai-training
+
+CMD ["/bin/bash", "-c", "cron && tail -f /var/log/btv/training.log"]
