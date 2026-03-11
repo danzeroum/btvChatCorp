@@ -1,11 +1,4 @@
-version: '3.9'
-
-# ============================================================
 # BTV Chat Corp — Docker Compose de Produção
-# Serviços: PostgreSQL, Redis, Qdrant, vLLM, Embedding,
-#           API (FastAPI), Document Processor (Python),
-#           RAG Searcher (Rust), Frontend (Angular/Nginx)
-# ============================================================
 
 networks:
   btv-internal:
@@ -36,7 +29,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-btvchat}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     networks: [btv-internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-btv}"]
@@ -72,7 +64,7 @@ services:
       retries: 3
 
   # ──────────────────────────────────────────────
-  # IA — vLLM (Llama 3.3 70B + LoRA hot-swap)
+  # IA — vLLM (produção local com GPU)
   # ──────────────────────────────────────────────
 
   vllm:
@@ -112,7 +104,7 @@ services:
       start_period: 120s
 
   # ──────────────────────────────────────────────
-  # IA — Embedding + Reranker (Nomic V2)
+  # IA — Embedding + Reranker (Nomic V1.5)
   # ──────────────────────────────────────────────
 
   embedding:
@@ -122,13 +114,10 @@ services:
     restart: always
     runtime: nvidia
     environment:
-      NVIDIA_VISIBLE_DEVICES: ${EMBEDDING_GPU:-1}
+      NVIDIA_VISIBLE_DEVICES: ${EMBEDDING_GPU:-0}
     volumes:
       - model_cache:/root/.cache/huggingface
     networks: [btv-internal]
-    depends_on:
-      postgres:
-        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -144,7 +133,7 @@ services:
       start_period: 60s
 
   # ──────────────────────────────────────────────
-  # Backend — FastAPI (Auth + Orquestrador)
+  # Backend — FastAPI
   # ──────────────────────────────────────────────
 
   api:
@@ -158,6 +147,7 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       VLLM_URL: http://vllm:8000
+      VLLM_MODEL: ${VLLM_MODEL:-llama3}
       EMBEDDING_URL: http://embedding:8001
       RAG_SEARCHER_URL: http://rag-searcher:9000
       JWT_SECRET: ${JWT_SECRET}
@@ -169,6 +159,11 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://chat.seudominio.com}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      LLM_PROVIDER: ${LLM_PROVIDER:-vllm}
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3:70b}
     volumes:
       - document_uploads:/uploads
     networks: [btv-internal]
@@ -179,10 +174,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      vllm:
-        condition: service_healthy
-      embedding:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 15s
@@ -191,7 +182,7 @@ services:
       start_period: 30s
 
   # ──────────────────────────────────────────────
-  # Document Processor (Python — chunks + PII)
+  # Document Processor
   # ──────────────────────────────────────────────
 
   document-processor:
@@ -212,11 +203,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      embedding:
-        condition: service_healthy
 
   # ──────────────────────────────────────────────
-  # RAG Searcher (Rust — busca vetorial)
+  # RAG Searcher (Rust)
   # ──────────────────────────────────────────────
 
   rag-searcher:
@@ -234,8 +223,6 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      embedding:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9000/health || exit 1"]
       interval: 15s
@@ -243,7 +230,7 @@ services:
       retries: 3
 
   # ──────────────────────────────────────────────
-  # Training (cron — ciclos de LoRA)
+  # Training (cron — ciclos LoRA)
   # ──────────────────────────────────────────────
 
   training:
@@ -260,12 +247,9 @@ services:
     volumes:
       - lora_adapters:/lora_adapters
       - model_cache:/root/.cache/huggingface
-      - ./backend/training/cron:/etc/cron.d
     networks: [btv-internal]
     depends_on:
       postgres:
-        condition: service_healthy
-      vllm:
         condition: service_healthy
     deploy:
       resources:
@@ -276,7 +260,7 @@ services:
               capabilities: [gpu]
 
   # ──────────────────────────────────────────────
-  # Frontend — Angular (build) + Nginx (serve)
+  # Frontend Angular + Nginx
   # ──────────────────────────────────────────────
 
   frontend:
@@ -289,10 +273,6 @@ services:
     networks: [btv-internal]
     depends_on:
       - api
-
-  # ──────────────────────────────────────────────
-  # Nginx reverse proxy (único ponto de entrada)
-  # ──────────────────────────────────────────────
 
   nginx:
     image: nginx:1.25-alpine
