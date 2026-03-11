@@ -58,10 +58,11 @@ services:
       - qdrant_data:/qdrant/storage
     networks: [btv-internal]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
       interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 20s
 
   # ──────────────────────────────────────────────
   # IA — vLLM (produção local com GPU)
@@ -112,25 +113,17 @@ services:
       context: ./backend/services/embedding
       dockerfile: Dockerfile
     restart: always
-    runtime: nvidia
     environment:
-      NVIDIA_VISIBLE_DEVICES: ${EMBEDDING_GPU:-0}
+      HF_HOME: /model_cache
     volumes:
-      - model_cache:/root/.cache/huggingface
+      - model_cache:/model_cache
     networks: [btv-internal]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
 
   # ──────────────────────────────────────────────
   # Backend — FastAPI
