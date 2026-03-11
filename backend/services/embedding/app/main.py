@@ -3,12 +3,27 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from typing import List
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="BTV Embedding Service", version="1.0.0")
 
-embed_model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
-rerank_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+HF_CACHE = os.getenv("HF_HOME", "/model_cache")
+
+logger.info("Carregando modelo de embedding (pode demorar no primeiro start)...")
+embed_model = SentenceTransformer(
+    "nomic-ai/nomic-embed-text-v1.5",
+    trust_remote_code=True,
+    cache_folder=HF_CACHE,
+)
+
+logger.info("Carregando modelo de reranking...")
+rerank_model = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    max_length=512,
+)
+
+logger.info("Modelos prontos.")
 
 
 @app.get("/health")
@@ -18,7 +33,7 @@ async def health():
 
 class EmbedRequest(BaseModel):
     texts: List[str]
-    mode: str = "document"  # "document" ou "query"
+    mode: str = "document"
 
 
 class RerankRequest(BaseModel):
