@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import models
+from app.routers import models, chat
 
 START_TIME = time.time()
 
@@ -23,7 +23,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — ALLOWED_ORIGINS pode ser lista separada por vírgula
+# CORS
 allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",")]
 
 app.add_middleware(
@@ -36,6 +36,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(models.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
 
 
 @app.get("/health")
