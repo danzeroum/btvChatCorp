@@ -18,10 +18,8 @@ services:
 
   # Desativa o embedding GPU — usa CPU em dev
   embedding:
-    runtime: ~        # remove o runtime nvidia
-    environment:
-      NVIDIA_VISIBLE_DEVICES: ~   # sem GPU
-    deploy: ~                     # remove reserva de GPU
+    deploy:
+      resources: {}   # remove reserva de GPU
 
   # API aponta para Ollama externo
   api:
@@ -31,7 +29,7 @@ services:
       OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-buildtovalue}
       OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-BTV_secure_2026!}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3:70b}
-      VLLM_URL: ~   # não usado em modo ollama
+      VLLM_URL: ""   # não usado em modo ollama
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,7 +37,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      # vllm e embedding não são esperados em modo dev
 
   # RAG Searcher aponta para embedding no modo CPU
   rag-searcher:
