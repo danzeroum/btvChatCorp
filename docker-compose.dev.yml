@@ -1,0 +1,52 @@
+# ============================================================
+# BTV Chat Corp — Docker Compose para DESENVOLVIMENTO
+# Usa Ollama externo (VPS) como LLM — sem vLLM local, sem GPU
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# ============================================================
+
+services:
+
+  # Desativa o vLLM local — usa Ollama na VPS
+  vllm:
+    profiles: [disabled]
+
+  # Desativa o training (sem GPU local)
+  training:
+    profiles: [disabled]
+
+  # Desativa o embedding GPU — usa CPU em dev
+  embedding:
+    runtime: ~        # remove o runtime nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ~   # sem GPU
+    deploy: ~                     # remove reserva de GPU
+
+  # API aponta para Ollama externo
+  api:
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_HOST: ${OLLAMA_HOST:-https://api.buildtovalue.cloud}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-buildtovalue}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-BTV_secure_2026!}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3:70b}
+      VLLM_URL: ~   # não usado em modo ollama
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      # vllm e embedding não são esperados em modo dev
+
+  # RAG Searcher aponta para embedding no modo CPU
+  rag-searcher:
+    environment:
+      EMBEDDING_URL: http://embedding:8001
+
+  # Document processor também usa embedding CPU
+  document-processor:
+    environment:
+      EMBEDDING_URL: http://embedding:8001
