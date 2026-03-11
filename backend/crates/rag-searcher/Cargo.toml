@@ -1,0 +1,33 @@
+[package]
+name = "rag-searcher"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Serialização
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# HTTP (embedding service, reranker)
+reqwest = { version = "0.11", features = ["json"] }
+
+# Qdrant client
+qdrant-client = "1"
+
+# Erros
+thiserror = "1"
+
+# Datas
+chrono = { version = "0.4", features = ["serde"] }
+
+# Tracing
+tracing = "0.1"
+
+# Banco (para salvar interações)
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "json"] }
