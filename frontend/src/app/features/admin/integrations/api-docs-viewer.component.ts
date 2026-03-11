@@ -1,10 +1,20 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { HttpClient } from '@angular/common/http';
-import { ApiKey } from '../../../core/models/api-public.model';
-import { environment } from '../../../../environments/environment';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+
+interface ApiEndpoint {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  summary: string;
+  description: string;
+  tag: string;
+  requestBody?: object;
+  responseExample?: object;
+  requiresAuth: boolean;
+  scopes: string[];
+}
 
 @Component({
   selector: 'app-api-docs-viewer',
@@ -13,93 +23,140 @@ import { environment } from '../../../../environments/environment';
   template: `
     <div class="api-docs">
       <div class="page-header">
-        <h1>&#128196; Documenta\xE7\xE3o da API</h1>
+        <div>
+          <h1>&#128196; Documentação da API</h1>
+          <p>Referência completa dos endpoints REST da plataforma.</p>
+        </div>
         <div class="header-actions">
-          <select [(ngModel)]="selectedVersion">
-            <option value="v1">API v1 (atual)</option>
-          </select>
-          <button class="btn-secondary" (click)="downloadSpec()">&#11015;&#65039; Download OpenAPI JSON</button>
+          <button class="btn-secondary" (click)="downloadSpec()">&#11015;&#65039; OpenAPI JSON</button>
+          <a class="btn-secondary" href="/api/swagger-ui" target="_blank">&#127760; Abrir Swagger UI</a>
         </div>
       </div>
 
-      <!-- Swagger embutido -->
-      <div class="swagger-container">
-        <iframe [src]="swaggerUrl" class="swagger-iframe" frameBorder="0"></iframe>
+      <!-- Info geral -->
+      <div class="api-info-card">
+        <div class="info-item">
+          <span class="info-label">Base URL</span>
+          <code>{{ baseUrl }}</code>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Autenticação</span>
+          <code>Authorization: Bearer &lt;api_key&gt;</code>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Versão</span>
+          <code>v1</code>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Rate limit padrão</span>
+          <code>60 req/min por API key</code>
+        </div>
       </div>
 
-      <!-- Playground r\xE1pido -->
-      <div class="quick-playground">
-        <h2>&#9654;&#65039; Teste R\xE1pido</h2>
-        <p>Teste endpoints diretamente no navegador.</p>
-
-        <div class="playground-form">
-          <div class="form-row">
-            <select [(ngModel)]="playground.method" class="method-select" [class]="'method-' + playground.method">
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="DELETE">DELETE</option>
-            </select>
-            <input [(ngModel)]="playground.path" placeholder="/api/v1/chat/completions" class="path-input" />
-            <button class="btn-primary" (click)="execute()" [disabled]="executing()">Executar</button>
-          </div>
-
-          <div class="form-group">
-            <label>API Key
-              <select [(ngModel)]="playground.apiKeyId">
-                <option value="">Selecione uma key...</option>
-                @for (key of apiKeys(); track key.id) {
-                  <option [value]="key.id">{{ key.name }} ({{ key.keyPrefix }}...)</option>
-                }
-              </select>
-            </label>
-          </div>
-
-          @if (playground.method === 'POST' || playground.method === 'PUT') {
-            <div class="form-group">
-              <label>Request Body (JSON)
-                <textarea [(ngModel)]="playground.body" rows="10" class="code-editor"></textarea>
-              </label>
-            </div>
-          }
-
-          @if (playground.response) {
-            <div class="response-section">
-              <div class="response-header">
-                <span class="response-status"
-                  [class.success]="playground.response.status < 400"
-                  [class.error]="playground.response.status >= 400">
-                  HTTP {{ playground.response.status }}
-                </span>
-                <span class="response-time">{{ playground.response.timeMs }}ms</span>
+      <div class="docs-layout">
+        <!-- Sidebar de navegação -->
+        <nav class="docs-nav">
+          <input [(ngModel)]="searchQuery" placeholder="Buscar endpoints..." class="docs-search" />
+          @for (tag of visibleTags(); track tag) {
+            <div class="nav-group">
+              <div class="nav-group-title" (click)="toggleTag(tag)">
+                <span>{{ tag }}</span>
+                <span>{{ expandedTags().includes(tag) ? '▾' : '▸' }}</span>
               </div>
-              <pre class="response-body">{{ playground.response.body | json }}</pre>
+              @if (expandedTags().includes(tag)) {
+                @for (ep of endpointsByTag(tag); track ep.path + ep.method) {
+                  <button class="nav-endpoint" [class.active]="selectedEndpoint()?.path === ep.path && selectedEndpoint()?.method === ep.method"
+                    (click)="selectEndpoint(ep)">
+                    <span class="method-badge" [class]="ep.method.toLowerCase()">{{ ep.method }}</span>
+                    <span>{{ ep.path }}</span>
+                  </button>
+                }
+              }
+            </div>
+          }
+        </nav>
+
+        <!-- Detalhe do endpoint -->
+        <div class="docs-content">
+          @if (!selectedEndpoint()) {
+            <div class="docs-welcome">
+              <h2>Selecione um endpoint na barra lateral</h2>
+              <p>{{ endpoints().length }} endpoints disponíveis em {{ allTags().length }} categorias.</p>
+              <div class="quick-stats">
+                @for (tag of allTags(); track tag) {
+                  <div class="quick-stat">
+                    <span class="stat-count">{{ endpointsByTag(tag).length }}</span>
+                    <span class="stat-tag">{{ tag }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          } @else {
+            <div class="endpoint-detail">
+              <div class="endpoint-title">
+                <span class="method-badge lg" [class]="selectedEndpoint()!.method.toLowerCase()">{{ selectedEndpoint()!.method }}</span>
+                <code class="endpoint-path">{{ selectedEndpoint()!.path }}</code>
+                @if (!selectedEndpoint()!.requiresAuth) {
+                  <span class="public-badge">público</span>
+                }
+              </div>
+
+              <h2>{{ selectedEndpoint()!.summary }}</h2>
+              <p>{{ selectedEndpoint()!.description }}</p>
+
+              @if (selectedEndpoint()!.scopes.length > 0) {
+                <div class="scopes-section">
+                  <h4>Permissões necessárias</h4>
+                  <div class="scope-chips">
+                    @for (scope of selectedEndpoint()!.scopes; track scope) {
+                      <span class="scope-chip">{{ scope }}</span>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (selectedEndpoint()!.requestBody) {
+                <div class="code-section">
+                  <h4>Request Body</h4>
+                  <pre><code>{{ selectedEndpoint()!.requestBody | json }}</code></pre>
+                </div>
+              }
+
+              @if (selectedEndpoint()!.responseExample) {
+                <div class="code-section">
+                  <h4>Exemplo de Resposta</h4>
+                  <pre><code>{{ selectedEndpoint()!.responseExample | json }}</code></pre>
+                </div>
+              }
+
+              <!-- Try it out -->
+              <div class="try-it-section">
+                <h4>&#128640; Try it out</h4>
+                <div class="try-it-form">
+                  <div class="try-it-url">
+                    <span class="method-badge" [class]="selectedEndpoint()!.method.toLowerCase()">{{ selectedEndpoint()!.method }}</span>
+                    <input [(ngModel)]="tryItUrl" class="url-input" />
+                  </div>
+                  <div class="try-it-auth">
+                    <input [(ngModel)]="tryItApiKey" placeholder="API Key para teste" class="apikey-input" />
+                  </div>
+                  @if (['POST','PUT','PATCH'].includes(selectedEndpoint()!.method)) {
+                    <textarea [(ngModel)]="tryItBody" rows="6" placeholder="Request body (JSON)"></textarea>
+                  }
+                  <button class="btn-primary" (click)="executeRequest()" [disabled]="executing()">
+                    {{ executing() ? 'Executando...' : '&#9654;&#65039; Executar' }}
+                  </button>
+                </div>
+                @if (tryItResponse()) {
+                  <div class="try-it-response" [class.success]="tryItStatus() < 300" [class.error]="tryItStatus() >= 400">
+                    <div class="response-status">HTTP {{ tryItStatus() }}</div>
+                    <pre><code>{{ tryItResponse() }}</code></pre>
+                  </div>
+                }
+              </div>
             </div>
           }
         </div>
-      </div>
-
-      <!-- Exemplos de c\xF3digo -->
-      <div class="code-examples">
-        <h2>&#128101; Exemplos de Integra\xE7\xE3o</h2>
-        <div class="example-tabs">
-          @for (tab of codeTabs; track tab.id) {
-            <button [class.active]="codeTab() === tab.id" (click)="codeTab.set(tab.id)">{{ tab.label }}</button>
-          }
-        </div>
-        <pre class="code-block"><code>{{ currentExample() }}</code></pre>
-      </div>
-
-      <!-- Guia de verifica\xE7\xE3o de webhook -->
-      <div class="webhook-verification-guide">
-        <h2>&#128274; Verifica\xE7\xE3o de Webhooks</h2>
-        <p>Sempre verifique a assinatura HMAC-SHA256 dos webhooks recebidos.</p>
-        <div class="example-tabs">
-          @for (tab of verifyTabs; track tab.id) {
-            <button [class.active]="verifyTab() === tab.id" (click)="verifyTab.set(tab.id)">{{ tab.label }}</button>
-          }
-        </div>
-        <pre class="code-block"><code>{{ currentVerifyExample() }}</code></pre>
       </div>
     </div>
   `
@@ -108,80 +165,93 @@ export class ApiDocsViewerComponent implements OnInit {
   private http      = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
 
-  selectedVersion = 'v1';
-  codeTab  = signal('curl');
-  verifyTab = signal('python');
-  executing = signal(false);
-  apiKeys  = signal<ApiKey[]>([]);
+  endpoints        = signal<ApiEndpoint[]>([]);
+  selectedEndpoint = signal<ApiEndpoint | null>(null);
+  expandedTags     = signal<string[]>([]);
+  searchQuery      = '';
+  executing        = signal(false);
+  tryItUrl         = '';
+  tryItApiKey      = '';
+  tryItBody        = '';
+  tryItResponse    = signal<string | null>(null);
+  tryItStatus      = signal(0);
 
-  swaggerUrl: SafeResourceUrl = this.sanitizer.bypassSecurityTrustResourceUrl('/api/docs');
+  baseUrl = window.location.origin + '/api/v1';
 
-  playground = {
-    method: 'POST',
-    path: '/api/v1/chat/completions',
-    apiKeyId: '',
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: 'Quais os riscos do contrato ABC?' }],
-      project_id: 'proj-xxx',
-      include_sources: true,
-    }, null, 2),
-    response: null as any,
-  };
-
-  codeTabs = [
-    { id: 'curl',   label: 'cURL' },
-    { id: 'python', label: 'Python' },
-    { id: 'node',   label: 'Node.js' },
-    { id: 'rust',   label: 'Rust' },
-  ];
-
-  verifyTabs = [
-    { id: 'python', label: 'Python' },
-    { id: 'node',   label: 'Node.js' },
-  ];
-
-  private examples: Record<string, string> = {
-    curl: `curl -X POST ${environment.apiUrl}/api/v1/chat/completions \\\n  -H "Authorization: Bearer sk-live-xxx" \\\n  -H "Content-Type: application/json" \\\n  -d '{ "messages": [{"role": "user", "content": "Resuma o contrato ABC"}], "project_id": "proj-xxx" }'`,
-    python: `import requests\n\nAPI_KEY = "sk-live-xxx"\nBASE_URL = "${environment.apiUrl}/api/v1"\n\nresponse = requests.post(\n    f"{BASE_URL}/chat/completions",\n    headers={"Authorization": f"Bearer {API_KEY}"},\n    json={\n        "messages": [{"role": "user", "content": "Resuma o contrato"}],\n        "project_id": "proj-xxx",\n        "include_sources": True\n    }\n)\ndata = response.json()\nprint(data["choices"][0]["message"]["content"])`,
-    node: `const API_KEY = "sk-live-xxx";\nconst BASE_URL = "${environment.apiUrl}/api/v1";\n\nconst response = await fetch(\`\${BASE_URL}/chat/completions\`, {\n  method: "POST",\n  headers: {\n    "Authorization": \`Bearer \${API_KEY}\`,\n    "Content-Type": "application/json"\n  },\n  body: JSON.stringify({\n    messages: [{ role: "user", content: "Resuma o contrato ABC" }],\n    project_id: "proj-xxx",\n    include_sources: true\n  })\n});\n\nconst data = await response.json();\nconsole.log(data.choices[0].message.content);`,
-    rust: `let client = reqwest::Client::new();\nlet res = client\n    .post("${environment.apiUrl}/api/v1/chat/completions")\n    .header("Authorization", "Bearer sk-live-xxx")\n    .json(&serde_json::json!({\n        "messages": [{"role": "user", "content": "Resuma o contrato"}],\n        "project_id": "proj-xxx"\n    }))\n    .send().await?;`,
-  };
-
-  private verifyExamples: Record<string, string> = {
-    python: `import hmac, hashlib\n\ndef verify_webhook(payload_body: bytes, signature: str, secret: str) -> bool:\n    expected = hmac.new(secret.encode(), payload_body, hashlib.sha256).hexdigest()\n    received = signature.replace("sha256=", "")\n    return hmac.compare_digest(expected, received)\n\n# Flask/FastAPI\n@app.post("/webhook")\nasync def handle_webhook(request: Request):\n    body = await request.body()\n    sig  = request.headers.get("X-Webhook-Signature", "")\n    if not verify_webhook(body, sig, WEBHOOK_SECRET):\n        raise HTTPException(status_code=401, detail="Invalid signature")\n    event = await request.json()\n    print(f"Evento: {event['type']}")\n    return {"status": "ok"}`,
-    node: `const crypto = require("crypto");\n\nfunction verifyWebhook(payload, signature, secret) {\n  const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");\n  const received = signature.replace("sha256=", "");\n  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));\n}\n\n// Express.js\napp.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {\n  const sig = req.headers["x-webhook-signature"];\n  if (!verifyWebhook(req.body, sig, WEBHOOK_SECRET)) {\n    return res.status(401).send("Invalid signature");\n  }\n  const event = JSON.parse(req.body);\n  console.log("Evento:", event.type);\n  res.json({ status: "ok" });\n});`,
-  };
-
-  ngOnInit(): void {
-    this.http.get<ApiKey[]>('/api/admin/api-keys').subscribe((keys) => this.apiKeys.set(keys));
+  allTags(): string[] {
+    return [...new Set(this.endpoints().map((e) => e.tag))];
   }
 
-  currentExample = () => this.examples[this.codeTab()] ?? '';
-  currentVerifyExample = () => this.verifyExamples[this.verifyTab()] ?? '';
+  visibleTags(): string[] {
+    if (!this.searchQuery) return this.allTags();
+    const q = this.searchQuery.toLowerCase();
+    return this.allTags().filter((tag) =>
+      this.endpointsByTag(tag).some((e) => e.path.toLowerCase().includes(q) || e.summary.toLowerCase().includes(q))
+    );
+  }
 
-  execute(): void {
+  endpointsByTag(tag: string): ApiEndpoint[] {
+    const q = this.searchQuery.toLowerCase();
+    return this.endpoints()
+      .filter((e) => e.tag === tag)
+      .filter((e) => !q || e.path.toLowerCase().includes(q) || e.summary.toLowerCase().includes(q));
+  }
+
+  toggleTag(tag: string): void {
+    const tags = this.expandedTags();
+    this.expandedTags.set(tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]);
+  }
+
+  selectEndpoint(ep: ApiEndpoint): void {
+    this.selectedEndpoint.set(ep);
+    this.tryItUrl = this.baseUrl + ep.path;
+    this.tryItBody = ep.requestBody ? JSON.stringify(ep.requestBody, null, 2) : '';
+    this.tryItResponse.set(null);
+  }
+
+  ngOnInit(): void {
+    this.http.get<ApiEndpoint[]>('/api/admin/api-docs/endpoints').subscribe({
+      next: (data) => {
+        this.endpoints.set(data);
+        const tags = [...new Set(data.map((e) => e.tag))];
+        this.expandedTags.set(tags.slice(0, 2)); // expande primeiras 2 categorias
+      }
+    });
+  }
+
+  executeRequest(): void {
     this.executing.set(true);
-    const start = Date.now();
-    const key = this.apiKeys().find((k) => k.id === this.playground.apiKeyId);
+    this.tryItResponse.set(null);
+    const ep = this.selectedEndpoint()!;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (key) headers['Authorization'] = `Bearer ${key.keyPrefix}...`;
+    if (this.tryItApiKey) headers['Authorization'] = `Bearer ${this.tryItApiKey}`;
+    const options = { headers, observe: 'response' as const, responseType: 'text' as const };
 
-    let body: any = undefined;
-    try { body = JSON.parse(this.playground.body); } catch { body = this.playground.body; }
+    let req$;
+    const url = this.tryItUrl;
+    const body = this.tryItBody;
+    if (ep.method === 'GET')    req$ = this.http.get(url, options);
+    else if (ep.method === 'POST')   req$ = this.http.post(url, body, options);
+    else if (ep.method === 'PUT')    req$ = this.http.put(url, body, options);
+    else if (ep.method === 'PATCH')  req$ = this.http.patch(url, body, options);
+    else req$ = this.http.delete(url, options);
 
-    this.http.request(this.playground.method, this.playground.path, { body, headers, observe: 'response' }).subscribe({
+    req$.subscribe({
       next: (res: any) => {
-        this.playground.response = { status: res.status, body: res.body, timeMs: Date.now() - start };
+        this.tryItStatus.set(res.status);
+        try { this.tryItResponse.set(JSON.stringify(JSON.parse(res.body), null, 2)); }
+        catch { this.tryItResponse.set(res.body); }
         this.executing.set(false);
       },
       error: (err: any) => {
-        this.playground.response = { status: err.status ?? 0, body: err.error, timeMs: Date.now() - start };
+        this.tryItStatus.set(err.status || 0);
+        this.tryItResponse.set(err.message || 'Erro desconhecido');
         this.executing.set(false);
       },
     });
   }
 
   downloadSpec(): void {
-    window.open('/api/docs/openapi.json', '_blank');
+    window.open('/api/admin/api-docs/openapi.json', '_blank');
   }
 }

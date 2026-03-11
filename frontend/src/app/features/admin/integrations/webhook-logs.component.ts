@@ -1,187 +1,184 @@
-import { Component, OnInit, inject, Input, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { WebhookDelivery, WebhookDeliveryStatus, WebhookEventType } from '../../../core/models/api-public.model';
+
+interface WebhookDelivery {
+  id: string;
+  webhookId: string;
+  webhookName: string;
+  event: string;
+  url: string;
+  requestBody: string;
+  requestHeaders: Record<string, string>;
+  responseStatus: number | null;
+  responseBody: string | null;
+  durationMs: number | null;
+  status: 'success' | 'failed' | 'pending' | 'retrying';
+  attempt: number;
+  maxAttempts: number;
+  createdAt: string;
+  deliveredAt: string | null;
+  nextRetryAt: string | null;
+}
 
 @Component({
   selector: 'app-webhook-logs',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, RouterModule],
   template: `
     <div class="webhook-logs">
       <div class="page-header">
-        <h2>&#128196; Logs de Entrega</h2>
-        <div class="log-filters">
-          <select [(ngModel)]="statusFilter" (ngModelChange)="loadLogs()">
-            <option value="">Todos os status</option>
-            <option value="delivered">Entregues &#9989;</option>
-            <option value="failed">Falharam &#10060;</option>
-            <option value="retrying">Retentando &#128260;</option>
-            <option value="pending">Pendentes &#9203;</option>
-          </select>
-          <select [(ngModel)]="eventFilter" (ngModelChange)="loadLogs()">
-            <option value="">Todos os eventos</option>
-            @for (cat of eventGroups; track cat.label) {
-              <optgroup [label]="cat.label">
-                @for (ev of cat.events; track ev) {
-                  <option [value]="ev">{{ ev }}</option>
-                }
-              </optgroup>
-            }
-          </select>
-          <button class="btn-secondary" (click)="loadLogs()">&#8635; Atualizar</button>
+        <button class="btn-ghost" routerLink="/admin/integrations/webhooks">&#8592; Voltar</button>
+        <div>
+          <h1>&#128203; Logs de Entrega</h1>
+          <p>{{ webhookName() }}</p>
         </div>
+        <button class="btn-secondary" (click)="load()">&#8635; Atualizar</button>
       </div>
 
-      <!-- Tabela de logs -->
-      <div class="logs-list">
-        @for (delivery of deliveries(); track delivery.id) {
-          <div class="log-entry" [class]="delivery.status" (click)="toggleDetail(delivery)">
-            <div class="log-summary">
-              <span class="log-status-icon">
-                @switch (delivery.status) {
-                  @case ('delivered') { &#9989; }
-                  @case ('failed')    { &#10060; }
-                  @case ('retrying')  { &#128260; }
-                  @case ('pending')   { &#9203; }
-                }
-              </span>
-              <span class="log-event">{{ delivery.event }}</span>
-              <span class="log-id">{{ delivery.id.slice(0, 8) }}</span>
-              @if (delivery.httpStatus) {
-                <span class="log-status" [class.ok]="delivery.httpStatus < 400" [class.err]="delivery.httpStatus >= 400">
-                  HTTP {{ delivery.httpStatus }}
-                </span>
-              }
-              @if (delivery.responseTimeMs) {
-                <span class="log-latency">{{ delivery.responseTimeMs }}ms</span>
-              }
-              <span class="log-attempt">Tentativa {{ delivery.attemptNumber }}</span>
-              <span class="log-time">{{ delivery.createdAt | date:'HH:mm:ss' }}</span>
-            </div>
+      <!-- Filtros -->
+      <div class="filters-bar">
+        @for (tab of statusTabs; track tab.value) {
+          <button class="chip" [class.active]="filterStatus() === tab.value" (click)="filterStatus.set(tab.value); load()">
+            {{ tab.label }}
+          </button>
+        }
+      </div>
 
-            <!-- Detalhes expandidos -->
-            @if (expandedId() === delivery.id) {
-              <div class="log-detail">
-                <div class="detail-section">
-                  <h4>Payload</h4>
-                  <pre class="json-viewer">{{ delivery.payload | json }}</pre>
-                </div>
-                @if (delivery.responseBody) {
-                  <div class="detail-section">
-                    <h4>Response Body</h4>
-                    <pre class="json-viewer">{{ delivery.responseBody }}</pre>
-                  </div>
-                }
-                @if (delivery.errorMessage) {
-                  <div class="detail-section error">
-                    <h4>Erro</h4>
-                    <pre>{{ delivery.errorMessage }}</pre>
-                  </div>
-                }
-                <div class="detail-meta">
-                  <span>Agendado: {{ delivery.scheduledAt | date:'dd/MM HH:mm:ss' }}</span>
-                  @if (delivery.deliveredAt) {
-                    <span>Entregue: {{ delivery.deliveredAt | date:'dd/MM HH:mm:ss' }}</span>
+      <!-- Lista -->
+      <div class="deliveries-list">
+        @if (loading()) {
+          <div class="loading-state">Carregando...</div>
+        } @else if (deliveries().length === 0) {
+          <div class="empty-state">Nenhuma entrega encontrada.</div>
+        } @else {
+          @for (d of deliveries(); track d.id) {
+            <div class="delivery-card" [class]="d.status" (click)="toggleDetail(d)">
+              <div class="delivery-header">
+                <div class="delivery-identity">
+                  <span class="status-icon">
+                    {{ d.status === 'success' ? '✅' : d.status === 'failed' ? '❌' : d.status === 'retrying' ? '🔄' : '⏳' }}
+                  </span>
+                  <span class="event-name">{{ d.event }}</span>
+                  @if (d.responseStatus) {
+                    <span class="http-status" [class.ok]="d.responseStatus < 300" [class.err]="d.responseStatus >= 400">
+                      HTTP {{ d.responseStatus }}
+                    </span>
                   }
-                  @if (delivery.nextRetryAt) {
-                    <span>Pr\xF3ximo retry: {{ delivery.nextRetryAt | date:'dd/MM HH:mm:ss' }}</span>
+                  @if (d.attempt > 1) {
+                    <span class="attempt-badge">tentativa {{ d.attempt }}/{{ d.maxAttempts }}</span>
                   }
                 </div>
-                <div class="detail-actions">
-                  <button class="btn-secondary btn-sm" (click)="resend(delivery); $event.stopPropagation()">&#128260; Reenviar</button>
+                <div class="delivery-meta">
+                  @if (d.durationMs) { <span>{{ d.durationMs }}ms</span> }
+                  <span>{{ d.createdAt | date:'dd/MM HH:mm:ss' }}</span>
+                  @if (d.status === 'failed' && d.attempt < d.maxAttempts) {
+                    <button class="btn-sm btn-secondary" (click)="retryDelivery(d); $event.stopPropagation()"
+                      [disabled]="retrying() === d.id">
+                      {{ retrying() === d.id ? 'Reenviando...' : '&#8635; Reenviar' }}
+                    </button>
+                  }
                 </div>
               </div>
-            }
-          </div>
-        }
-        @if (deliveries().length === 0 && !loading()) {
-          <div class="empty-state">Nenhum log encontrado para os filtros selecionados.</div>
+
+              <!-- Detalhe expandido -->
+              @if (expandedId() === d.id) {
+                <div class="delivery-detail" (click)="$event.stopPropagation()">
+                  <div class="detail-col">
+                    <h4>Request Body</h4>
+                    <pre>{{ formatJson(d.requestBody) }}</pre>
+                  </div>
+                  @if (d.responseBody) {
+                    <div class="detail-col">
+                      <h4>Response Body</h4>
+                      <pre>{{ formatJson(d.responseBody) }}</pre>
+                    </div>
+                  }
+                  <div class="detail-col">
+                    <h4>Request Headers</h4>
+                    <pre>{{ formatJson(JSON.stringify(d.requestHeaders)) }}</pre>
+                  </div>
+                  @if (d.nextRetryAt) {
+                    <p class="next-retry">&#128337; Próxima tentativa: {{ d.nextRetryAt | date:'dd/MM HH:mm:ss' }}</p>
+                  }
+                </div>
+              }
+            </div>
+          }
         }
       </div>
 
-      <!-- Pagina\xE7\xE3o -->
-      @if (hasMore()) {
-        <div class="load-more">
-          <button class="btn-secondary" (click)="loadMore()" [disabled]="loading()">
-            {{ loading() ? 'Carregando...' : 'Carregar mais' }}
-          </button>
-        </div>
-      }
+      <!-- Paginação -->
+      <div class="pagination">
+        <button [disabled]="page() <= 1" (click)="prevPage()">&#8592; Anterior</button>
+        <span>Página {{ page() }}</span>
+        <button [disabled]="deliveries().length < perPage" (click)="nextPage()">Próxima &#8594;</button>
+      </div>
     </div>
   `
 })
 export class WebhookLogsComponent implements OnInit {
-  @Input() webhookId!: string;
-
-  private http = inject(HttpClient);
+  private http  = inject(HttpClient);
+  private route = inject(ActivatedRoute);
 
   loading      = signal(false);
+  retrying     = signal<string | null>(null);
+  filterStatus = signal<'all' | 'success' | 'failed' | 'retrying'>('all');
   deliveries   = signal<WebhookDelivery[]>([]);
   expandedId   = signal<string | null>(null);
-  hasMore      = signal(false);
+  webhookName  = signal('');
+  page         = signal(1);
+  perPage      = 20;
 
-  statusFilter: WebhookDeliveryStatus | '' = '';
-  eventFilter: WebhookEventType | ''       = '';
-  page = 1;
-  perPage = 50;
+  webhookId = '';
 
-  eventGroups = [
-    { label: 'Chat',         events: ['chat.created', 'chat.message.sent', 'chat.message.received', 'chat.completed'] },
-    { label: 'Documentos',   events: ['document.uploaded', 'document.processed', 'document.deleted', 'document.processing_failed'] },
-    { label: 'Treinamento',  events: ['training.feedback.received', 'training.batch.started', 'training.batch.completed', 'training.model.deployed'] },
-    { label: 'Seguran\xE7a', events: ['security.pii_detected', 'security.access_denied', 'user.login', 'user.created'] },
+  statusTabs = [
+    { value: 'all',      label: 'Todas' },
+    { value: 'success',  label: '✅ Sucesso' },
+    { value: 'failed',   label: '❌ Falha' },
+    { value: 'retrying', label: '🔄 Reenvio' },
   ];
 
-  ngOnInit(): void { this.loadLogs(); }
+  JSON = JSON;
 
-  loadLogs(): void {
-    this.page = 1;
+  ngOnInit(): void {
+    this.webhookId = this.route.snapshot.paramMap.get('webhookId') ?? '';
+    this.loadWebhookInfo();
+    this.load();
+  }
+
+  loadWebhookInfo(): void {
+    this.http.get<{ name: string }>(`/api/admin/webhooks/${this.webhookId}`)
+      .subscribe((wh) => this.webhookName.set(wh.name));
+  }
+
+  load(): void {
     this.loading.set(true);
-    const params = this.buildParams();
-    this.http.get<{ items: WebhookDelivery[]; hasMore: boolean }>(
-      `/api/admin/webhooks/${this.webhookId}/deliveries`, { params }
-    ).subscribe({
-      next: (res) => {
-        this.deliveries.set(res.items);
-        this.hasMore.set(res.hasMore);
-        this.loading.set(false);
-      },
+    const params = `?page=${this.page()}&perPage=${this.perPage}&status=${this.filterStatus()}`;
+    this.http.get<WebhookDelivery[]>(`/api/admin/webhooks/${this.webhookId}/deliveries${params}`).subscribe({
+      next: (data) => { this.deliveries.set(data); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
   }
 
-  loadMore(): void {
-    this.page++;
-    this.loading.set(true);
-    const params = this.buildParams();
-    this.http.get<{ items: WebhookDelivery[]; hasMore: boolean }>(
-      `/api/admin/webhooks/${this.webhookId}/deliveries`, { params }
-    ).subscribe({
-      next: (res) => {
-        this.deliveries.update((prev) => [...prev, ...res.items]);
-        this.hasMore.set(res.hasMore);
-        this.loading.set(false);
-      },
-      error: () => this.loading.set(false),
+  toggleDetail(d: WebhookDelivery): void {
+    this.expandedId.set(this.expandedId() === d.id ? null : d.id);
+  }
+
+  retryDelivery(d: WebhookDelivery): void {
+    this.retrying.set(d.id);
+    this.http.post(`/api/admin/webhooks/${this.webhookId}/deliveries/${d.id}/retry`, {}).subscribe({
+      next: () => { this.retrying.set(null); this.load(); },
+      error: () => this.retrying.set(null),
     });
   }
 
-  toggleDetail(delivery: WebhookDelivery): void {
-    this.expandedId.set(this.expandedId() === delivery.id ? null : delivery.id);
-  }
+  prevPage(): void { if (this.page() > 1) { this.page.update((p) => p - 1); this.load(); } }
+  nextPage(): void { this.page.update((p) => p + 1); this.load(); }
 
-  resend(delivery: WebhookDelivery): void {
-    this.http.post(`/api/admin/webhooks/${this.webhookId}/deliveries/${delivery.id}/resend`, {}).subscribe({
-      next: () => { alert('Reenvio agendado!'); this.loadLogs(); },
-    });
-  }
-
-  private buildParams(): Record<string, string> {
-    const p: Record<string, string> = { page: String(this.page), perPage: String(this.perPage) };
-    if (this.statusFilter) p['status'] = this.statusFilter;
-    if (this.eventFilter)  p['event']  = this.eventFilter;
-    return p;
+  formatJson(raw: string): string {
+    try { return JSON.stringify(JSON.parse(raw), null, 2); }
+    catch { return raw; }
   }
 }

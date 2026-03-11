@@ -2,7 +2,22 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
-import { ApiKey, ApiKeyCreateRequest, ApiKeyCreated, ApiResource, ApiAction } from '../../../core/models/api-public.model';
+
+interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;       // primeiros 8 chars visíveis, ex: "btv_live_"
+  maskedKey: string;    // ex: "btv_live_••••••••••••aBcD"
+  permissions: string[];
+  rateLimit: number;    // requests/min
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  createdBy: string;
+  status: 'active' | 'revoked' | 'expired';
+  usageToday: number;
+  usageTotal: number;
+}
 
 @Component({
   selector: 'app-api-keys',
@@ -12,162 +27,153 @@ import { ApiKey, ApiKeyCreateRequest, ApiKeyCreated, ApiResource, ApiAction } fr
     <div class="api-keys">
       <div class="page-header">
         <div>
-          <h1>&#128273; Chaves de API</h1>
-          <p>Gerencie chaves para integrar com sistemas externos.</p>
+          <h1>&#128273; API Keys</h1>
+          <p>Gerencie chaves de acesso programático à plataforma.</p>
         </div>
-        <button class="btn-primary" (click)="openCreate()">+ Nova Chave</button>
+        <button class="btn-primary" (click)="openCreate()">+ Nova API Key</button>
       </div>
 
-      <!-- Chaves existentes -->
-      @if (loading()) {
-        <div class="loading-state">Carregando...</div>
-      } @else if (apiKeys().length === 0) {
-        <div class="empty-state">
-          <span>&#128273;</span>
-          <p>Nenhuma chave criada ainda.</p>
+      <!-- Filtros -->
+      <div class="filters-bar">
+        <div class="filter-chips">
+          @for (s of statusTabs; track s.value) {
+            <button class="chip" [class.active]="filterStatus() === s.value" (click)="filterStatus.set(s.value)">
+              {{ s.label }} ({{ countByStatus(s.value) }})
+            </button>
+          }
         </div>
-      } @else {
-        @for (key of apiKeys(); track key.id) {
-          <div class="key-card" [class.revoked]="key.status === 'revoked'" [class.expired]="key.status === 'expired'">
-            <div class="key-header">
-              <div>
-                <h3>{{ key.name }}</h3>
-                @if (key.description) { <p class="key-desc">{{ key.description }}</p> }
+      </div>
+
+      <!-- Lista -->
+      <div class="keys-list">
+        @if (loading()) {
+          <div class="loading-state">Carregando...</div>
+        } @else if (filteredKeys().length === 0) {
+          <div class="empty-state">Nenhuma API key encontrada.</div>
+        } @else {
+          @for (key of filteredKeys(); track key.id) {
+            <div class="key-card" [class.revoked]="key.status === 'revoked'" [class.expired]="key.status === 'expired'">
+              <div class="key-header">
+                <div class="key-identity">
+                  <span class="key-name">{{ key.name }}</span>
+                  <span class="key-masked">{{ key.maskedKey }}</span>
+                  <span class="status-badge" [class]="key.status">{{ key.status }}</span>
+                </div>
+                <div class="key-actions">
+                  @if (key.status === 'active') {
+                    <button class="btn-secondary btn-sm" (click)="copyKey(key)">&#128203; Copiar</button>
+                    <button class="btn-danger btn-sm" (click)="revokeKey(key)">Revogar</button>
+                  }
+                  <button class="btn-ghost btn-sm" (click)="deleteKey(key)">&#128465;&#65039;</button>
+                </div>
               </div>
-              <span class="key-status" [class]="key.status">{{ key.status | titlecase }}</span>
-            </div>
 
-            <div class="key-value">
-              <code>{{ key.keyPrefix }}••••••••••••••••</code>
-              <span class="key-scope">Escopo: {{ key.projectScope === 'all' ? 'Todos os projetos' : key.allowedProjectIds?.length + ' projeto(s)' }}</span>
+              <div class="key-details">
+                <div class="key-detail">
+                  <span class="label">Permissões</span>
+                  <div class="permission-chips">
+                    @for (perm of key.permissions; track perm) {
+                      <span class="perm-chip">{{ perm }}</span>
+                    }
+                  </div>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Rate limit</span>
+                  <span>{{ key.rateLimit }} req/min</span>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Uso hoje</span>
+                  <span>{{ key.usageToday | number }} requests</span>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Uso total</span>
+                  <span>{{ key.usageTotal | number }}</span>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Último uso</span>
+                  <span>{{ key.lastUsedAt ? (key.lastUsedAt | date:'dd/MM/yyyy HH:mm') : 'Nunca' }}</span>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Expira em</span>
+                  <span [class.expiring]="isExpiringSoon(key)">{{ key.expiresAt ? (key.expiresAt | date:'dd/MM/yyyy') : 'Nunca' }}</span>
+                </div>
+                <div class="key-detail">
+                  <span class="label">Criada por</span>
+                  <span>{{ key.createdBy }} em {{ key.createdAt | date:'dd/MM/yyyy' }}</span>
+                </div>
+              </div>
             </div>
-
-            <div class="key-permissions">
-              @for (perm of key.permissions; track perm.resource) {
-                <span class="perm-badge">{{ perm.resource }}: {{ perm.actions.join(', ') }}</span>
-              }
-            </div>
-
-            <div class="key-meta">
-              <span>Criada {{ key.createdAt | date:'dd/MM/yyyy' }}</span>
-              <span>\xDAltimo uso: {{ key.lastUsedAt ? (key.lastUsedAt | date:'dd/MM HH:mm') : 'Nunca' }}</span>
-              <span>Requests 30d: {{ key.totalRequests | number }}</span>
-              @if (key.expiresAt) {
-                <span [class.expiring]="isExpiringSoon(key)">
-                  Expira {{ key.expiresAt | date:'dd/MM/yyyy' }}
-                </span>
-              }
-              @if (key.rateLimit) {
-                <span>Rate limit: {{ key.rateLimit }} RPM</span>
-              }
-            </div>
-
-            <div class="key-actions">
-              <button (click)="editKey(key)">Editar</button>
-              <button (click)="rotateKey(key)">Rotacionar</button>
-              @if (key.status === 'active') {
-                <button class="danger" (click)="revokeKey(key)">Revogar</button>
-              }
-            </div>
-          </div>
+          }
         }
-      }
-
-      <!-- Link para Swagger -->
-      <div class="api-docs-link">
-        <h3>Documenta\xE7\xE3o da API</h3>
-        <p>Acesse a documenta\xE7\xE3o interativa Swagger/OpenAPI para integrar com seus sistemas.</p>
-        <a [href]="apiDocsUrl" target="_blank" class="btn-secondary">Abrir Swagger UI &#8599;</a>
       </div>
     </div>
 
-    <!-- Modal de cria\xE7\xE3o -->
+    <!-- Modal criar -->
     @if (showModal()) {
       <div class="modal-overlay" (click)="closeModal()">
         <div class="modal" (click)="$event.stopPropagation()">
           <div class="modal-header">
-            <h2>{{ editingKey() ? 'Editar' : 'Nova' }} Chave de API</h2>
+            <h2>Nova API Key</h2>
             <button (click)="closeModal()">&#10005;</button>
           </div>
           <div class="modal-body">
             <div class="form-group">
-              <label>Nome *
-                <input [(ngModel)]="form.name" placeholder="Ex: ERP Integration" autofocus />
+              <label>Nome (identificação) *
+                <input [(ngModel)]="form.name" placeholder="ex: Integração ERP" />
               </label>
             </div>
             <div class="form-group">
-              <label>Descri\xE7\xE3o
-                <input [(ngModel)]="form.description" placeholder="Para qu\xEA serve esta chave?" />
+              <label>Permissões
+                <div class="perm-checkboxes">
+                  @for (perm of availablePermissions; track perm.value) {
+                    <label class="checkbox-label">
+                      <input type="checkbox" [checked]="form.permissions?.includes(perm.value)"
+                        (change)="togglePermission(perm.value, $event)" />
+                      {{ perm.label }}
+                    </label>
+                  }
+                </div>
               </label>
             </div>
-
-            <!-- Permiss\xF5es -->
             <div class="form-group">
-              <label>Permiss\xF5es</label>
-              <div class="permissions-grid">
-                @for (resource of resources; track resource) {
-                  <div class="perm-row">
-                    <strong>{{ resource }}</strong>
-                    @for (action of actions; track action) {
-                      <label class="checkbox-label">
-                        <input type="checkbox"
-                          [checked]="hasPermission(resource, action)"
-                          (change)="togglePermission(resource, action, $any($event.target).checked)" />
-                        {{ action }}
-                      </label>
-                    }
-                  </div>
-                }
-              </div>
+              <label>Rate limit (requests/min)
+                <input type="number" [(ngModel)]="form.rateLimit" placeholder="60" />
+              </label>
             </div>
-
-            <div class="form-row">
-              <div class="form-group">
-                <label>Rate Limit (RPM)
-                  <input type="number" [(ngModel)]="form.rateLimit" min="1" />
-                </label>
-              </div>
-              <div class="form-group">
-                <label>Expira\xE7\xE3o (opcional)
-                  <input type="date" [(ngModel)]="form.expiresAt" />
-                </label>
-              </div>
-            </div>
-
             <div class="form-group">
-              <label>IPs permitidos (um por linha, vazio = qualquer)
-                <textarea [(ngModel)]="allowedIpsText" rows="3" placeholder="200.123.45.0/24"></textarea>
+              <label>Expiração (opcional)
+                <input type="date" [(ngModel)]="form.expiresAt" />
               </label>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" (click)="closeModal()">Cancelar</button>
-            <button class="btn-primary" (click)="saveKey()" [disabled]="!form.name.trim() || saving()">
-              {{ saving() ? 'Salvando...' : (editingKey() ? 'Salvar' : 'Criar Chave') }}
+            <button class="btn-primary" (click)="createKey()" [disabled]="saving() || !form.name">
+              {{ saving() ? 'Gerando...' : 'Gerar API Key' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- Modal: chave criada -- exibir APENAS uma vez -->
-    @if (newKeyPlain()) {
+    <!-- Modal com a chave gerada -->
+    @if (newKeyValue()) {
       <div class="modal-overlay">
-        <div class="modal key-reveal-modal">
+        <div class="modal new-key-modal">
           <div class="modal-header">
-            <h2>&#9989; Chave criada com sucesso!</h2>
+            <h2>&#9989; API Key Criada</h2>
           </div>
           <div class="modal-body">
-            <div class="alert warning">
-              &#9888;&#65039; <strong>Copie agora.</strong> Esta chave n\xE3o ser\xE1 exibida novamente.
+            <div class="new-key-alert">
+              &#9888;&#65039; Copie agora! Esta chave <strong>não será exibida novamente</strong>.
             </div>
-            <div class="key-reveal">
-              <code>{{ newKeyPlain() }}</code>
-              <button (click)="copyNewKey()">{{ keyCopied() ? '\u2705 Copiado!' : '\uD83D\uDCCB Copiar' }}</button>
+            <div class="new-key-display">
+              <code>{{ newKeyValue() }}</code>
+              <button (click)="copyNewKey()">&#128203; Copiar</button>
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-primary" (click)="newKeyPlain.set(null)">Entendido, guardei a chave</button>
+            <button class="btn-primary" (click)="newKeyValue.set(null)">Entendi, fechar</button>
           </div>
         </div>
       </div>
@@ -177,133 +183,99 @@ import { ApiKey, ApiKeyCreateRequest, ApiKeyCreated, ApiResource, ApiAction } fr
 export class ApiKeysComponent implements OnInit {
   private http = inject(HttpClient);
 
-  loading  = signal(true);
-  saving   = signal(false);
-  showModal  = signal(false);
-  editingKey = signal<ApiKey | null>(null);
-  apiKeys  = signal<ApiKey[]>([]);
-  newKeyPlain = signal<string | null>(null);
-  keyCopied  = signal(false);
-  allowedIpsText = '';
+  loading      = signal(false);
+  saving       = signal(false);
+  showModal    = signal(false);
+  newKeyValue  = signal<string | null>(null);
+  filterStatus = signal<'all' | 'active' | 'revoked' | 'expired'>('all');
+  keys         = signal<ApiKey[]>([]);
 
-  resources: ApiResource[] = ['chat', 'documents', 'projects', 'search', 'training', 'usage', 'webhooks'];
-  actions: ApiAction[]     = ['read', 'write', 'delete'];
+  form: Partial<ApiKey> & { permissions: string[] } = this.emptyForm();
 
-  apiDocsUrl = '/api/docs';
+  statusTabs = [
+    { value: 'all',     label: 'Todas' },
+    { value: 'active',  label: 'Ativas' },
+    { value: 'revoked', label: 'Revogadas' },
+    { value: 'expired', label: 'Expiradas' },
+  ];
 
-  form: ApiKeyCreateRequest = this.emptyForm();
+  availablePermissions = [
+    { value: 'chat:read',      label: 'Ler conversas' },
+    { value: 'chat:write',     label: 'Criar mensagens' },
+    { value: 'documents:read', label: 'Ler documentos' },
+    { value: 'documents:write',label: 'Upload de documentos' },
+    { value: 'projects:read',  label: 'Ler projetos' },
+    { value: 'projects:write', label: 'Criar/editar projetos' },
+    { value: 'admin:read',     label: 'Admin (leitura)' },
+  ];
 
-  ngOnInit(): void {
-    this.loadKeys();
+  filteredKeys() {
+    const s = this.filterStatus();
+    return s === 'all' ? this.keys() : this.keys().filter((k) => k.status === s);
   }
 
+  countByStatus(status: string): number {
+    return status === 'all' ? this.keys().length : this.keys().filter((k) => k.status === status).length;
+  }
+
+  ngOnInit(): void { this.loadKeys(); }
+
   loadKeys(): void {
+    this.loading.set(true);
     this.http.get<ApiKey[]>('/api/admin/api-keys').subscribe({
-      next: (keys) => { this.apiKeys.set(keys); this.loading.set(false); },
+      next: (data) => { this.keys.set(data); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
   }
 
-  openCreate(): void {
-    this.editingKey.set(null);
-    this.form = this.emptyForm();
-    this.allowedIpsText = '';
-    this.showModal.set(true);
+  openCreate(): void { this.form = this.emptyForm(); this.showModal.set(true); }
+  closeModal(): void { this.showModal.set(false); }
+
+  togglePermission(value: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { this.form.permissions = [...(this.form.permissions || []), value]; }
+    else { this.form.permissions = (this.form.permissions || []).filter((p) => p !== value); }
   }
 
-  editKey(key: ApiKey): void {
-    this.editingKey.set(key);
-    this.form = {
-      name: key.name,
-      description: key.description,
-      permissions: [...key.permissions],
-      rateLimit: key.rateLimit,
-      projectScope: key.projectScope,
-      allowedProjectIds: key.allowedProjectIds,
-      expiresAt: key.expiresAt,
-    };
-    this.allowedIpsText = (key.allowedIps ?? []).join('\n');
-    this.showModal.set(true);
-  }
-
-  closeModal(): void {
-    this.showModal.set(false);
-    this.editingKey.set(null);
-  }
-
-  hasPermission(resource: ApiResource, action: ApiAction): boolean {
-    return this.form.permissions.some((p) => p.resource === resource && p.actions.includes(action));
-  }
-
-  togglePermission(resource: ApiResource, action: ApiAction, checked: boolean): void {
-    const existing = this.form.permissions.find((p) => p.resource === resource);
-    if (checked) {
-      if (existing) {
-        existing.actions = [...new Set([...existing.actions, action])];
-      } else {
-        this.form.permissions.push({ resource, actions: [action] });
-      }
-    } else {
-      if (existing) {
-        existing.actions = existing.actions.filter((a) => a !== action);
-        if (existing.actions.length === 0) {
-          this.form.permissions = this.form.permissions.filter((p) => p.resource !== resource);
-        }
-      }
-    }
-  }
-
-  saveKey(): void {
+  createKey(): void {
     this.saving.set(true);
-    this.form.allowedIps = this.allowedIpsText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const editing = this.editingKey();
-    const req$ = editing
-      ? this.http.put<ApiKey>(`/api/admin/api-keys/${editing.id}`, this.form)
-      : this.http.post<ApiKeyCreated>('/api/admin/api-keys', this.form);
-
-    req$.subscribe({
-      next: (result: any) => {
-        this.loadKeys();
+    this.http.post<{ key: string }>('/api/admin/api-keys', this.form).subscribe({
+      next: (res) => {
+        this.newKeyValue.set(res.key);
         this.closeModal();
+        this.loadKeys();
         this.saving.set(false);
-        if (!editing && result.plainKey) {
-          this.newKeyPlain.set(result.plainKey);
-        }
       },
       error: () => this.saving.set(false),
     });
   }
 
   revokeKey(key: ApiKey): void {
-    if (!confirm(`Revogar a chave "${key.name}"? Esta a\xE7\xE3o n\xE3o pode ser desfeita.`)) return;
-    this.http.post(`/api/admin/api-keys/${key.id}/revoke`, {}).subscribe(() => this.loadKeys());
+    if (!confirm(`Revogar a key "${key.name}"? Esta ação não pode ser desfeita.`)) return;
+    this.http.patch(`/api/admin/api-keys/${key.id}/revoke`, {}).subscribe(() => this.loadKeys());
   }
 
-  rotateKey(key: ApiKey): void {
-    if (!confirm(`Rotacionar a chave "${key.name}"? A chave atual ser\xE1 invalidada imediatamente.`)) return;
-    this.http.post<ApiKeyCreated>(`/api/admin/api-keys/${key.id}/rotate`, {}).subscribe((result) => {
-      this.loadKeys();
-      this.newKeyPlain.set(result.plainKey);
-    });
+  deleteKey(key: ApiKey): void {
+    if (!confirm(`Excluir permanentemente "${key.name}"?`)) return;
+    this.http.delete(`/api/admin/api-keys/${key.id}`).subscribe(() => this.loadKeys());
+  }
+
+  copyKey(key: ApiKey): void {
+    navigator.clipboard.writeText(key.maskedKey);
   }
 
   copyNewKey(): void {
-    navigator.clipboard.writeText(this.newKeyPlain() ?? '');
-    this.keyCopied.set(true);
-    setTimeout(() => this.keyCopied.set(false), 2000);
+    const val = this.newKeyValue();
+    if (val) navigator.clipboard.writeText(val);
   }
 
   isExpiringSoon(key: ApiKey): boolean {
     if (!key.expiresAt) return false;
     const diff = new Date(key.expiresAt).getTime() - Date.now();
-    return diff < 7 * 24 * 60 * 60 * 1000; // 7 dias
+    return diff < 7 * 24 * 60 * 60 * 1000; // < 7 dias
   }
 
-  private emptyForm(): ApiKeyCreateRequest {
-    return { name: '', description: '', permissions: [], rateLimit: 60, projectScope: 'all' };
+  private emptyForm(): Partial<ApiKey> & { permissions: string[] } {
+    return { name: '', permissions: ['chat:read', 'chat:write'], rateLimit: 60, expiresAt: null };
   }
 }
