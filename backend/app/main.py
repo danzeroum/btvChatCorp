@@ -1,5 +1,4 @@
 import time
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,9 +12,7 @@ START_TIME = time.time()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
     yield
-    # shutdown
 
 
 app = FastAPI(
@@ -26,10 +23,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
+# CORS — ALLOWED_ORIGINS pode ser lista separada por vírgula
+allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
