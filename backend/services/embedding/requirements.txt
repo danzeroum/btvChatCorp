@@ -1,0 +1,17 @@
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+
+# Nomic Embed V2
+torch==2.2.2
+transformers==4.40.0
+sentence-transformers==2.7.0
+nomicai-client==3.0.0          # Nomic tokenizer helpers
+
+# Cross-encoder reranker
+cross-encoder-ms-marco-MiniLM-L-6-v2
+
+# Utils
+numpy==1.26.4
+pydantic==2.7.0
+httpx==0.27.0
+psutil==5.9.8
