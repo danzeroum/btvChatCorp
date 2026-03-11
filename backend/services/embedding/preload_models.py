@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 print("Baixando modelo de embedding...")
-SentenceTransformer("nomic-ai/nomic-embed-text-v1.5")
+SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
 
 print("Baixando modelo de reranking...")
 CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
