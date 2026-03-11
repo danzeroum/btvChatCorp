@@ -9,13 +9,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Pré-baixa os modelos na imagem (evita cold start em produção)
-RUN python3 -c "
-from sentence_transformers import SentenceTransformer, CrossEncoder
-SentenceTransformer('nomic-ai/nomic-embed-text-v1.5')
-CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-print('Modelos pré-carregados com sucesso')
-"
+COPY preload_models.py .
+RUN python3 preload_models.py
 
 COPY app/ app/
 
