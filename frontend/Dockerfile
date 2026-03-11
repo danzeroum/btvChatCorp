@@ -6,8 +6,8 @@ WORKDIR /app
 ARG API_URL=/api
 ENV API_URL=$API_URL
 
-COPY package*.json .
-RUN npm ci --legacy-peer-deps
+COPY package.json .
+RUN npm install --legacy-peer-deps
 
 COPY . .
 RUN npm run build -- --configuration production
@@ -17,7 +17,6 @@ FROM nginx:1.25-alpine
 
 COPY --from=builder /app/dist/btv-chat-corp/browser /usr/share/nginx/html
 
-# Config nginx interna (SPA fallback)
 RUN echo 'server { \
     listen 80; \
     root /usr/share/nginx/html; \
