@@ -1,0 +1,52 @@
+[package]
+name = "document-processor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialização
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Datas
+chrono = { version = "0.4", features = ["serde"] }
+
+# Banco de dados
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "json"] }
+
+# HTTP (embedding service, reranker, OCR service)
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+
+# Regex para detecção de estrutura e PII
+regex = "1"
+
+# Extração de PDF nativo
+pdf-extract = "0.7"
+
+# Extração de DOCX
+docx-rs = "0.4"
+
+# Tracing
+tracing = "1.0"
+tracing-subscriber = "0.3"
+
+# Qdrant client
+qdrant-client = "1"
+
+# Erros ergonômicos
+thiserror = "1"
+anyhow = "1"
+
+# Utilitários de texto
+unicode-normalization = "0.1"
+whatlang = "0.16"   # detecção de idioma
+mime_guess = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
