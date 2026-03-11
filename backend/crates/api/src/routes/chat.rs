@@ -1,115 +1,261 @@
+use std::sync::Arc;
+
 use axum::{
-    extract::{State, Json},
+    extract::{Extension, State},
     http::StatusCode,
     response::sse::{Event, Sse},
+    Json,
 };
-use futures::stream::Stream;
-use std::sync::{Arc, Mutex};
+use futures::stream::{Stream, StreamExt};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{
-    state::AppState,
-    models::{ChatRequest, FeedbackRequest, CreateInteraction, Feedback},
-    middleware::workspace::WorkspaceContext,
+use ai_orchestrator::{
+    chat_handler::{ChatRequest, FeedbackRequest},
+    llm_client::VllmMessage,
+    TrainingRepo, CreateInteraction,
+};
+use rag_searcher::{
+    SearchConfig, SearchFilters,
+    prompt_builder::{ConversationMessage, WorkspaceContext},
 };
 
-/// Handler principal de chat com streaming SSE
-pub async fn chat_handler(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    Json(request): Json<ChatRequest>,
-) -> Sse<impl Stream<Item = Result<Event, anyhow::Error>>> {
-    // 1. Busca contexto RAG
-    let rag_context = app
-        .rag_service
-        .search(&request.message, &ctx.workspace_id, 5)
-        .await
-        .unwrap_or_default();
+use crate::{
+    errors::{error_response, ApiError},
+    middleware::api_key_auth::ApiKeyContext,
+    state::AppState,
+};
 
-    // 2. Monta prompt com contexto RAG + histórico + system prompt do workspace
-    let full_prompt = app.prompt_builder.build(
-        &request.message,
-        &rag_context,
-        &request.conversation_history,
-        &ctx,
-    );
+// ─── Tipos de request/response ────────────────────────────────────────────────
 
-    // 3. Cria registro para coleta de treino (antes do stream)
-    let interaction_id = app
-        .training_repo
-        .create_interaction(CreateInteraction {
-            workspace_id: ctx.workspace_id.clone(),
-            user_message: request.message.clone(),
-            rag_context: serde_json::to_value(&rag_context).unwrap_or_default(),
-            data_classification: request.classification.clone().unwrap_or_default(),
-            pii_detected: request.pii_detected.unwrap_or(false),
-            eligible_for_training: request.eligible_for_training.unwrap_or(true),
-            model_version: ctx.model_version.clone(),
-        })
-        .await
-        .unwrap_or_else(|_| Uuid::new_v4());
-
-    // 4. Chama vLLM com streaming
-    let llm_stream = app
-        .llm_client
-        .chat_stream(&full_prompt, &ctx.model_config())
-        .await
-        .expect("Falha ao conectar ao vLLM");
-
-    // 5. Coleta resposta completa enquanto streama
-    let response_collector = Arc::new(Mutex::new(String::new()));
-    let collector_clone = response_collector.clone();
-    let repo = app.training_repo.clone();
-    let rag_ctx = rag_context.clone();
-
-    let stream = llm_stream
-        .map(move |chunk| {
-            if let Ok(ref text) = chunk {
-                collector_clone.lock().unwrap().push_str(text);
-            }
-            Ok(Event::default().data(chunk?))
-        })
-        .chain(futures::stream::once(async move {
-            // Ao finalizar, salva resposta completa no banco
-            let full_response = response_collector.lock().unwrap().clone();
-            repo.update_response(interaction_id, &full_response)
-                .await
-                .ok();
-            // Envia fontes RAG como último evento
-            Ok(Event::default()
-                .event("sources")
-                .data(serde_json::to_string(&rag_ctx).unwrap_or_default()))
-        }));
-
-    Sse::new(stream)
+/// Request compatível com formato OpenAI
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ChatCompletionRequest {
+    /// Lista de mensagens da conversa
+    pub messages: Vec<Message>,
+    /// ID do projeto (usa documentos e instruções do projeto como contexto)
+    pub project_id: Option<String>,
+    /// IDs de documentos específicos para contexto RAG
+    pub document_ids: Option<Vec<String>>,
+    /// Se true, retorna streaming SSE
+    #[serde(default)]
+    pub stream: bool,
+    /// Temperatura (0-1). Menor = mais determinístico
+    pub temperature: Option<f32>,
+    /// Máximo de tokens na resposta
+    pub max_tokens: Option<u32>,
+    /// Número de documentos RAG a buscar
+    pub top_k: Option<usize>,
+    /// Se true (default), inclui as fontes RAG usadas
+    #[serde(default = "default_true")]
+    pub include_sources: bool,
+    /// Metadados customizados passados de volta no webhook
+    pub metadata: Option<serde_json::Value>,
 }
 
-/// Handler para receber feedback do usuário
-pub async fn submit_feedback(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    Json(feedback): Json<FeedbackRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    app.training_repo
-        .add_feedback(
-            feedback.interaction_id,
-            Feedback {
-                rating: feedback.rating,
-                correction: feedback.correction.clone(),
-                categories: feedback.categories.clone(),
-                user_id: ctx.user_id,
-            },
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+fn default_true() -> bool { true }
 
-    // Correções manuais = alta prioridade para curadoria
-    if feedback.correction.is_some() {
-        app.training_repo
-            .flag_high_priority(feedback.interaction_id)
-            .await
-            .ok();
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ChatCompletionResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: String,
+    pub choices: Vec<Choice>,
+    pub usage: UsageInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<SourceReference>>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct Choice {
+    pub index: u32,
+    pub message: Message,
+    pub finish_reason: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UsageInfo {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SourceReference {
+    pub document_id: String,
+    pub document_name: String,
+    pub section: Option<String>,
+    pub relevance_score: f32,
+    /// Primeiros 200 chars do chunk
+    pub content_preview: String,
+}
+
+// ─── Handlers ────────────────────────────────────────────────────────────────
+
+/// POST /api/v1/chat/completions — modo bloqueante
+/// Formato compatível com OpenAI para fácil integração via n8n/Zapier
+#[utoipa::path(
+    post,
+    path = "/api/v1/chat/completions",
+    tag = "Chat",
+    request_body = ChatCompletionRequest,
+    responses(
+        (status = 200, description = "Completion gerado com sucesso", body = ChatCompletionResponse),
+        (status = 401, description = "API key inválida"),
+        (status = 403, description = "Sem permissão para chat"),
+        (status = 429, description = "Rate limit excedido"),
+    ),
+    security(("api_key" = []))
+)]
+pub async fn create_completion(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<ApiKeyContext>,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Result<Json<ChatCompletionResponse>, (StatusCode, Json<ApiError>)> {
+    if !ctx.has_permission("chat", "write") {
+        return Err(error_response(StatusCode::FORBIDDEN, "insufficient_permissions",
+            "API key does not have chat:write permission"));
     }
 
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    // 1. Busca contexto RAG
+    let query = request.messages.iter().rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.as_str())
+        .unwrap_or("");
+
+    let rag = app.rag.search(
+        query,
+        ctx.workspace_id,
+        request.top_k.unwrap_or(5),
+        None,
+        Some(SearchConfig::default()),
+    ).await.map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, "rag_error", e.to_string()))?;
+
+    // 2. Monta mensagens com contexto RAG
+    let rag_context = app.prompt_builder.format_rag_context(&rag);
+    let mut messages: Vec<VllmMessage> = request.messages.iter().map(|m| VllmMessage {
+        role: m.role.clone(),
+        content: m.content.clone(),
+    }).collect();
+
+    if !rag_context.is_empty() {
+        messages.insert(0, VllmMessage {
+            role: "system".into(),
+            content: format!("Documentos de referência:\n{}", rag_context),
+        });
+    }
+
+    // 3. Chama LLM
+    let llm_resp = app.llm.chat(
+        messages,
+        request.temperature.unwrap_or(0.7),
+        request.max_tokens.unwrap_or(2048),
+    ).await.map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, "llm_error", e.to_string()))?;
+
+    // 4. Monta response
+    let completion_id = format!("chatcmpl-{}", Uuid::new_v4());
+    let sources = if request.include_sources {
+        Some(rag.chunks.iter().map(|c| SourceReference {
+            document_id: c.document_id.clone(),
+            document_name: c.section_title.clone().unwrap_or_else(|| "Document".into()),
+            section: c.section_title.clone(),
+            relevance_score: c.rerank_score,
+            content_preview: c.content.chars().take(200).collect(),
+        }).collect())
+    } else {
+        None
+    };
+
+    Ok(Json(ChatCompletionResponse {
+        id: completion_id,
+        object: "chat.completion".into(),
+        created: chrono::Utc::now().timestamp(),
+        model: app.llm.config.display_name(),
+        choices: vec![Choice {
+            index: 0,
+            message: Message { role: "assistant".into(), content: llm_resp.text },
+            finish_reason: llm_resp.finish_reason,
+        }],
+        usage: UsageInfo {
+            prompt_tokens: llm_resp.prompt_tokens,
+            completion_tokens: llm_resp.completion_tokens,
+            total_tokens: llm_resp.prompt_tokens + llm_resp.completion_tokens,
+        },
+        sources,
+    }))
+}
+
+/// POST /api/v1/chat/completions/stream — streaming SSE
+#[utoipa::path(
+    post,
+    path = "/api/v1/chat/completions/stream",
+    tag = "Chat",
+    request_body = ChatCompletionRequest,
+    responses((status = 200, description = "Stream de tokens via SSE")),
+    security(("api_key" = []))
+)]
+pub async fn create_streaming_completion(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<ApiKeyContext>,
+    Json(request): Json<ChatCompletionRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, anyhow::Error>>>, (StatusCode, Json<ApiError>)> {
+    if !ctx.has_permission("chat", "write") {
+        return Err(error_response(StatusCode::FORBIDDEN, "insufficient_permissions",
+            "API key does not have chat:write permission"));
+    }
+
+    let query = request.messages.iter().rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.as_str())
+        .unwrap_or("");
+
+    let rag = app.rag.search(
+        query, ctx.workspace_id, request.top_k.unwrap_or(5), None, None,
+    ).await.map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, "rag_error", e.to_string()))?;
+
+    let rag_context = app.prompt_builder.format_rag_context(&rag);
+    let mut messages: Vec<VllmMessage> = request.messages.iter().map(|m| VllmMessage {
+        role: m.role.clone(),
+        content: m.content.clone(),
+    }).collect();
+    if !rag_context.is_empty() {
+        messages.insert(0, VllmMessage {
+            role: "system".into(),
+            content: format!("Documentos de referência:\n{}", rag_context),
+        });
+    }
+
+    let completion_id = format!("chatcmpl-{}", Uuid::new_v4());
+    let cid = completion_id.clone();
+
+    let token_stream = app.llm
+        .chat_stream(messages, request.temperature.unwrap_or(0.7), request.max_tokens.unwrap_or(2048))
+        .await
+        .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, "llm_error", e.to_string()))?;
+
+    // Converte tokens em SSE compatível com OpenAI
+    let sse_stream = token_stream.map(move |result| {
+        match result {
+            Ok(token) => {
+                let data = serde_json::json!({
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": chrono::Utc::now().timestamp(),
+                    "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": null}]
+                });
+                Ok(Event::default().data(serde_json::to_string(&data).unwrap_or_default()))
+            }
+            Err(e) => Ok(Event::default().data(format!("{{\"error\":\"{}\"}}", e)))
+        }
+    });
+
+    Ok(Sse::new(sse_stream))
 }
