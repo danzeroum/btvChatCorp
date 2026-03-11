@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 app = FastAPI(title="BTV Embedding Service", version="1.0.0")
 
-embed_model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5")
+embed_model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
 rerank_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 
