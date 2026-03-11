@@ -1,0 +1,43 @@
+[package]
+name = "api-public"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Framework
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialização
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# OpenAPI / Swagger
+utoipa = { version = "4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+# Rate limiting
+governor = "0.6"
+# tower-governor = "0.3"  # descomentar após configurar Redis
+
+# HMAC / assinatura de webhooks
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Banco de dados
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono"] }
+
+# Utilitários
+reqwest = { version = "0.11", features = ["json"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+mime_guess = "2"
+
+# Crates internos
+webhooks = { path = "../webhooks" }
+# crate-api referenciado como crate_api (underscore) pelo Rust
+crate-api = { path = "../api", package = "api" }
