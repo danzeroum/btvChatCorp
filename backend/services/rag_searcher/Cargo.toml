@@ -2,18 +2,19 @@
 name = "rag_searcher"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.83"
 
 [[bin]]
 name = "rag_searcher"
 path = "src/main.rs"
 
 [dependencies]
-axum = "0.7"
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-httpx = { package = "reqwest", version = "0.12", features = ["json", "rustls-tls"] }
+axum = "0.7.9"
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
-anyhow = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
