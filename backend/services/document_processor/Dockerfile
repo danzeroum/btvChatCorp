@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Baixa modelo spacy para detecção de PII em PT
-RUN python -m spacy download pt_core_news_lg
+# Baixa modelo spacy com versao fixa compativel com spacy 3.7
+RUN pip install --no-cache-dir \
+    https://github.com/explosion/spacy-models/releases/download/pt_core_news_lg-3.7.0/pt_core_news_lg-3.7.0-py3-none-any.whl
 
 COPY app/ app/
 
