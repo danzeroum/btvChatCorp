@@ -1,0 +1,9 @@
+# /etc/cron.d/ai-training
+# Ciclo de fine-tuning semanal — todo domingo às 3h (horário de baixo uso)
+0 3 * * 0  root  /usr/bin/python3 -m training.run_cycle --all-workspaces >> /var/log/btv/training.log 2>&1
+
+# Geração de QA sintéticos — toda quarta às 2h
+0 2 * * 3  root  /usr/bin/python3 -m training.run_cycle --all-workspaces --generate-qa >> /var/log/btv/synthetic_qa.log 2>&1
+
+# Limpeza de dados rejeitados e datasets antigos — todo dia 1 às 4h
+0 4 1 * *  root  /usr/bin/python3 -m training.cleanup_rejected >> /var/log/btv/cleanup.log 2>&1
