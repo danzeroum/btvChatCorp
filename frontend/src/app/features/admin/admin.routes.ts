@@ -1,95 +1,35 @@
 import { Routes } from '@angular/router';
 
 export const ADMIN_ROUTES: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
   {
-    path: '',
-    redirectTo: 'overview',
-    pathMatch: 'full',
-  },
-  {
-    path: 'overview',
+    path: 'dashboard',
     loadComponent: () =>
-      import('./overview/admin-dashboard.component').then((m) => m.AdminDashboardComponent),
+      import('./dashboard/admin-dashboard.component').then((m) => m.AdminDashboardComponent),
   },
-  // USUÁRIOS
   {
     path: 'users',
     loadComponent: () =>
-      import('./users/user-list.component').then((m) => m.UserListComponent),
+      import('./user-management/user-management.component').then((m) => m.UserManagementComponent),
   },
   {
-    path: 'users/roles',
+    path: 'audit',
     loadComponent: () =>
-      import('./users/permission-matrix.component').then((m) => m.PermissionMatrixComponent),
+      import('./audit-log-viewer/audit-log-viewer.component').then((m) => m.AuditLogViewerComponent),
   },
-  {
-    path: 'users/:id',
-    loadComponent: () =>
-      import('./users/user-detail.component').then((m) => m.UserDetailComponent),
-  },
-  // SEGURANÇA
-  {
-    path: 'security/audit',
-    loadComponent: () =>
-      import('./security/audit-log.component').then((m) => m.AuditLogComponent),
-  },
-  {
-    path: 'security/compliance',
-    loadComponent: () =>
-      import('./security/compliance-report.component').then((m) => m.ComplianceReportComponent),
-  },
-  {
-    path: 'security/sessions',
-    loadComponent: () =>
-      import('./security/active-sessions.component').then((m) => m.ActiveSessionsComponent),
-  },
-  // BILLING
-  {
-    path: 'billing',
-    loadComponent: () =>
-      import('./billing/usage-overview.component').then((m) => m.UsageOverviewComponent),
-  },
-  {
-    path: 'billing/costs',
-    loadComponent: () =>
-      import('./billing/cost-breakdown.component').then((m) => m.CostBreakdownComponent),
-  },
-  {
-    path: 'billing/limits',
-    loadComponent: () =>
-      import('./billing/resource-limits.component').then((m) => m.ResourceLimitsComponent),
-  },
-  // INTEGRAÇÕES
-  {
-    path: 'integrations/api-keys',
-    loadComponent: () =>
-      import('./integrations/api-keys.component').then((m) => m.ApiKeysComponent),
-  },
-  {
-    path: 'integrations/webhooks',
-    loadComponent: () =>
-      import('./integrations/webhooks-config.component').then((m) => m.WebhooksConfigComponent),
-  },
-  {
-    path: 'integrations/webhooks/:webhookId/logs',
-    loadComponent: () =>
-      import('./integrations/webhook-logs.component').then((m) => m.WebhookLogsComponent),
-  },
-  {
-    path: 'integrations/docs',
-    loadComponent: () =>
-      import('./integrations/api-docs-viewer.component').then((m) => m.ApiDocsViewerComponent),
-  },
-  // WHITE-LABEL
-  {
-    path: 'white-label',
-    loadComponent: () =>
-      import('./white-label/components/branding-config.component').then((m) => m.BrandingConfigComponent),
-  },
-  // CONFIGURAÇÕES
   {
     path: 'settings',
     loadComponent: () =>
-      import('./settings/workspace-general.component').then((m) => m.WorkspaceGeneralComponent),
+      import('./workspace-settings/workspace-settings.component').then((m) => m.WorkspaceSettingsComponent),
+  },
+  {
+    path: 'api-keys',
+    loadComponent: () =>
+      import('./api-keys/api-keys.component').then((m) => m.ApiKeysComponent),
+  },
+  {
+    path: 'sso',
+    loadComponent: () =>
+      import('./sso-config/sso-config.component').then((m) => m.SsoConfigComponent),
   },
 ];
