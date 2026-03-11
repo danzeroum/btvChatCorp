@@ -1,0 +1,314 @@
+version: '3.9'
+
+# ============================================================
+# BTV Chat Corp — Docker Compose de Produção
+# Serviços: PostgreSQL, Redis, Qdrant, vLLM, Embedding,
+#           API (FastAPI), Document Processor (Python),
+#           RAG Searcher (Rust), Frontend (Angular/Nginx)
+# ============================================================
+
+networks:
+  btv-internal:
+    driver: bridge
+  btv-public:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  lora_adapters:
+  document_uploads:
+  model_cache:
+
+services:
+
+  # ──────────────────────────────────────────────
+  # Infraestrutura
+  # ──────────────────────────────────────────────
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-btv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-btvchat}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    networks: [btv-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-btv}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks: [btv-internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.0
+    restart: always
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks: [btv-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+  # ──────────────────────────────────────────────
+  # IA — vLLM (Llama 3.3 70B + LoRA hot-swap)
+  # ──────────────────────────────────────────────
+
+  vllm:
+    image: vllm/vllm-openai:v0.4.2
+    restart: always
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+    command: >
+      --model meta-llama/Llama-3.3-70B-Instruct
+      --dtype float16
+      --max-model-len 32768
+      --enable-lora
+      --max-lora-rank 64
+      --lora-modules-dir /lora_adapters
+      --tensor-parallel-size ${GPU_COUNT:-2}
+      --gpu-memory-utilization 0.90
+      --disable-log-requests
+      --served-model-name llama3
+    volumes:
+      - lora_adapters:/lora_adapters
+      - model_cache:/root/.cache/huggingface
+    networks: [btv-internal]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+
+  # ──────────────────────────────────────────────
+  # IA — Embedding + Reranker (Nomic V2)
+  # ──────────────────────────────────────────────
+
+  embedding:
+    build:
+      context: ./backend/services/embedding
+      dockerfile: Dockerfile
+    restart: always
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${EMBEDDING_GPU:-1}
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    networks: [btv-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ──────────────────────────────────────────────
+  # Backend — FastAPI (Auth + Orquestrador)
+  # ──────────────────────────────────────────────
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      VLLM_URL: http://vllm:8000
+      EMBEDDING_URL: http://embedding:8001
+      RAG_SEARCHER_URL: http://rag-searcher:9000
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://chat.seudominio.com}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - document_uploads:/uploads
+    networks: [btv-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ──────────────────────────────────────────────
+  # Document Processor (Python — chunks + PII)
+  # ──────────────────────────────────────────────
+
+  document-processor:
+    build:
+      context: ./backend/services/document_processor
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      EMBEDDING_URL: http://embedding:8001
+      MAX_WORKERS: ${DOC_PROCESSOR_WORKERS:-4}
+    volumes:
+      - document_uploads:/uploads
+    networks: [btv-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────
+  # RAG Searcher (Rust — busca vetorial)
+  # ──────────────────────────────────────────────
+
+  rag-searcher:
+    build:
+      context: ./backend/services/rag_searcher
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      EMBEDDING_URL: http://embedding:8001
+      RUST_LOG: ${RUST_LOG:-info}
+    networks: [btv-internal]
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ──────────────────────────────────────────────
+  # Training (cron — ciclos de LoRA)
+  # ──────────────────────────────────────────────
+
+  training:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.training
+    restart: always
+    runtime: nvidia
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      VLLM_URL: http://vllm:8000
+      HF_TOKEN: ${HF_TOKEN}
+      LORA_DIR: /lora_adapters
+    volumes:
+      - lora_adapters:/lora_adapters
+      - model_cache:/root/.cache/huggingface
+      - ./backend/training/cron:/etc/cron.d
+    networks: [btv-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ──────────────────────────────────────────────
+  # Frontend — Angular (build) + Nginx (serve)
+  # ──────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        API_URL: ${API_URL:-/api}
+    restart: always
+    networks: [btv-internal]
+    depends_on:
+      - api
+
+  # ──────────────────────────────────────────────
+  # Nginx reverse proxy (único ponto de entrada)
+  # ──────────────────────────────────────────────
+
+  nginx:
+    image: nginx:1.25-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks: [btv-internal, btv-public]
+    depends_on:
+      - frontend
+      - api
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
