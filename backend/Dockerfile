@@ -1,6 +1,6 @@
 # ─── Stage 1: Build Rust ──────────────────────────────────────────────────────
-# Rust 1.82+ necessário para dependências com edition2024 (ex: time-macros)
-FROM rust:1.82-slim AS builder
+# Rust 1.85+ estabilizou edition2024 (lancado fev/2025)
+FROM rust:1.85-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev libpq-dev && \
@@ -21,7 +21,7 @@ RUN mkdir -p crates/api/src && \
 COPY crates crates
 COPY migrations migrations
 
-# Build final (touch para invalidar cache do dummy)
+# Build final
 RUN touch crates/api/src/main.rs && \
     cargo build --release -p api
 
