@@ -1,9 +1,9 @@
 use axum::{
     extract::State,
-    http::{header, StatusCode},
+    http::{header, Request, StatusCode},
     middleware::Next,
-    request::Request,
     response::Response,
+    body::Body,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
@@ -28,14 +28,14 @@ pub struct AuthUser {
 
 pub async fn require_auth(
     State(state): State<AppState>,
-    mut req: Request,
+    mut req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let token = req
         .headers()
         .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
+        .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
+        .and_then(|v: &str| v.strip_prefix("Bearer "))
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let token_data = decode::<Claims>(
