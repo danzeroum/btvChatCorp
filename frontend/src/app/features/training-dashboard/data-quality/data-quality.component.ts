@@ -95,7 +95,7 @@ export class DataQualityComponent implements OnInit {
   }
 
   ngOnInit() {
-    this.trainingService.getDataQuality(this.wsCtx.workspaceId).subscribe(
+    this.trainingService.getDataQuality(this.wsCtx.workspaceId()).subscribe(
       (m) => (this.metrics = m),
     );
   }
