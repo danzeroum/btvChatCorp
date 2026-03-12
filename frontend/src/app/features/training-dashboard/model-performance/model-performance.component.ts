@@ -84,7 +84,7 @@ export class ModelPerformanceComponent implements OnInit {
   }
 
   ngOnInit() {
-    this.trainingService.getBatches(this.wsCtx.workspaceId).subscribe(
+    this.trainingService.getBatches(this.wsCtx.workspaceId()).subscribe(
       (b) => (this.batches = b),
     );
   }

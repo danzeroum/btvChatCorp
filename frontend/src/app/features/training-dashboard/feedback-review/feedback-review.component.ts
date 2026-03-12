@@ -141,14 +141,14 @@ export class FeedbackReviewComponent implements OnInit {
   }
 
   loadStats() {
-    this.trainingService.getStats(this.wsCtx.workspaceId).subscribe(
+    this.trainingService.getStats(this.wsCtx.workspaceId()).subscribe(
       (s) => (this.stats = s),
     );
   }
 
   loadItems() {
     this.trainingService
-      .getPendingItems(this.wsCtx.workspaceId, this.sourceFilter, this.priorityFilter, this.page, this.perPage)
+      .getPendingItems(this.wsCtx.workspaceId(), this.sourceFilter, this.priorityFilter, this.page, this.perPage)
       .subscribe(({ items, total }) => {
         this.items = items.map((i) => ({ ...i, finalAnswer: i.userCorrection || i.assistantResponse }));
         this.total = total;
@@ -184,7 +184,7 @@ export class FeedbackReviewComponent implements OnInit {
 
   triggerTraining() {
     this.triggering = true;
-    this.trainingService.triggerTraining(this.wsCtx.workspaceId).subscribe({
+    this.trainingService.triggerTraining(this.wsCtx.workspaceId()).subscribe({
       next: ({ jobId }) => { alert(`Treinamento iniciado! Job: ${jobId}`); this.triggering = false; },
       error: () => { this.triggering = false; },
     });
