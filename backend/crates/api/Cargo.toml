@@ -1,57 +1,26 @@
 [package]
-name = "api"
+name    = "api"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
 [dependencies]
-# Async
-tokio = { version = "1", features = ["full"] }
-futures = "0.3"
-
-# Web framework
-axum = { version = "0.7", features = ["macros", "multipart"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
-
-# OpenAPI / Swagger
-utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6", features = ["axum"] }
-
-# Rate limiting
-governor = "0.6"
-tower-governor = "0.3"
-
-# Serialização
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# UUID
-uuid = { version = "1", features = ["v4", "serde"] }
-
-# Datas
-chrono = { version = "0.4", features = ["serde"] }
-
-# Hash
-sha2 = "0.10"
-hex = "0.4"
-
-# HMAC (webhooks)
-hmac = "0.12"
-
-# Banco
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "json"] }
-
-# HTTP client (webhooks delivery)
-reqwest = { version = "0.11", features = ["json"] }
-
-# Erros
-thiserror = "1"
-anyhow = "1"
-
-# Tracing
-tracing = "0.1"
-
-# Crates internos
-ai-orchestrator = { path = "../ai-orchestrator" }
-rag-searcher    = { path = "../rag-searcher" }
-document-processor = { path = "../document-processor" }
+axum             = { workspace = true }
+tokio            = { workspace = true }
+serde            = { workspace = true }
+serde_json       = { workspace = true }
+uuid             = { workspace = true }
+chrono           = { workspace = true }
+sqlx             = { workspace = true }
+reqwest          = { workspace = true }
+futures          = { workspace = true }
+anyhow           = { workspace = true }
+tracing          = { workspace = true }
+tracing-subscriber = { workspace = true }
+bcrypt           = { workspace = true }
+jsonwebtoken     = { workspace = true }
+tower-http       = { workspace = true }
+dotenvy          = { workspace = true }
