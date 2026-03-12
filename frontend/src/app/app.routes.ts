@@ -1,9 +1,8 @@
-// src/app/app.routes.ts — SUBSTITUIR O ATUAL
-
 import { Routes } from '@angular/router';
+import { authGuard } from './features/auth/auth.guard';
 
 export const routes: Routes = [
-  // Auth (sem shell)
+  // Auth (sem shell, sem guard)
   {
     path: 'auth',
     children: [
@@ -11,23 +10,24 @@ export const routes: Routes = [
         path: 'login',
         loadComponent: () => import('./features/auth/login.component').then(m => m.LoginComponent),
       },
+      {
+        path: 'register',
+        loadComponent: () => import('./features/auth/register.component').then(m => m.RegisterComponent),
+      },
       { path: '', redirectTo: 'login', pathMatch: 'full' },
     ]
   },
 
-  // App (com shell)
+  // App (com shell, protegido)
   {
     path: '',
+    canActivate: [authGuard],
     loadComponent: () => import('./core/layout/app-shell.component').then(m => m.AppShellComponent),
-    // TODO: canActivate: [authGuard],
     children: [
-      // Chat rápido (sem projeto)
       {
         path: 'chat',
         loadComponent: () => import('./features/chat/chat-container.component').then(m => m.ChatContainerComponent),
       },
-
-      // Projetos
       {
         path: 'projects',
         children: [
@@ -49,29 +49,21 @@ export const routes: Routes = [
           },
         ]
       },
-
-      // Documentos
       {
         path: 'documents',
         loadComponent: () => import('./features/documents/document-viewer.component').then(m => m.DocumentViewerComponent),
       },
-
-      // Treinamento
       {
         path: 'training',
         loadChildren: () => import('./features/training-dashboard/training-dashboard.routes').then(m => m.TRAINING_ROUTES),
       },
-
-      // Admin
       {
         path: 'admin',
         loadChildren: () => import('./features/admin/admin.routes').then(m => m.ADMIN_ROUTES),
       },
-
-      // Default
-      { path: '', redirectTo: 'chat', pathMatch: 'full' },
+      { path: '', redirectTo: 'projects', pathMatch: 'full' },
     ]
   },
 
-  { path: '**', redirectTo: '/chat' },
+  { path: '**', redirectTo: '/auth/login' },
 ];
