@@ -41,11 +41,12 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { db, ollama_url, ollama_model, jwt_secret };
 
+    // Passa o state para v1_routes poder configurar o middleware de auth
     let app = Router::new()
         .route("/health", axum::routing::get(|| async {
             axum::Json(serde_json::json!({ "status": "ok" }))
         }))
-        .nest("/api/v1", routes::v1_routes())
+        .nest("/api/v1", routes::v1_routes(state.clone()))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
