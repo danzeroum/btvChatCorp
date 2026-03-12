@@ -1,10 +1,18 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { FilteredMessage, WorkspaceContext } from '../../shared/models/data-classification.model';
 
 export interface StreamChunk {
   type: 'token' | 'sources' | 'error';
   data: any;
+}
+
+export interface ChatStreamRequest {
+  message: string;
+  project_id?: string;
+  chat_id?: string;
+  classification?: string;
+  pii_detected?: boolean;
+  eligible_for_training?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -13,75 +21,67 @@ export class ChatStreamService {
   private baseUrl = '/api/v1';
 
   /**
-   * Envia mensagem e retorna Observable de chunks SSE (streaming)
+   * Envia mensagem ao backend Rust e faz stream da resposta via SSE (fetch + ReadableStream).
+   * Não usa EventSource pois precisamos de POST com Authorization header.
    */
-  sendAndStream(message: FilteredMessage, workspace: WorkspaceContext): Observable<StreamChunk> {
+  sendAndStream(request: ChatStreamRequest): Observable<StreamChunk> {
     return new Observable(observer => {
       const token = localStorage.getItem('jwt_token');
+      let cancelled = false;
 
-      const eventSource = new EventSource(
-        `${this.baseUrl}/chat/stream?workspace=${workspace.workspaceId}`,
-      );
-
-      // Faz fetch POST para iniciar o stream
       fetch(`${this.baseUrl}/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'X-Workspace-ID': workspace.workspaceId,
+          'Authorization': `Bearer ${token ?? ''}`,
         },
-        body: JSON.stringify({
-          message: message.content,
-          classification: message.classification,
-          pii_detected: message.piiDetected,
-          eligible_for_training: message.eligibleForTraining,
-        }),
+        body: JSON.stringify(request),
       }).then(response => {
-        if (!response.ok) {
+        if (!response.ok || !response.body) {
           observer.error(new Error(`HTTP ${response.status}`));
           return;
         }
 
-        const reader = response.body!.getReader();
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
-        const read = () => {
-          reader.read().then(({ done, value }) => {
+        const pump = (): Promise<void> => {
+          if (cancelled) return Promise.resolve();
+          return reader.read().then(({ done, value }) => {
             if (done) {
               observer.complete();
               return;
             }
 
-            const text = decoder.decode(value);
-            const lines = text.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
 
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') {
-                  observer.complete();
-                  return;
+              if (!line.startsWith('data: ')) continue;
+              const raw = line.slice(6).trim();
+              if (raw === '[DONE]') { observer.complete(); return; }
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed.type === 'sources') {
+                  observer.next({ type: 'sources', data: parsed.data });
+                } else {
+                  observer.next({ type: 'token', data: parsed.content ?? raw });
                 }
-                try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.type === 'sources') {
-                    observer.next({ type: 'sources', data: parsed.data });
-                  } else {
-                    observer.next({ type: 'token', data: parsed.content || '' });
-                  }
-                } catch {
-                  observer.next({ type: 'token', data: data });
-                }
+              } catch {
+                if (raw) observer.next({ type: 'token', data: raw });
               }
             }
-            read();
+            return pump();
           });
         };
-        read();
+
+        pump().catch(err => observer.error(err));
       }).catch(err => observer.error(err));
 
-      return () => eventSource.close();
+      // Teardown: cancela o stream se o Observable for unsubscribed
+      return () => { cancelled = true; };
     });
   }
 }

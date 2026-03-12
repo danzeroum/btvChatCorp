@@ -7,20 +7,12 @@ export interface AuthUser {
   email: string;
   name: string;
   roles: string[];
-  clearanceLevel: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   workspaceId: string;
-}
-
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
 }
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly ACCESS_TOKEN_KEY = 'btv_access_token';
-  private readonly REFRESH_TOKEN_KEY = 'btv_refresh_token';
+  private readonly JWT_KEY = 'jwt_token';
   private readonly USER_KEY = 'btv_user';
 
   private _user = signal<AuthUser | null>(this.loadUserFromStorage());
@@ -30,37 +22,30 @@ export class AuthService {
 
   constructor(private http: HttpClient) {}
 
-  login(email: string, password: string): Observable<AuthTokens> {
+  login(email: string, password: string): Observable<{ access_token: string }> {
+    const body = new URLSearchParams();
+    body.set('username', email);
+    body.set('password', password);
     return this.http
-      .post<AuthTokens>('/api/auth/login', { email, password })
-      .pipe(tap((tokens) => this.storeTokens(tokens)));
-  }
-
-  loginWithSSO(provider: 'google' | 'microsoft' | 'saml'): void {
-    window.location.href = `/api/auth/sso/${provider}`;
-  }
-
-  refreshToken(): Observable<string> {
-    const refresh = localStorage.getItem(this.REFRESH_TOKEN_KEY);
-    return this.http
-      .post<AuthTokens>('/api/auth/refresh', { refreshToken: refresh })
-      .pipe(
-        tap((tokens) => this.storeTokens(tokens)),
-        // retorna apenas o novo access token
-        tap((tokens) => tokens.accessToken)
-      ) as unknown as Observable<string>;
+      .post<{ access_token: string }>('/api/v1/auth/login', body.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      .pipe(tap((res) => {
+        localStorage.setItem(this.JWT_KEY, res.access_token);
+        const user = this.decodeUser(res.access_token);
+        if (user) this._user.set(user);
+      }));
   }
 
   logout(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    localStorage.removeItem(this.JWT_KEY);
     localStorage.removeItem(this.USER_KEY);
     this._user.set(null);
-    window.location.href = '/login';
+    window.location.href = '/auth/login';
   }
 
   getAccessToken(): string | null {
-    return localStorage.getItem(this.ACCESS_TOKEN_KEY);
+    return localStorage.getItem(this.JWT_KEY);
   }
 
   getWorkspaceId(): string | null {
@@ -71,24 +56,32 @@ export class AuthService {
     return this._user()?.roles ?? [];
   }
 
-  getUserClearanceLevel(): 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED' {
-    return this._user()?.clearanceLevel ?? 'INTERNAL';
-  }
-
-  setUser(user: AuthUser): void {
-    this._user.set(user);
-    localStorage.setItem(this.USER_KEY, JSON.stringify(user));
-  }
-
-  private storeTokens(tokens: AuthTokens): void {
-    localStorage.setItem(this.ACCESS_TOKEN_KEY, tokens.accessToken);
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, tokens.refreshToken);
+  private decodeUser(token: string): AuthUser | null {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return {
+        id: payload.sub,
+        email: payload.email ?? '',
+        name: payload.name ?? payload.email ?? '',
+        roles: payload.roles ?? ['user'],
+        workspaceId: payload.workspace_id ?? '',
+      };
+    } catch {
+      return null;
+    }
   }
 
   private loadUserFromStorage(): AuthUser | null {
+    const token = localStorage.getItem(this.JWT_KEY);
+    if (!token) return null;
+    // Verifica expiração
     try {
-      const raw = localStorage.getItem(this.USER_KEY);
-      return raw ? (JSON.parse(raw) as AuthUser) : null;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp && Date.now() / 1000 > payload.exp) {
+        localStorage.removeItem(this.JWT_KEY);
+        return null;
+      }
+      return this.decodeUser(token);
     } catch {
       return null;
     }
