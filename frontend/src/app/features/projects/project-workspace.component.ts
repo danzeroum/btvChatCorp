@@ -1,36 +1,34 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { switchMap } from 'rxjs';
-import { WorkspaceContextService } from '../../core/services/workspace-context.service';
 
-interface Project {
+export interface ProjectInstruction {
   id: string;
   name: string;
-  description: string | null;
-  icon: string | null;
-  color: string | null;
-  status: string;
-  category: string | null;
-  tags: string[];
-  created_at: string;
-  updated_at: string;
+  content: string;
+  trigger_mode: 'always' | 'manual';
+  is_active: boolean;
 }
 
-interface ProjectDocument {
+export interface ProjectMember {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export interface ProjectDocument {
   id: string;
-  document_id: string;
   filename: string;
-  mime_type: string;
-  size_bytes: number;
   processing_status: string;
   chunks_count: number;
+  size_bytes: number;
   linked_at: string;
 }
 
-interface ProjectChat {
+export interface ProjectChat {
   id: string;
   title: string;
   message_count: number;
@@ -38,190 +36,140 @@ interface ProjectChat {
   is_pinned: boolean;
 }
 
-interface ProjectInstruction {
+export interface Project {
   id: string;
   name: string;
-  description: string | null;
-  content: string;
-  trigger_mode: string;
-  is_active: boolean;
-}
-
-interface ProjectMember {
-  user_id: string;
-  name: string;
-  email: string;
-  role: string;
+  description: string;
+  icon: string;
+  color: string;
 }
 
 @Component({
   selector: 'app-project-workspace',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, DatePipe],
   template: `
-    @if (loading()) {
-      <div class="loading-page">Carregando projeto...</div>
-    } @else if (project()) {
-      <div class="workspace">
+    <div class="workspace">
+      @if (loading()) {
+        <div class="loading">Carregando projeto...</div>
+      } @else if (project()) {
 
-        <!-- Header -->
+        <!-- Header do projeto -->
         <div class="ws-header">
-          <div class="ws-identity">
-            <button class="back-link" routerLink="/projects">← Projetos</button>
-            <span class="ws-icon"
-                  [style.background]="(project()!.color || '#6366f1') + '18'"
-                  [style.color]="project()!.color || '#6366f1'">
-              {{ project()!.icon || '📁' }}
-            </span>
+          <div class="ws-title">
+            <span class="proj-icon" [style.background]="project()!.color + '22'">{{ project()!.icon || '📁' }}</span>
             <div>
               <h1>{{ project()!.name }}</h1>
-              @if (project()!.description) {
-                <p class="ws-desc">{{ project()!.description }}</p>
-              }
+              <p>{{ project()!.description }}</p>
             </div>
           </div>
-          <div class="ws-actions">
-            <button class="btn-primary" (click)="newChat()">💬 Novo Chat</button>
-          </div>
+          <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
         </div>
 
         <!-- Tabs -->
-        <nav class="ws-tabs">
+        <div class="ws-tabs">
           @for (tab of tabs; track tab.id) {
-            <button class="tab-btn"
-                    [class.active]="activeTab() === tab.id"
-                    (click)="activeTab.set(tab.id)">
+            <button class="tab-btn" [class.active]="activeTab() === tab.id" (click)="activeTab.set(tab.id)">
               {{ tab.icon }} {{ tab.label }}
-              @if (tab.count != null && tab.count > 0) {
-                <span class="tab-count">{{ tab.count }}</span>
-              }
             </button>
           }
-        </nav>
+        </div>
 
-        <!-- Tab content -->
-        <div class="ws-content">
+        <div class="ws-body">
 
           <!-- Overview -->
           @if (activeTab() === 'overview') {
             <div class="overview-grid">
-              <div class="overview-main">
-
-                <!-- Quick chat -->
-                <div class="quick-chat-card">
-                  <h3>Pergunte algo sobre este projeto</h3>
-                  <div class="quick-input-row">
-                    <input type="text" [(ngModel)]="quickQuestion"
-                           placeholder="Ex: Resuma os riscos encontrados..."
-                           (keydown.enter)="askQuick()" />
-                    <button class="btn-primary" (click)="askQuick()" [disabled]="!quickQuestion.trim()">→</button>
-                  </div>
-                </div>
-
-                <!-- Recent chats -->
-                <div class="section-card">
-                  <div class="section-top">
-                    <h3>💬 Conversas Recentes</h3>
-                    <button class="link-btn" (click)="activeTab.set('chats')">Ver todas →</button>
-                  </div>
-                  @if (chats().length === 0) {
-                    <p class="empty-hint">Nenhuma conversa ainda. Inicie uma acima.</p>
-                  }
-                  @for (chat of chats() | slice:0:5; track chat.id) {
-                    <a [routerLink]="['/projects', project()!.id, 'chat', chat.id]" class="chat-row">
-                      <span class="chat-title">{{ chat.title || 'Conversa sem título' }}</span>
-                      <span class="chat-meta">{{ chat.message_count }} msgs</span>
-                    </a>
-                  }
-                </div>
-
-                <!-- Recent docs -->
-                <div class="section-card">
-                  <div class="section-top">
-                    <h3>📄 Documentos</h3>
-                    <button class="link-btn" (click)="activeTab.set('documents')">Ver todos →</button>
-                  </div>
-                  @for (doc of documents() | slice:0:5; track doc.id) {
-                    <div class="doc-row">
-                      <span class="doc-name">{{ doc.filename }}</span>
-                      <span class="doc-status" [class]="doc.processing_status">
-                        {{ doc.processing_status === 'indexed' ? '✅' : doc.processing_status === 'processing' ? '⏳' : '❌' }}
-                        {{ doc.chunks_count }} chunks
-                      </span>
-                    </div>
-                  }
-                </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ members().length }}</div>
+                <div class="stat-label">Membros</div>
               </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ chats().length }}</div>
+                <div class="stat-label">Conversas</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ documents().length }}</div>
+                <div class="stat-label">Documentos</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ activeInstructions().length }}</div>
+                <div class="stat-label">Instruções ativas</div>
+              </div>
+            </div>
 
-              <!-- Sidebar -->
-              <div class="overview-side">
-                <!-- Instructions -->
-                <div class="side-card">
-                  <h4>📝 Instruções Ativas</h4>
-                  @for (inst of instructions().filter(i => i.is_active); track inst.id) {
-                    <div class="inst-row">
-                      <span>{{ inst.name }}</span>
-                      <span class="inst-mode">{{ inst.trigger_mode === 'always' ? '🔁' : '👆' }}</span>
-                    </div>
-                  }
-                  @if (instructions().filter(i => i.is_active).length === 0) {
-                    <p class="empty-hint">Nenhuma instrução configurada.</p>
-                  }
-                  <button class="link-btn" (click)="activeTab.set('instructions')">Gerenciar →</button>
-                </div>
+            <!-- Instruções ativas -->
+            <div class="section">
+              <div class="section-header">
+                <h3>Instruções ativas</h3>
+                <button class="link-btn" (click)="activeTab.set('instructions')">Gerenciar →</button>
+              </div>
+              @if (activeInstructions().length === 0) {
+                <p class="empty-hint">Nenhuma instrução ativa.</p>
+              } @else {
+                @for (inst of activeInstructions(); track inst.id) {
+                  <div class="inst-item">
+                    <span>{{ inst.name }}</span>
+                    <span class="inst-mode">{{ inst.trigger_mode === 'always' ? '🔁' : '👆' }}</span>
+                  </div>
+                }
+              }
+            </div>
 
-                <!-- Members -->
-                <div class="side-card">
-                  <h4>👥 Equipe</h4>
-                  @for (m of members(); track m.user_id) {
-                    <div class="member-row">
-                      <span class="member-avatar">{{ m.name.slice(0,2) }}</span>
-                      <span class="member-name">{{ m.name }}</span>
-                      <span class="member-role">{{ m.role }}</span>
-                    </div>
-                  }
-                </div>
+            <!-- Membros -->
+            <div class="section">
+              <h3>Membros</h3>
+              <div class="members-list">
+                @for (m of members(); track m.user_id) {
+                  <div class="member-item">
+                    <span class="member-avatar">{{ m.name.slice(0,2) }}</span>
+                    <span class="member-name">{{ m.name }}</span>
+                    <span class="member-role">{{ m.role }}</span>
+                  </div>
+                }
               </div>
             </div>
           }
 
-          <!-- Chats tab -->
+          <!-- Chats -->
           @if (activeTab() === 'chats') {
-            <div class="chats-tab">
-              <div class="tab-actions">
-                <input type="text" [(ngModel)]="chatSearch" placeholder="Buscar conversas..." class="tab-search" />
-                <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
-              </div>
-              @for (chat of filteredChats(); track chat.id) {
-                <a [routerLink]="['/projects', project()!.id, 'chat', chat.id]" class="chat-card">
-                  <div class="chat-card-top">
-                    <h4>{{ chat.title || 'Conversa sem título' }}</h4>
-                    @if (chat.is_pinned) { <span class="pin">📌</span> }
-                  </div>
-                  <div class="chat-card-meta">
-                    <span>{{ chat.message_count }} mensagens</span>
-                    <span>{{ timeAgo(chat.last_message_at) }}</span>
-                  </div>
-                </a>
-              }
-              @if (filteredChats().length === 0) {
-                <div class="empty-tab">
-                  <p>{{ chatSearch ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda.' }}</p>
-                </div>
-              }
+            <div class="tab-toolbar">
+              <input type="text" [(ngModel)]="chatSearch" placeholder="Buscar conversas..." class="search-input" />
+              <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
             </div>
+            @if (filteredChats().length === 0) {
+              <div class="empty-state">
+                <p>{{ chatSearch ? 'Nenhuma conversa encontrada.' : 'Nenhuma conversa ainda. Crie uma!' }}</p>
+              </div>
+            } @else {
+              <div class="chat-list">
+                @for (chat of filteredChats(); track chat.id) {
+                  <a [routerLink]="['/projects', project()!.id, 'chat', chat.id]" class="chat-item">
+                    <div class="chat-info">
+                      <h4>{{ chat.title || 'Conversa sem título' }}</h4>
+                      @if (chat.is_pinned) { <span class="pin">📌</span> }
+                    </div>
+                    <div class="chat-meta">
+                      <span>{{ chat.message_count }} mensagens</span>
+                      <span>{{ timeAgo(chat.last_message_at) }}</span>
+                    </div>
+                  </a>
+                }
+              </div>
+            }
           }
 
-          <!-- Documents tab -->
+          <!-- Documentos -->
           @if (activeTab() === 'documents') {
-            <div class="docs-tab">
-              <div class="tab-actions">
-                <button class="btn-secondary" (click)="uploadDocs()">📎 Adicionar Documentos</button>
-              </div>
-              <table class="docs-table">
-                <thead>
-                  <tr><th>Nome</th><th>Status</th><th>Chunks</th><th>Tamanho</th><th>Adicionado</th></tr>
-                </thead>
+            <div class="tab-toolbar">
+              <h3>Documentos vinculados</h3>
+              <button class="btn-secondary" (click)="uploadDocs()">📎 Adicionar Documentos</button>
+            </div>
+            @if (documents().length === 0) {
+              <p class="empty-hint">Nenhum documento vinculado.</p>
+            } @else {
+              <table class="doc-table">
+                <thead><tr><th>Arquivo</th><th>Status</th><th>Chunks</th><th>Tamanho</th><th>Adicionado</th></tr></thead>
                 <tbody>
                   @for (doc of documents(); track doc.id) {
                     <tr>
@@ -229,323 +177,181 @@ interface ProjectMember {
                       <td><span class="status-badge" [class]="doc.processing_status">{{ doc.processing_status }}</span></td>
                       <td>{{ doc.chunks_count }}</td>
                       <td>{{ formatSize(doc.size_bytes) }}</td>
-                      <td>{{ timeAgo(doc.linked_at) }}</td>
+                      <td>{{ doc.linked_at | date:'dd/MM/yyyy' }}</td>
                     </tr>
                   }
                 </tbody>
               </table>
-            </div>
+            }
           }
 
-          <!-- Instructions tab -->
+          <!-- Instruções -->
           @if (activeTab() === 'instructions') {
-            <div class="instructions-tab">
-              <div class="tab-actions">
-                <button class="btn-primary" (click)="addInstruction()">+ Nova Instrução</button>
-              </div>
-              @for (inst of instructions(); track inst.id) {
-                <div class="instruction-card" [class.active]="inst.is_active">
-                  <div class="inst-header">
-                    <div class="inst-toggle" (click)="toggleInstruction(inst)">
-                      <span class="toggle-dot" [class.on]="inst.is_active"></span>
-                    </div>
-                    <div class="inst-info">
-                      <h4>{{ inst.name }}</h4>
-                      @if (inst.description) { <p>{{ inst.description }}</p> }
-                    </div>
-                    <span class="inst-trigger">{{ inst.trigger_mode === 'always' ? '🔁 Sempre' : '👆 Manual' }}</span>
-                  </div>
-                  <pre class="inst-preview">{{ inst.content | slice:0:300 }}{{ inst.content.length > 300 ? '...' : '' }}</pre>
-                </div>
-              }
-              @if (instructions().length === 0) {
-                <div class="empty-tab">
-                  <p>Nenhuma instrução configurada. Instruções definem como a IA se comporta neste projeto.</p>
-                </div>
-              }
+            <div class="tab-toolbar">
+              <h3>Instruções do Projeto</h3>
+              <button class="btn-primary" (click)="addInstruction()">+ Nova Instrução</button>
             </div>
+            @if (instructions().length === 0) {
+              <p class="empty-hint">Nenhuma instrução cadastrada.</p>
+            } @else {
+              @for (inst of instructions(); track inst.id) {
+                <div class="instruction-card" [class.inactive]="!inst.is_active">
+                  <div class="inst-header">
+                    <span class="inst-name">{{ inst.name }}</span>
+                    <div class="inst-controls">
+                      <span class="mode-badge">{{ inst.trigger_mode }}</span>
+                      <span class="active-badge" [class.on]="inst.is_active">{{ inst.is_active ? 'Ativo' : 'Inativo' }}</span>
+                    </div>
+                  </div>
+                  <p class="inst-content">{{ inst.content }}</p>
+                </div>
+              }
+            }
           }
+
         </div>
-      </div>
-    }
+      } @else {
+        <div class="empty-state">Projeto não encontrado.</div>
+      }
+    </div>
   `,
   styles: [`
-    .workspace { padding: 24px 32px; max-width: 1100px; margin: 0 auto; }
-    .loading-page { padding: 60px; text-align: center; color: var(--color-text-secondary, #888); }
-
-    /* Header */
-    .ws-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-    .ws-identity { display: flex; align-items: center; gap: 14px; }
-    .back-link { background: none; border: none; color: var(--color-text-secondary, #888); cursor: pointer; font-size: 13px; margin-right: 4px; }
-    .ws-icon {
-      width: 48px; height: 48px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; flex-shrink: 0;
-    }
-    h1 { font-size: 20px; font-weight: 700; margin: 0; }
-    .ws-desc { font-size: 13px; color: var(--color-text-secondary, #666); margin: 2px 0 0; }
-
-    /* Tabs */
-    .ws-tabs {
-      display: flex; gap: 4px; margin-bottom: 20px; padding-bottom: 1px;
-      border-bottom: 1px solid var(--color-border, #e2e8f0);
-    }
-    .tab-btn {
-      padding: 8px 14px; border: none; background: none;
-      font-size: 13px; color: var(--color-text-secondary, #888);
-      cursor: pointer; border-radius: 6px 6px 0 0;
-      border-bottom: 2px solid transparent;
-      transition: color 0.12s, border-color 0.12s;
-    }
-    .tab-btn:hover { color: var(--color-text-primary, #111); }
-    .tab-btn.active {
-      color: var(--color-primary, #6366f1);
-      border-bottom-color: var(--color-primary, #6366f1);
-      font-weight: 600;
-    }
-    .tab-count {
-      font-size: 11px; background: var(--color-surface, #f1f5f9);
-      padding: 1px 6px; border-radius: 10px; margin-left: 4px;
-    }
-
-    /* Overview grid */
-    .overview-grid { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-    @media (max-width: 800px) { .overview-grid { grid-template-columns: 1fr; } }
-
-    .quick-chat-card {
-      padding: 20px; background: var(--color-surface, #fff);
-      border: 1px solid var(--color-border, #e2e8f0); border-radius: 12px;
-      margin-bottom: 16px;
-    }
-    .quick-chat-card h3 { font-size: 15px; margin: 0 0 10px; }
-    .quick-input-row { display: flex; gap: 8px; }
-    .quick-input-row input {
-      flex: 1; padding: 10px 12px; border-radius: 8px;
-      border: 1px solid var(--color-border, #d1d5db);
-      font-size: 14px; background: var(--color-background, #fafafa);
-    }
-    .quick-input-row input:focus { outline: none; border-color: var(--color-primary, #6366f1); }
-
-    .section-card {
-      padding: 16px 20px; background: var(--color-surface, #fff);
-      border: 1px solid var(--color-border, #e2e8f0); border-radius: 12px;
-      margin-bottom: 16px;
-    }
-    .section-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .section-top h3 { font-size: 14px; margin: 0; }
-    .link-btn { background: none; border: none; color: var(--color-primary, #6366f1); font-size: 12px; cursor: pointer; }
-    .empty-hint { font-size: 13px; color: var(--color-text-secondary, #aaa); }
-
-    .chat-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 0; border-bottom: 1px solid var(--color-border, #f1f5f9);
-      text-decoration: none; color: inherit; font-size: 13px;
-    }
-    .chat-row:last-child { border-bottom: none; }
-    .chat-row:hover { color: var(--color-primary, #6366f1); }
-    .chat-meta { font-size: 11px; color: var(--color-text-secondary, #aaa); }
-
-    .doc-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 6px 0; font-size: 13px;
-    }
-    .doc-status { font-size: 11px; color: var(--color-text-secondary, #888); }
-
-    /* Side cards */
-    .side-card {
-      padding: 16px; background: var(--color-surface, #fff);
-      border: 1px solid var(--color-border, #e2e8f0); border-radius: 12px;
-      margin-bottom: 12px;
-    }
-    .side-card h4 { font-size: 13px; margin: 0 0 10px; }
-    .inst-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
-    .member-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; }
-    .member-avatar {
-      width: 26px; height: 26px; border-radius: 6px;
-      background: var(--color-primary, #6366f1); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; font-weight: 700; flex-shrink: 0;
-    }
-    .member-role { margin-left: auto; font-size: 11px; color: var(--color-text-secondary, #aaa); }
-
-    /* Chats tab */
-    .tab-actions { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; align-items: center; }
-    .tab-search {
-      flex: 1; max-width: 300px; padding: 8px 12px; border-radius: 8px;
-      border: 1px solid var(--color-border, #d1d5db); font-size: 13px;
-    }
-    .chat-card {
-      display: block; padding: 14px 16px; background: var(--color-surface, #fff);
-      border: 1px solid var(--color-border, #e2e8f0); border-radius: 10px;
-      margin-bottom: 8px; text-decoration: none; color: inherit; transition: border-color 0.12s;
-    }
-    .chat-card:hover { border-color: var(--color-primary, #6366f1); }
-    .chat-card-top { display: flex; justify-content: space-between; align-items: center; }
-    .chat-card-top h4 { font-size: 14px; margin: 0; }
-    .chat-card-meta { font-size: 12px; color: var(--color-text-secondary, #888); margin-top: 4px; display: flex; gap: 12px; }
-
-    /* Docs tab */
-    .docs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .docs-table th { text-align: left; padding: 8px 12px; color: var(--color-text-secondary, #888); font-weight: 500; border-bottom: 1px solid var(--color-border, #e2e8f0); }
-    .docs-table td { padding: 10px 12px; border-bottom: 1px solid var(--color-border, #f1f5f9); }
-    .status-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-    .status-badge.indexed { background: #dcfce7; color: #166534; }
-    .status-badge.processing { background: #fef3c7; color: #92400e; }
-    .status-badge.error { background: #fee2e2; color: #991b1b; }
-
-    /* Instructions tab */
-    .instruction-card {
-      padding: 16px; border: 1px solid var(--color-border, #e2e8f0);
-      border-radius: 10px; margin-bottom: 10px;
-    }
-    .instruction-card.active { border-left: 3px solid var(--color-primary, #6366f1); }
-    .inst-header { display: flex; align-items: flex-start; gap: 12px; }
-    .toggle-dot {
-      width: 20px; height: 12px; border-radius: 6px; background: #d1d5db; cursor: pointer;
-      position: relative; transition: background 0.2s; flex-shrink: 0; margin-top: 4px;
-    }
-    .toggle-dot.on { background: var(--color-primary, #6366f1); }
-    .toggle-dot::after {
-      content: ''; width: 8px; height: 8px; border-radius: 50%;
-      background: #fff; position: absolute; top: 2px; left: 2px; transition: left 0.2s;
-    }
-    .toggle-dot.on::after { left: 10px; }
-    .inst-info { flex: 1; }
-    .inst-info h4 { font-size: 14px; margin: 0; }
-    .inst-info p { font-size: 12px; color: var(--color-text-secondary, #888); margin: 2px 0 0; }
-    .inst-trigger { font-size: 11px; color: var(--color-text-secondary, #aaa); white-space: nowrap; }
-    .inst-preview {
-      font-size: 12px; color: var(--color-text-secondary, #666);
-      background: var(--color-background, #f8fafc); padding: 10px 12px;
-      border-radius: 6px; margin-top: 10px; white-space: pre-wrap; font-family: inherit;
-      max-height: 120px; overflow: hidden;
-    }
-
-    .empty-tab { text-align: center; padding: 40px; color: var(--color-text-secondary, #888); }
-
-    .btn-primary {
-      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
-      background: var(--color-primary, #6366f1); color: #fff; border: none; cursor: pointer;
-    }
-    .btn-secondary {
-      padding: 8px 16px; border-radius: 8px; font-size: 13px;
-      background: transparent; border: 1px solid var(--color-border, #d1d5db);
-      color: var(--color-text-primary, #111); cursor: pointer;
-    }
+    .workspace { height: 100vh; overflow-y: auto; background: #0f0f0f; color: #f0f0f0; }
+    .loading, .empty-state { text-align: center; padding: 4rem; color: #888; }
+    .ws-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; border-bottom: 1px solid #2a2a2a; }
+    .ws-title { display: flex; align-items: center; gap: 14px; }
+    .proj-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+    .ws-title h1 { margin: 0 0 4px; font-size: 1.25rem; }
+    .ws-title p { margin: 0; color: #888; font-size: 0.85rem; }
+    .btn-primary { background: #6366f1; color: #fff; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; text-decoration: none; }
+    .btn-secondary { background: #2a2a2a; color: #ccc; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; }
+    .ws-tabs { display: flex; gap: 4px; padding: 0 2rem; border-bottom: 1px solid #2a2a2a; }
+    .tab-btn { background: none; border: none; color: #888; padding: 12px 16px; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: color 0.15s; }
+    .tab-btn:hover { color: #ccc; }
+    .tab-btn.active { color: #fff; border-bottom-color: #6366f1; }
+    .ws-body { padding: 1.5rem 2rem; }
+    .overview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.25rem; text-align: center; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; }
+    .stat-label { font-size: 0.8rem; color: #888; margin-top: 4px; }
+    .section { margin-bottom: 2rem; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+    .section h3, .section-header h3 { margin: 0; font-size: 1rem; }
+    .link-btn { background: none; border: none; color: #6366f1; cursor: pointer; font-size: 0.85rem; }
+    .empty-hint { color: #666; font-size: 0.85rem; }
+    .inst-item { display: flex; justify-content: space-between; padding: 8px 12px; background: #1e1e1e; border-radius: 6px; margin-bottom: 6px; font-size: 0.9rem; }
+    .inst-mode { opacity: 0.6; }
+    .members-list { display: flex; flex-direction: column; gap: 8px; }
+    .member-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #1e1e1e; border-radius: 8px; }
+    .member-avatar { width: 32px; height: 32px; border-radius: 8px; background: #6366f1; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+    .member-name { flex: 1; font-size: 0.9rem; }
+    .member-role { font-size: 0.75rem; color: #888; }
+    .tab-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .tab-toolbar h3 { margin: 0; font-size: 1rem; }
+    .search-input { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 8px 14px; color: #f0f0f0; font-size: 0.85rem; }
+    .chat-list { display: flex; flex-direction: column; gap: 8px; }
+    .chat-item { display: block; padding: 12px 16px; background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; text-decoration: none; color: inherit; transition: border-color 0.15s; }
+    .chat-item:hover { border-color: #6366f1; }
+    .chat-info { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .chat-info h4 { margin: 0; font-size: 0.9rem; }
+    .chat-meta { display: flex; gap: 16px; font-size: 0.75rem; color: #888; }
+    .pin { font-size: 0.8rem; }
+    .doc-table { width: 100%; border-collapse: collapse; background: #1e1e1e; border-radius: 10px; overflow: hidden; border: 1px solid #2a2a2a; }
+    .doc-table th { padding: 10px 14px; text-align: left; font-size: 0.8rem; color: #777; background: #161616; border-bottom: 1px solid #2a2a2a; }
+    .doc-table td { padding: 10px 14px; font-size: 0.85rem; border-bottom: 1px solid #1a1a1a; }
+    .doc-name-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-badge { padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+    .status-badge.completed { background: #22c55e22; color: #22c55e; }
+    .status-badge.processing { background: #6366f122; color: #818cf8; }
+    .status-badge.pending { background: #f59e0b22; color: #f59e0b; }
+    .status-badge.failed { background: #ef444422; color: #ef4444; }
+    .instruction-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1rem; margin-bottom: 10px; }
+    .instruction-card.inactive { opacity: 0.5; }
+    .inst-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .inst-name { font-weight: 500; font-size: 0.9rem; }
+    .inst-controls { display: flex; gap: 8px; }
+    .mode-badge { font-size: 0.75rem; background: #2a2a2a; padding: 2px 8px; border-radius: 10px; color: #aaa; }
+    .active-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #444; color: #888; }
+    .active-badge.on { background: #22c55e22; color: #22c55e; }
+    .inst-content { font-size: 0.85rem; color: #999; margin: 0; }
   `]
 })
 export class ProjectWorkspaceComponent implements OnInit {
   private route = inject(ActivatedRoute);
-  private router = inject(Router);
   private http = inject(HttpClient);
-  private wsCtx = inject(WorkspaceContextService);
 
   loading = signal(true);
   project = signal<Project | null>(null);
-  documents = signal<ProjectDocument[]>([]);
-  chats = signal<ProjectChat[]>([]);
-  instructions = signal<ProjectInstruction[]>([]);
   members = signal<ProjectMember[]>([]);
-  activeTab = signal('overview');
-  quickQuestion = '';
+  chats = signal<ProjectChat[]>([]);
+  documents = signal<ProjectDocument[]>([]);
+  instructions = signal<ProjectInstruction[]>([]);
+  activeTab = signal<string>('overview');
   chatSearch = '';
 
-  tabs = [
-    { id: 'overview', icon: '📊', label: 'Visão Geral', count: null as number | null },
-    { id: 'chats', icon: '💬', label: 'Conversas', count: 0 },
-    { id: 'documents', icon: '📄', label: 'Documentos', count: 0 },
-    { id: 'instructions', icon: '📝', label: 'Instruções', count: null },
-  ];
-
+  // Filtros como computed — sem arrow functions no template
+  activeInstructions = computed(() => this.instructions().filter(i => i.is_active));
   filteredChats = computed(() => {
     const q = this.chatSearch.toLowerCase();
-    if (!q) return this.chats();
-    return this.chats().filter(c => (c.title || '').toLowerCase().includes(q));
+    return q ? this.chats().filter(c => c.title?.toLowerCase().includes(q)) : this.chats();
   });
 
+  tabs = [
+    { id: 'overview', label: 'Visão Geral', icon: '🏠' },
+    { id: 'chats', label: 'Chats', icon: '💬' },
+    { id: 'documents', label: 'Documentos', icon: '📄' },
+    { id: 'instructions', label: 'Instruções', icon: '📋' },
+  ];
+
   ngOnInit() {
-    this.route.params.pipe(
-      switchMap(params => {
-        const id = params['id'];
-        this.loading.set(true);
-        const headers = { 'X-Workspace-ID': this.wsCtx.workspaceId() };
-        return this.http.get<Project>(`/api/v1/projects/${id}`, { headers });
-      })
-    ).subscribe({
-      next: (proj) => {
-        this.project.set(proj);
-        this.loadRelated(proj.id);
+    const id = this.route.snapshot.paramMap.get('id') || '';
+    this.loadProject(id);
+  }
+
+  loadProject(id: string) {
+    this.http.get<Project>(`/api/v1/projects/${id}`).subscribe({
+      next: p => {
+        this.project.set(p);
+        this.loading.set(false);
+        this.loadProjectData(id);
       },
-      error: () => { this.loading.set(false); }
+      error: () => this.loading.set(false)
     });
   }
 
-  private loadRelated(projectId: string) {
-    const h = { 'X-Workspace-ID': this.wsCtx.workspaceId() };
-
-    // Load docs, chats, instructions, members in parallel
-    this.http.get<ProjectDocument[]>(`/api/v1/projects/${projectId}/documents`, { headers: h })
-      .subscribe({ next: d => { this.documents.set(d); this.tabs[2].count = d.length; } });
-
-    this.http.get<ProjectChat[]>(`/api/v1/projects/${projectId}/chats`, { headers: h })
-      .subscribe({ next: c => { this.chats.set(c); this.tabs[1].count = c.length; } });
-
-    this.http.get<ProjectInstruction[]>(`/api/v1/projects/${projectId}/instructions`, { headers: h })
-      .subscribe({ next: i => this.instructions.set(i) });
-
-    this.http.get<ProjectMember[]>(`/api/v1/projects/${projectId}/members`, { headers: h })
-      .subscribe({
-        next: m => this.members.set(m),
-        complete: () => this.loading.set(false)
-      });
+  loadProjectData(id: string) {
+    this.http.get<{ members: ProjectMember[] }>(`/api/v1/projects/${id}/members`).subscribe(r => this.members.set(r.members));
+    this.http.get<{ chats: ProjectChat[] }>(`/api/v1/projects/${id}/chats`).subscribe(r => this.chats.set(r.chats));
+    this.http.get<{ documents: ProjectDocument[] }>(`/api/v1/projects/${id}/documents`).subscribe(r => this.documents.set(r.documents));
+    this.http.get<{ instructions: ProjectInstruction[] }>(`/api/v1/projects/${id}/instructions`).subscribe(r => this.instructions.set(r.instructions));
   }
 
   newChat() {
-    this.router.navigate(['/projects', this.project()!.id, 'chat', 'new']);
-  }
-
-  askQuick() {
-    if (!this.quickQuestion.trim()) return;
-    // Navigate to new chat with pre-filled question
-    this.router.navigate(['/projects', this.project()!.id, 'chat', 'new'], {
-      queryParams: { q: this.quickQuestion }
+    const pid = this.project()?.id;
+    if (!pid) return;
+    this.http.post<{ id: string }>(`/api/v1/projects/${pid}/chats`, { title: 'Nova Conversa' }).subscribe({
+      next: res => window.location.href = `/projects/${pid}/chat/${res.id}`,
     });
   }
 
-  toggleInstruction(inst: ProjectInstruction) {
-    inst.is_active = !inst.is_active;
-    const h = { 'X-Workspace-ID': this.wsCtx.workspaceId() };
-    this.http.put(`/api/v1/projects/${this.project()!.id}/instructions/${inst.id}`, {
-      is_active: inst.is_active
-    }, { headers: h }).subscribe();
-  }
-
-  uploadDocs() {
-    // TODO: open upload modal
-    alert('Upload modal - a implementar');
-  }
-
-  addInstruction() {
-    // TODO: open instruction editor
-    alert('Editor de instrução - a implementar');
-  }
-
-  formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  }
+  uploadDocs() { window.location.href = '/documents'; }
+  addInstruction() { /* TODO: modal */ }
 
   timeAgo(dateStr: string): string {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'agora';
-    if (mins < 60) return `${mins}min`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `${days}d`;
-    return `${Math.floor(days / 30)}m`;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'agora';
+    if (m < 60) return `${m}m atrás`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h atrás`;
+    return `${Math.floor(h / 24)}d atrás`;
+  }
+
+  formatSize(bytes: number): string {
+    if (!bytes) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   }
 }
