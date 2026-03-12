@@ -1,6 +1,5 @@
 # ─── Stage 1: Build Rust ──────────────────────────────────────────────────────
-# Rust 1.85+ estabilizou edition2024 (lancado fev/2025)
-FROM rust:1.85-slim AS builder
+FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev libpq-dev && \
@@ -8,16 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copia manifests primeiro — camada de cache para dependências
+# Copia manifests + lockfile para cache de dependencias
 COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
 COPY crates/api/Cargo.toml crates/api/Cargo.toml
 
-# Dummy main para compilar deps em cache antes do código real
+# Dummy main para compilar deps em cache
 RUN mkdir -p crates/api/src && \
     echo 'fn main() {}' > crates/api/src/main.rs && \
     cargo build --release -p api 2>/dev/null || true
 
-# Copia código fonte real
+# Copia codigo fonte real
 COPY crates crates
 COPY migrations migrations
 
@@ -25,7 +25,7 @@ COPY migrations migrations
 RUN touch crates/api/src/main.rs && \
     cargo build --release -p api
 
-# ─── Stage 2: Runtime mínimo ─────────────────────────────────────────────────
+# ─── Stage 2: Runtime minimo ─────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
