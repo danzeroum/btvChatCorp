@@ -1,4 +1,5 @@
 # ─── Stage 1: Build Rust ──────────────────────────────────────────────────────
+# rust:latest = 1.88+ que suporta edition2024
 FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -7,9 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copia manifests + lockfile para cache de dependencias
+# Copia manifests para cache de dependencias
 COPY Cargo.toml Cargo.toml
-COPY Cargo.lock Cargo.lock
 COPY crates/api/Cargo.toml crates/api/Cargo.toml
 
 # Dummy main para compilar deps em cache
