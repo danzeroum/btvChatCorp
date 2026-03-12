@@ -32,17 +32,25 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     tracing::info!("Banco conectado. Rodando migrations...");
-    // sqlx::migrate! resolve relativo ao CRATE ROOT (onde esta o Cargo.toml do crate)
-    // Crate root = /app/crates/api/
-    // ../../migrations = /app/migrations  OK
     sqlx::migrate!("../../migrations").run(&db).await?;
     tracing::info!("Migrations OK");
 
-    let ollama_url   = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
-    let ollama_model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2:3b".into());
+    let ollama_url   = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+    let ollama_model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "mistral:latest".into());
     let jwt_secret   = std::env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
 
-    let state = AppState { db, ollama_url, ollama_model, jwt_secret };
+    // Basic auth para LLM externa: combina OLLAMA_AUTH_USER e OLLAMA_AUTH_PASS
+    let ollama_auth = match (
+        std::env::var("OLLAMA_AUTH_USER").ok(),
+        std::env::var("OLLAMA_AUTH_PASS").ok(),
+    ) {
+        (Some(u), Some(p)) if !u.is_empty() => Some(format!("{u}:{p}")),
+        _ => None,
+    };
+
+    tracing::info!("LLM: {} | model: {} | auth: {}", ollama_url, ollama_model, ollama_auth.is_some());
+
+    let state = AppState { db, ollama_url, ollama_model, ollama_auth, jwt_secret };
 
     let app = Router::new()
         .route("/health", axum::routing::get(|| async {
