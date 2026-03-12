@@ -1,7 +1,4 @@
 # BTV Chat Corp — Docker Compose
-# Stack: Rust/Axum API + Angular + PostgreSQL + Qdrant
-# LLM: externa em https://api.buildtovalue.cloud (mistral:latest)
-
 networks:
   btv-net:
     driver: bridge
@@ -13,7 +10,6 @@ volumes:
 
 services:
 
-  # ─── Banco de Dados ──────────────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
     restart: always
@@ -30,36 +26,28 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Vetor DB (RAG) ─────────────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:v1.9.0
     restart: always
     volumes:
       - qdrant_data:/qdrant/storage
     networks: [btv-net]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
-  # ─── Backend Rust/Axum ────────────────────────────────────────────────────
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: always
     environment:
-      DATABASE_URL:      postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
-      # LLM externa na VPS buildtovalue.cloud (compativel OpenAI /v1/chat/completions)
-      OLLAMA_URL:        ${OLLAMA_URL:-https://api.buildtovalue.cloud}
-      OLLAMA_MODEL:      ${OLLAMA_MODEL:-mistral:latest}
-      OLLAMA_AUTH_USER:  ${OLLAMA_AUTH_USER:-buildtovalue}
-      OLLAMA_AUTH_PASS:  ${OLLAMA_AUTH_PASS:-BTV_secure_2026!}
-      JWT_SECRET:        ${JWT_SECRET}
-      UPLOAD_DIR:        /uploads
-      RUST_LOG:          ${RUST_LOG:-info}
+      DATABASE_URL:     postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      # Usa OLLAMA_HOST do .env (compativel com frontend)
+      OLLAMA_URL:       ${OLLAMA_HOST:-https://api.buildtovalue.cloud}
+      OLLAMA_MODEL:     ${OLLAMA_MODEL:-mistral:latest}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-buildtovalue}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-BTV_secure_2026!}
+      JWT_SECRET:       ${JWT_SECRET}
+      UPLOAD_DIR:       /uploads
+      RUST_LOG:         ${RUST_LOG:-info}
     volumes:
       - document_uploads:/uploads
     networks: [btv-net]
@@ -73,7 +61,6 @@ services:
       retries: 3
       start_period: 60s
 
-  # ─── Frontend Angular + Nginx ────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -83,7 +70,6 @@ services:
     depends_on:
       - api
 
-  # ─── Proxy reverso ──────────────────────────────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     restart: always
