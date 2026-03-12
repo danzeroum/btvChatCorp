@@ -1,23 +1,19 @@
 pub mod auth;
-pub mod projects;
 pub mod chats;
 pub mod documents;
+pub mod projects;
 
-use axum::Router;
-use axum::middleware as axum_mw;
-use crate::state::AppState;
-use crate::middleware::auth::require_auth;
+use axum::{middleware as mw, Router};
+use crate::{middleware::auth::require_auth, state::AppState};
 
 pub fn v1_routes() -> Router<AppState> {
-    Router::new()
-        .merge(auth::routes())
-        .merge(protected_routes())
-}
+    let public = auth::routes();
 
-fn protected_routes() -> Router<AppState> {
-    Router::new()
+    let protected = Router::new()
         .merge(projects::routes())
         .merge(chats::routes())
         .merge(documents::routes())
-        .layer(axum_mw::from_fn(require_auth))
+        .layer(mw::from_fn_with_state(AppState::placeholder(), require_auth));
+
+    Router::new().merge(public).merge(protected)
 }
