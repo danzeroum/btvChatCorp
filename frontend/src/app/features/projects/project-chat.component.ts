@@ -1,27 +1,16 @@
-import { Component, OnInit, inject, signal, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { WorkspaceContextService } from '../../core/services/workspace-context.service';
-import { DataFilterService } from '../../core/services/data-filter.service';
 import { FeedbackCollectorService } from '../../core/services/feedback-collector.service';
 
-interface ChatMessage {
+interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources?: RagSource[];
-  timestamp: string;
-  loading?: boolean;
-  feedback?: 'positive' | 'negative' | null;
-}
-
-interface RagSource {
-  documentName: string;
-  sectionTitle: string | null;
-  score: number;
-  snippet: string;
+  timestamp: Date;
+  feedback?: 'positive' | 'negative';
 }
 
 @Component({
@@ -29,394 +18,119 @@ interface RagSource {
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <div class="project-chat">
-
-      <!-- Header -->
+    <div class="chat-page">
       <div class="chat-header">
-        <div class="header-left">
-          <button class="back-btn" [routerLink]="['/projects', projectId]">← {{ projectName() }}</button>
-          <h2>{{ chatTitle() }}</h2>
-        </div>
-        <div class="header-right">
-          <!-- Context badges -->
-          <span class="context-badge" title="Documentos do projeto">📄 {{ docCount() }} docs</span>
-          @if (activeInstruction()) {
-            <span class="context-badge instruction" [title]="activeInstruction()!">📝 {{ activeInstruction() }}</span>
-          }
-        </div>
+        <a [routerLink]="['/projects', projectId()]">← Projeto</a>
+        <span class="chat-title">{{ chatTitle() }}</span>
       </div>
 
-      <!-- Messages -->
-      <div class="messages-area" #scrollArea>
-        @if (messages().length === 0 && !isStreaming()) {
-          <div class="welcome-state">
-            <span class="welcome-icon">{{ projectIcon() || '🤖' }}</span>
-            <h3>{{ projectName() }}</h3>
-            <p>Faça uma pergunta sobre os documentos deste projeto.</p>
-            @if (suggestedQuestions.length > 0) {
-              <div class="suggestions">
-                @for (q of suggestedQuestions; track q) {
-                  <button class="suggestion-chip" (click)="sendMessage(q)">{{ q }}</button>
-                }
+      <div class="messages" #msgContainer>
+        @for (msg of messages(); track msg.id) {
+          <div class="message" [class]="msg.role">
+            <div class="bubble">{{ msg.content }}</div>
+            @if (msg.role === 'assistant') {
+              <div class="msg-actions">
+                <button (click)="sendFeedback(msg, 'positive')" [class.active]="msg.feedback === 'positive'">👍</button>
+                <button (click)="sendFeedback(msg, 'negative')" [class.active]="msg.feedback === 'negative'">👎</button>
               </div>
             }
           </div>
         }
-
-        @for (msg of messages(); track msg.id) {
-          <div class="message" [class]="msg.role">
-            <div class="msg-avatar">{{ msg.role === 'user' ? '👤' : projectIcon() || '🤖' }}</div>
-            <div class="msg-body">
-              <div class="msg-content" [class.streaming]="msg.loading">
-                {{ msg.content }}
-                @if (msg.loading) { <span class="cursor">|</span> }
-              </div>
-
-              <!-- Sources -->
-              @if (msg.role === 'assistant' && msg.sources?.length && !msg.loading) {
-                <div class="msg-sources">
-                  <button class="sources-toggle" (click)="msg._showSources = !msg._showSources">
-                    📋 {{ msg.sources!.length }} fonte(s) {{ msg._showSources ? '▲' : '▼' }}
-                  </button>
-                  @if (msg._showSources) {
-                    <div class="sources-list">
-                      @for (src of msg.sources; track src.documentName + src.score) {
-                        <div class="source-item">
-                          <span class="source-name">{{ src.documentName }}</span>
-                          @if (src.sectionTitle) {
-                            <span class="source-section">› {{ src.sectionTitle }}</span>
-                          }
-                          <span class="source-score">{{ (src.score * 100).toFixed(0) }}%</span>
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-              }
-
-              <!-- Feedback -->
-              @if (msg.role === 'assistant' && !msg.loading) {
-                <div class="msg-feedback">
-                  <button class="fb-btn" [class.active]="msg.feedback === 'positive'"
-                          (click)="giveFeedback(msg, 'positive')">👍</button>
-                  <button class="fb-btn" [class.active]="msg.feedback === 'negative'"
-                          (click)="giveFeedback(msg, 'negative')">👎</button>
-                </div>
-              }
-
-              <span class="msg-time">{{ msg.timestamp | date:'HH:mm' }}</span>
-            </div>
-          </div>
+        @if (streaming()) {
+          <div class="message assistant"><div class="bubble thinking">⏳ Pensando...</div></div>
         }
       </div>
 
-      <!-- Input -->
-      <div class="input-area">
-        <textarea
-          [(ngModel)]="inputText"
-          (keydown.enter)="onEnter($event)"
-          [disabled]="isStreaming()"
-          [placeholder]="'Pergunte sobre ' + projectName() + '...'"
-          rows="1"
-          #inputEl></textarea>
-        <button class="send-btn"
-                (click)="sendMessage(inputText)"
-                [disabled]="isStreaming() || !inputText.trim()">
-          {{ isStreaming() ? '...' : '➤' }}
-        </button>
+      <div class="input-bar">
+        <textarea [(ngModel)]="inputText"
+                  placeholder="Mensagem..."
+                  rows="1"
+                  (keydown)="onKeydown($event)"></textarea>
+        <button class="send-btn" [disabled]="!inputText.trim() || streaming()" (click)="sendMessage()">↑</button>
       </div>
     </div>
   `,
   styles: [`
-    .project-chat { display: flex; flex-direction: column; height: 100%; }
-
-    .chat-header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 20px; border-bottom: 1px solid var(--color-border, #e2e8f0);
-      background: var(--color-surface, #fff); flex-shrink: 0;
-    }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .back-btn {
-      background: none; border: none; color: var(--color-text-secondary, #888);
-      cursor: pointer; font-size: 13px;
-    }
-    .chat-header h2 { font-size: 15px; font-weight: 600; margin: 0; }
-    .header-right { display: flex; gap: 8px; }
-    .context-badge {
-      font-size: 11px; padding: 3px 10px; border-radius: 20px;
-      background: var(--color-surface, #f1f5f9);
-      border: 1px solid var(--color-border, #e2e8f0);
-      color: var(--color-text-secondary, #666);
-    }
-    .context-badge.instruction { background: rgba(99,102,241,0.08); color: var(--color-primary, #6366f1); }
-
-    /* Messages */
-    .messages-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-
-    .welcome-state {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      text-align: center; padding: 60px 20px; flex: 1;
-    }
-    .welcome-icon { font-size: 48px; margin-bottom: 12px; }
-    .welcome-state h3 { font-size: 18px; margin: 0 0 4px; }
-    .welcome-state p { font-size: 14px; color: var(--color-text-secondary, #888); margin: 0 0 20px; }
-    .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-    .suggestion-chip {
-      padding: 8px 16px; border-radius: 20px; font-size: 13px;
-      border: 1px solid var(--color-border, #d1d5db);
-      background: var(--color-surface, #fff); cursor: pointer;
-      color: var(--color-text-primary, #333);
-      transition: border-color 0.12s;
-    }
-    .suggestion-chip:hover { border-color: var(--color-primary, #6366f1); color: var(--color-primary, #6366f1); }
-
-    .message { display: flex; gap: 10px; max-width: 85%; }
-    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+    .chat-page { display: flex; flex-direction: column; height: 100vh; background: #0f0f0f; color: #f0f0f0; }
+    .chat-header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #2a2a2a; }
+    .chat-header a { color: #888; text-decoration: none; font-size: 0.85rem; }
+    .chat-title { font-weight: 500; }
+    .messages { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+    .message { display: flex; flex-direction: column; max-width: 75%; }
+    .message.user { align-self: flex-end; align-items: flex-end; }
     .message.assistant { align-self: flex-start; }
-
-    .msg-avatar { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
-    .msg-body { display: flex; flex-direction: column; gap: 4px; }
-
-    .msg-content {
-      padding: 10px 14px; border-radius: 12px; font-size: 14px;
-      line-height: 1.6; white-space: pre-wrap;
-    }
-    .message.user .msg-content {
-      background: var(--color-primary, #6366f1); color: #fff;
-      border-radius: 12px 4px 12px 12px;
-    }
-    .message.assistant .msg-content {
-      background: var(--color-surface, #f8fafc);
-      border: 1px solid var(--color-border, #e2e8f0);
-      border-radius: 4px 12px 12px 12px;
-      color: var(--color-text-primary, #333);
-    }
-    .cursor { animation: blink 0.8s infinite; }
-    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-
-    /* Sources */
-    .msg-sources { margin-top: 4px; }
-    .sources-toggle {
-      background: none; border: none; font-size: 12px;
-      color: var(--color-primary, #6366f1); cursor: pointer;
-    }
-    .sources-list {
-      margin-top: 6px; padding: 8px 12px;
-      background: var(--color-background, #fafafa); border-radius: 8px;
-      border: 1px solid var(--color-border, #e2e8f0);
-    }
-    .source-item { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
-    .source-name { font-weight: 500; }
-    .source-section { color: var(--color-text-secondary, #888); }
-    .source-score { margin-left: auto; color: var(--color-text-secondary, #aaa); }
-
-    /* Feedback */
-    .msg-feedback { display: flex; gap: 4px; }
-    .fb-btn {
-      background: none; border: 1px solid transparent; cursor: pointer;
-      font-size: 14px; padding: 2px 6px; border-radius: 6px; opacity: 0.4;
-      transition: opacity 0.12s;
-    }
-    .fb-btn:hover { opacity: 0.8; }
-    .fb-btn.active { opacity: 1; border-color: var(--color-border, #d1d5db); }
-
-    .msg-time { font-size: 11px; color: var(--color-text-secondary, #aaa); }
-    .message.user .msg-time { text-align: right; }
-
-    /* Input */
-    .input-area {
-      display: flex; gap: 8px; padding: 12px 20px;
-      border-top: 1px solid var(--color-border, #e2e8f0);
-      background: var(--color-surface, #fff); align-items: flex-end;
-    }
-    textarea {
-      flex: 1; padding: 10px 14px; border-radius: 10px;
-      border: 1px solid var(--color-border, #d1d5db);
-      font-size: 14px; resize: none; font-family: inherit;
-      background: var(--color-background, #fafafa);
-      color: var(--color-text-primary, #333);
-      min-height: 20px; max-height: 120px;
-    }
-    textarea:focus { outline: none; border-color: var(--color-primary, #6366f1); }
-    .send-btn {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: var(--color-primary, #6366f1); color: #fff;
-      border: none; cursor: pointer; font-size: 16px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .bubble { padding: 12px 16px; border-radius: 14px; font-size: 0.9rem; line-height: 1.5; }
+    .message.user .bubble { background: #6366f1; color: #fff; border-bottom-right-radius: 4px; }
+    .message.assistant .bubble { background: #1e1e1e; border-bottom-left-radius: 4px; }
+    .thinking { opacity: 0.6; font-style: italic; }
+    .msg-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .msg-actions button { background: none; border: none; cursor: pointer; font-size: 0.9rem; opacity: 0.5; transition: opacity 0.15s; }
+    .msg-actions button:hover, .msg-actions button.active { opacity: 1; }
+    .input-bar { padding: 1rem 1.5rem; border-top: 1px solid #2a2a2a; display: flex; gap: 10px; align-items: flex-end; }
+    textarea { flex: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 10px 14px; color: #f0f0f0; resize: none; font-size: 0.9rem; }
+    .send-btn { background: #6366f1; color: #fff; border: none; border-radius: 10px; width: 40px; height: 40px; cursor: pointer; font-size: 1.1rem; }
+    .send-btn:disabled { opacity: 0.4; cursor: default; }
   `]
 })
-export class ProjectChatComponent implements OnInit, AfterViewChecked {
-  @ViewChild('scrollArea') scrollArea!: ElementRef;
-  @ViewChild('inputEl') inputEl!: ElementRef;
-
+export class ProjectChatComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private http = inject(HttpClient);
-  private wsCtx = inject(WorkspaceContextService);
-  private dataFilter = inject(DataFilterService);
   private feedbackCollector = inject(FeedbackCollectorService);
 
-  projectId = '';
-  chatId = '';
-  projectName = signal('Projeto');
-  projectIcon = signal('📁');
+  projectId = signal('');
+  chatId = signal('');
   chatTitle = signal('Nova Conversa');
-  docCount = signal(0);
-  activeInstruction = signal<string | null>(null);
-
-  messages = signal<(ChatMessage & { _showSources?: boolean })[]>([]);
+  messages = signal<Message[]>([]);
   inputText = '';
-  isStreaming = signal(false);
-
-  suggestedQuestions = [
-    'Resuma os principais pontos deste projeto',
-    'Quais riscos foram identificados?',
-    'Liste os documentos disponíveis',
-  ];
-
-  private shouldScroll = false;
+  streaming = signal(false);
 
   ngOnInit() {
-    this.projectId = this.route.snapshot.params['id'];
-    this.chatId = this.route.snapshot.params['chatId'];
-
-    // Load project info
-    const h = { 'X-Workspace-ID': this.wsCtx.workspaceId() };
-    this.http.get<any>(`/api/v1/projects/${this.projectId}`, { headers: h }).subscribe(p => {
-      this.projectName.set(p.name);
-      this.projectIcon.set(p.icon || '📁');
-    });
-    this.http.get<any>(`/api/v1/projects/${this.projectId}/stats`, { headers: h }).subscribe(s => {
-      this.docCount.set(s?.totalDocuments ?? 0);
-    });
-
-    // Pre-fill from query param
-    const q = this.route.snapshot.queryParams['q'];
-    if (q) {
-      setTimeout(() => this.sendMessage(q), 300);
-    }
+    this.projectId.set(this.route.snapshot.paramMap.get('id') || '');
+    this.chatId.set(this.route.snapshot.paramMap.get('chatId') || '');
   }
 
-  ngAfterViewChecked() {
-    if (this.shouldScroll) {
-      this.scrollToBottom();
-      this.shouldScroll = false;
-    }
-  }
-
-  onEnter(event: KeyboardEvent) {
-    if (!event.shiftKey) {
+  onKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      this.sendMessage(this.inputText);
+      this.sendMessage();
     }
   }
 
-  sendMessage(text: string) {
-    const msg = (text || '').trim();
-    if (!msg || this.isStreaming()) return;
+  sendMessage() {
+    const text = this.inputText.trim();
+    if (!text || this.streaming()) return;
     this.inputText = '';
-    this.isStreaming.set(true);
-    this.shouldScroll = true;
+    this.streaming.set(true);
 
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: msg,
-      timestamp: new Date().toISOString(),
-    };
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() };
+    this.messages.update(m => [...m, userMsg]);
 
-    const assistantMsg: ChatMessage & { _showSources?: boolean } = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: '',
-      sources: [],
-      timestamp: new Date().toISOString(),
-      loading: true,
-    };
-
-    this.messages.update(m => [...m, userMsg, assistantMsg]);
-
-    // Build conversation history
-    const history = this.messages()
-      .filter(m => !m.loading)
-      .map(m => ({ role: m.role, content: m.content }));
-
-    const token = localStorage.getItem('jwt_token');
-    fetch('/api/v1/chat/completions/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-Workspace-ID': this.wsCtx.workspaceId(),
+    this.http.post<{ answer: string; interaction_id: string }>('/api/v1/chat/complete', {
+      message: text,
+      project_id: this.projectId(),
+      chat_id: this.chatId(),
+    }).subscribe({
+      next: res => {
+        const assistantMsg: Message = { id: res.interaction_id || crypto.randomUUID(), role: 'assistant', content: res.answer, timestamp: new Date() };
+        this.messages.update(m => [...m, assistantMsg]);
+        this.streaming.set(false);
       },
-      body: JSON.stringify({
-        messages: history,
-        project_id: this.projectId,
-        stream: true,
-        include_sources: true,
-      }),
-    }).then(response => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-
-      const read = (): void => {
-        reader.read().then(({ done, value }) => {
-          if (done) {
-            assistantMsg.loading = false;
-            this.isStreaming.set(false);
-            this.messages.update(m => [...m]); // trigger change detection
-            return;
-          }
-          const text = decoder.decode(value);
-          for (const line of text.split('\n')) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              assistantMsg.loading = false;
-              this.isStreaming.set(false);
-              this.messages.update(m => [...m]);
-              return;
-            }
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.choices?.[0]?.delta?.content) {
-                assistantMsg.content += parsed.choices[0].delta.content;
-                this.shouldScroll = true;
-                this.messages.update(m => [...m]);
-              }
-              if (parsed.sources) {
-                assistantMsg.sources = parsed.sources;
-              }
-            } catch { /* skip */ }
-          }
-          read();
-        });
-      };
-      read();
-    }).catch(() => {
-      assistantMsg.loading = false;
-      assistantMsg.content = 'Erro ao gerar resposta. Tente novamente.';
-      this.isStreaming.set(false);
-      this.messages.update(m => [...m]);
+      error: () => {
+        const errMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: 'Erro ao obter resposta. Tente novamente.', timestamp: new Date() };
+        this.messages.update(m => [...m, errMsg]);
+        this.streaming.set(false);
+      }
     });
   }
 
-  giveFeedback(msg: ChatMessage, rating: 'positive' | 'negative') {
-    msg.feedback = msg.feedback === rating ? null : rating;
+  sendFeedback(msg: Message, rating: 'positive' | 'negative') {
+    msg.feedback = rating;
     this.feedbackCollector.addFeedback({
       interactionId: msg.id,
-      rating: msg.feedback || 'positive',
+      rating,
       correction: null,
-      category: '',
+      category: 'general',
+      timestamp: new Date().toISOString(),
     });
-  }
-
-  private scrollToBottom() {
-    try {
-      const el = this.scrollArea?.nativeElement;
-      if (el) el.scrollTop = el.scrollHeight;
-    } catch {}
   }
 }
