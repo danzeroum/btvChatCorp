@@ -5,13 +5,15 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-axum             = { version = "0.7", features = ["macros"] }
+axum             = { version = "0.7" }
 tokio            = { version = "1",   features = ["full"] }
 serde            = { version = "1.0", features = ["derive"] }
 serde_json       = "1.0"
 uuid             = { version = "1",   features = ["v4", "serde"] }
-chrono           = { version = "0.4", features = ["serde"] }
-sqlx             = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "macros"] }
+# chrono 0.4.38 — usa time-core 0.1.2 (sem edition2024)
+chrono           = { version = "=0.4.38", features = ["serde"] }
+# sqlx 0.7.4 — versão estável sem dependências edition2024
+sqlx             = { version = "=0.7.4", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono", "macros"] }
 reqwest          = { version = "0.11", features = ["json", "stream"] }
 futures          = "0.3"
 anyhow           = "1"
@@ -21,3 +23,8 @@ bcrypt           = "0.15"
 jsonwebtoken     = "9"
 tower-http       = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
 dotenvy          = "0.15"
+sha2             = "0.10"
+
+# Pina time-core e time-macros em versões anteriores ao edition2024
+[patch.crates-io]
+time-core   = { version "=0.1.2" }
