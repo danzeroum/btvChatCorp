@@ -11,11 +11,13 @@ export interface DataClassification {
   detectedKeywords?: string[];
 }
 
+/** Alias para compatibilidade */
+export type Classification = DataClassification;
+
 export interface PIIDetection {
   type: PIIType;
   position: number;
   length: number;
-  // Nunca armazenar o valor real — apenas posição e tipo
 }
 
 export type PIIType =
@@ -25,7 +27,8 @@ export type PIIType =
   | 'PHONE'
   | 'CARD'
   | 'RG'
-  | 'CEP';
+  | 'CEP'
+  | 'CREDIT_CARD';
 
 export interface FilteredMessage {
   content: string;
@@ -37,6 +40,17 @@ export interface FilteredMessage {
   userId: string;
   timestamp: string;
   eligibleForTraining: boolean;
+}
+
+export interface WorkspaceContext {
+  workspaceId: string;
+  tenantId: string;
+  allowedCollections: string[];
+  dataClassification: ClassificationLevel | string;
+  retentionDays: number;
+  userId?: string;
+  autoAnonymize?: boolean;
+  sensitiveKeywords?: string[];
 }
 
 /** Mapa de hierarquia para comparação de níveis */
