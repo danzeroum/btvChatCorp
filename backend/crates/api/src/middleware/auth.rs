@@ -1,9 +1,9 @@
 use axum::{
-    extract::{Request, State},
+    extract::State,
     http::{header, StatusCode},
     middleware::Next,
+    request::Request,
     response::Response,
-    Extension,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
@@ -13,13 +13,12 @@ use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub:          String,   // user_id
+    pub sub:          String,
     pub workspace_id: String,
     pub role:         String,
     pub exp:          usize,
 }
 
-/// Extractor injetado em handlers protegidos
 #[derive(Clone, Debug)]
 pub struct AuthUser {
     pub user_id:      Uuid,
@@ -46,13 +45,11 @@ pub async fn require_auth(
     )
     .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let claims = token_data.claims;
-    let auth_user = AuthUser {
-        user_id:      claims.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
-        workspace_id: claims.workspace_id.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
-        role:         claims.role,
-    };
-
-    req.extensions_mut().insert(auth_user);
+    let c = token_data.claims;
+    req.extensions_mut().insert(AuthUser {
+        user_id:      c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
+        workspace_id: c.workspace_id.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
+        role:         c.role,
+    });
     Ok(next.run(req).await)
 }
