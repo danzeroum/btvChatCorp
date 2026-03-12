@@ -67,7 +67,7 @@ export class TrainingQueueComponent implements OnInit {
   batches: TrainingBatch[] = [];
 
   ngOnInit() {
-    this.trainingService.getBatches(this.wsCtx.workspaceId).subscribe(
+    this.trainingService.getBatches(this.wsCtx.workspaceId()).subscribe(
       (b) => (this.batches = b),
     );
   }
