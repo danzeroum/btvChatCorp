@@ -32,9 +32,9 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     tracing::info!("Banco conectado. Rodando migrations...");
-    // sqlx::migrate! resolve relativo ao arquivo .rs em compile-time
-    // crates/api/src/main.rs -> ../../../migrations = /app/migrations
-    sqlx::migrate!("../../../migrations").run(&db).await?;
+    // Hierarquia: crates/api/src/main.rs
+    // ../../../../ = raiz do workspace = /app  (onde esta /app/migrations)
+    sqlx::migrate!("../../../../migrations").run(&db).await?;
     tracing::info!("Migrations OK");
 
     let ollama_url   = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
