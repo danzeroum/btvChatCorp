@@ -1,5 +1,6 @@
 # BTV Chat Corp — Docker Compose
-# Stack: Rust/Axum API + Angular + PostgreSQL + Qdrant + Ollama
+# Stack: Rust/Axum API + Angular + PostgreSQL + Qdrant
+# LLM: externa em https://api.buildtovalue.cloud (mistral:latest)
 
 networks:
   btv-net:
@@ -9,11 +10,10 @@ volumes:
   postgres_data:
   qdrant_data:
   document_uploads:
-  ollama_models:
 
 services:
 
-  # ─── Banco de Dados ───────────────────────────────────────────────────────
+  # ─── Banco de Dados ──────────────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
     restart: always
@@ -30,7 +30,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Vetor DB (RAG) ───────────────────────────────────────────────────────
+  # ─── Vetor DB (RAG) ─────────────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:v1.9.0
     restart: always
@@ -44,16 +44,6 @@ services:
       retries: 5
       start_period: 10s
 
-  # ─── LLM Local (Ollama) ───────────────────────────────────────────────────
-  # Sem healthcheck: Ollama pode demorar para carregar o modelo na memória.
-  # A API tolera Ollama indisponível temporariamente (retorna erro 503).
-  ollama:
-    image: ollama/ollama:latest
-    restart: always
-    volumes:
-      - ollama_models:/root/.ollama
-    networks: [btv-net]
-
   # ─── Backend Rust/Axum ────────────────────────────────────────────────────
   api:
     build:
@@ -61,12 +51,15 @@ services:
       dockerfile: Dockerfile
     restart: always
     environment:
-      DATABASE_URL:  postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
-      OLLAMA_URL:    http://ollama:11434
-      OLLAMA_MODEL:  ${OLLAMA_MODEL:-llama3.2:3b}
-      JWT_SECRET:    ${JWT_SECRET}
-      UPLOAD_DIR:    /uploads
-      RUST_LOG:      ${RUST_LOG:-info}
+      DATABASE_URL:      postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      # LLM externa na VPS buildtovalue.cloud (compativel OpenAI /v1/chat/completions)
+      OLLAMA_URL:        ${OLLAMA_URL:-https://api.buildtovalue.cloud}
+      OLLAMA_MODEL:      ${OLLAMA_MODEL:-mistral:latest}
+      OLLAMA_AUTH_USER:  ${OLLAMA_AUTH_USER:-buildtovalue}
+      OLLAMA_AUTH_PASS:  ${OLLAMA_AUTH_PASS:-BTV_secure_2026!}
+      JWT_SECRET:        ${JWT_SECRET}
+      UPLOAD_DIR:        /uploads
+      RUST_LOG:          ${RUST_LOG:-info}
     volumes:
       - document_uploads:/uploads
     networks: [btv-net]
@@ -80,7 +73,7 @@ services:
       retries: 3
       start_period: 60s
 
-  # ─── Frontend Angular + Nginx ─────────────────────────────────────────────
+  # ─── Frontend Angular + Nginx ────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -90,7 +83,7 @@ services:
     depends_on:
       - api
 
-  # ─── Proxy reverso ────────────────────────────────────────────────────────
+  # ─── Proxy reverso ──────────────────────────────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     restart: always

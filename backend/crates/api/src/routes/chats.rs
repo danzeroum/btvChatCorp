@@ -102,14 +102,12 @@ async fn send_message(
         .fetch_one(&state.db).await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
-    // Salva mensagem do usuario
     sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content) VALUES ($1,'user',$2) RETURNING *",
     )
     .bind(chat_id).bind(&dto.content)
     .fetch_one(&state.db).await?;
 
-    // Historico (ultimas 20)
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
     )
@@ -120,13 +118,15 @@ async fn send_message(
         .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
         .collect();
 
-    // Chama Ollama
-    let ollama_resp = call_ollama(
-        &state.ollama_url, &state.ollama_model, &messages,
-        dto.temperature.unwrap_or(0.7), dto.max_tokens.unwrap_or(2048),
+    let ollama_resp = call_llm(
+        &state.ollama_url,
+        &state.ollama_model,
+        state.ollama_auth.as_deref(),
+        &messages,
+        dto.temperature.unwrap_or(0.7),
+        dto.max_tokens.unwrap_or(1024),
     ).await.map_err(|e| AppError::internal(e.to_string()))?;
 
-    // Salva resposta
     let assistant_msg = sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content,tokens_used) VALUES ($1,'assistant',$2,$3) RETURNING *",
     )
@@ -154,24 +154,40 @@ async fn feedback(
     Ok(StatusCode::OK)
 }
 
-struct OllamaResponse { content: String, tokens_used: Option<i32> }
+struct LlmResponse { content: String, tokens_used: Option<i32> }
 
-async fn call_ollama(
-    base_url: &str, model: &str, messages: &[serde_json::Value],
-    temperature: f32, max_tokens: u32,
-) -> anyhow::Result<OllamaResponse> {
+/// Chama LLM compativel com OpenAI /v1/chat/completions
+/// Suporta Ollama local E LLMs externas com Basic Auth (buildtovalue.cloud)
+async fn call_llm(
+    base_url: &str,
+    model: &str,
+    basic_auth: Option<&str>,   // "user:pass" para auth externa
+    messages: &[serde_json::Value],
+    temperature: f32,
+    max_tokens: u32,
+) -> anyhow::Result<LlmResponse> {
     let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{}/api/chat", base_url))
+    let mut req = client
+        .post(format!("{}/v1/chat/completions", base_url))
         .json(&serde_json::json!({
-            "model": model, "messages": messages, "stream": false,
-            "options": { "temperature": temperature, "num_predict": max_tokens }
-        }))
-        .send().await?
-        .json::<serde_json::Value>().await?;
+            "model": model,
+            "messages": messages,
+            "stream": false,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }));
 
-    Ok(OllamaResponse {
-        content:     resp["message"]["content"].as_str().unwrap_or("").to_string(),
-        tokens_used: resp["eval_count"].as_i64().map(|t| t as i32),
+    if let Some(auth) = basic_auth {
+        let mut parts = auth.splitn(2, ':');
+        let user = parts.next().unwrap_or("");
+        let pass = parts.next().unwrap_or("");
+        req = req.basic_auth(user, Some(pass));
+    }
+
+    let resp = req.send().await?.json::<serde_json::Value>().await?;
+
+    Ok(LlmResponse {
+        content:     resp["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string(),
+        tokens_used: resp["usage"]["completion_tokens"].as_i64().map(|t| t as i32),
     })
 }
