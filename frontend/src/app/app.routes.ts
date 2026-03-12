@@ -4,7 +4,7 @@ export const routes: Routes = [
   {
     path: '',
     loadComponent: () =>
-      import('./features/chat/chat.component').then(m => m.ChatComponent)
+      import('./features/chat/chat-container.component').then(m => m.ChatContainerComponent)
   },
   {
     path: 'documents',
