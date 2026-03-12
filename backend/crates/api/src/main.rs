@@ -32,7 +32,8 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     tracing::info!("Banco conectado. Rodando migrations...");
-    sqlx::migrate!("../migrations").run(&db).await?;
+    // Path relativo ao WORKDIR /app no Docker (backend/)
+    sqlx::migrate!("./migrations").run(&db).await?;
     tracing::info!("Migrations OK");
 
     let ollama_url   = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
@@ -41,7 +42,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { db, ollama_url, ollama_model, jwt_secret };
 
-    // Passa o state para v1_routes poder configurar o middleware de auth
     let app = Router::new()
         .route("/health", axum::routing::get(|| async {
             axum::Json(serde_json::json!({ "status": "ok" }))
