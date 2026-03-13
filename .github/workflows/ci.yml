@@ -85,6 +85,7 @@ jobs:
       UPLOAD_DIR: /tmp/btv-uploads
       OLLAMA_URL: http://localhost:11434
       OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_MOCK: "true"
 
     steps:
       - uses: actions/checkout@v4
