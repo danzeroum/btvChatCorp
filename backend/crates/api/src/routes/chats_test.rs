@@ -9,9 +9,7 @@ mod chats_tests {
 
     use crate::test_helpers::{make_app, make_auth_header};
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    async fn create_chat(app: axum::Router, title: &str) -> String {
+    async fn create_chat_helper(app: axum::Router, title: &str) -> String {
         let res = app
             .clone()
             .oneshot(
@@ -26,26 +24,23 @@ mod chats_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CREATED);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await.unwrap();
         let chat: Value = serde_json::from_slice(&bytes).unwrap();
         chat["id"].as_str().unwrap().to_string()
     }
 
-    // ── Testes ───────────────────────────────────────────────────────────────
-
-    /// POST /api/v1/chats — deve criar chat e retornar 201
     #[tokio::test]
     async fn test_create_chat_returns_201() {
         let app = make_app().await;
-        let chat_id = create_chat(app, "Minha conversa").await;
+        let chat_id = create_chat_helper(app, "Minha conversa").await;
         assert!(!chat_id.is_empty());
     }
 
-    /// GET /api/v1/chats — deve listar chats do usuário
     #[tokio::test]
     async fn test_list_chats_returns_created_chat() {
         let app = make_app().await;
-        let chat_id = create_chat(app.clone(), "Conversa listada").await;
+        let chat_id = create_chat_helper(app.clone(), "Conversa listada").await;
 
         let res = app
             .oneshot(
@@ -65,11 +60,10 @@ mod chats_tests {
         assert!(chats.iter().any(|c| c["id"] == chat_id));
     }
 
-    /// POST /api/v1/chats/:id/messages — deve inserir mensagem e retornar resposta do assistente
     #[tokio::test]
     async fn test_send_message_returns_assistant_response() {
         let app = make_app().await;
-        let chat_id = create_chat(app.clone(), "Chat de teste").await;
+        let chat_id = create_chat_helper(app.clone(), "Chat de teste").await;
 
         let res = app
             .oneshot(
@@ -78,7 +72,7 @@ mod chats_tests {
                     .uri(&format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
-                    .body(Body::from(json!({ "content": "Olá, mundo!" }).to_string()))
+                    .body(Body::from(json!({ "content": "Ola, mundo!" }).to_string()))
                     .unwrap(),
             )
             .await
@@ -88,16 +82,14 @@ mod chats_tests {
         let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let msg: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(msg["role"], "assistant");
-        assert!(msg["content"].as_str().unwrap().len() > 0);
+        assert!(msg["content"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
     }
 
-    /// GET /api/v1/chats/:id/messages — deve retornar histórico de mensagens
     #[tokio::test]
     async fn test_get_messages_returns_history() {
         let app = make_app().await;
-        let chat_id = create_chat(app.clone(), "Chat com histórico").await;
+        let chat_id = create_chat_helper(app.clone(), "Chat com historico").await;
 
-        // Envia mensagem para popular histórico
         let _ = app
             .clone()
             .oneshot(
@@ -106,7 +98,9 @@ mod chats_tests {
                     .uri(&format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
-                    .body(Body::from(json!({ "content": "Primeira mensagem" }).to_string()))
+                    .body(Body::from(
+                        json!({ "content": "Primeira mensagem" }).to_string(),
+                    ))
                     .unwrap(),
             )
             .await
@@ -127,17 +121,15 @@ mod chats_tests {
         assert_eq!(res.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let messages: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
-        // user + assistant
         assert!(messages.len() >= 2);
         assert_eq!(messages[0]["role"], "user");
         assert_eq!(messages[0]["content"], "Primeira mensagem");
     }
 
-    /// POST /api/v1/chats/:id/messages/:mid/feedback — deve retornar 200
     #[tokio::test]
     async fn test_feedback_accepted() {
         let app = make_app().await;
-        let chat_id = create_chat(app.clone(), "Chat feedback").await;
+        let chat_id = create_chat_helper(app.clone(), "Chat feedback").await;
 
         let send_res = app
             .clone()
@@ -161,7 +153,10 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages/{}/feedback", chat_id, msg_id))
+                    .uri(&format!(
+                        "/api/v1/chats/{}/messages/{}/feedback",
+                        chat_id, msg_id
+                    ))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(json!({ "feedback": 1 }).to_string()))
@@ -173,11 +168,10 @@ mod chats_tests {
         assert_eq!(feedback_res.status(), StatusCode::OK);
     }
 
-    /// Feedback inválido (valor 0) deve retornar 400
     #[tokio::test]
     async fn test_feedback_invalid_value_returns_400() {
         let app = make_app().await;
-        let chat_id = create_chat(app.clone(), "Chat inválido").await;
+        let chat_id = create_chat_helper(app.clone(), "Chat invalido").await;
 
         let send_res = app
             .clone()
@@ -201,7 +195,10 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages/{}/feedback", chat_id, msg_id))
+                    .uri(&format!(
+                        "/api/v1/chats/{}/messages/{}/feedback",
+                        chat_id, msg_id
+                    ))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(json!({ "feedback": 0 }).to_string()))
@@ -213,7 +210,6 @@ mod chats_tests {
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
-    /// Acessar chat inexistente deve retornar 404
     #[tokio::test]
     async fn test_get_nonexistent_chat_returns_404() {
         let app = make_app().await;

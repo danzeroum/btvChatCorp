@@ -12,6 +12,10 @@ mod models;
 mod routes;
 mod state;
 
+// Modulos de teste — compilados apenas em modo test
+#[cfg(test)]
+mod test_helpers;
+
 use state::AppState;
 
 #[tokio::main]
@@ -39,7 +43,6 @@ async fn main() -> anyhow::Result<()> {
     let ollama_model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "mistral:latest".into());
     let jwt_secret   = std::env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
 
-    // Basic auth para LLM externa: combina OLLAMA_AUTH_USER e OLLAMA_AUTH_PASS
     let ollama_auth = match (
         std::env::var("OLLAMA_AUTH_USER").ok(),
         std::env::var("OLLAMA_AUTH_PASS").ok(),
