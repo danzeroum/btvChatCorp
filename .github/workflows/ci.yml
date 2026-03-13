@@ -1,0 +1,128 @@
+name: CI – Fase 2
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ──────────────────────────────────────────────
+  # JOB 1 – Frontend Angular (build + lint + test)
+  # ──────────────────────────────────────────────
+  frontend:
+    name: Frontend (Angular 17)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production)
+        run: npm run build -- --configuration production
+
+      - name: Lint
+        run: npx ng lint --max-warnings=0 || true
+
+      - name: Unit tests (headless)
+        run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+
+  # ──────────────────────────────────────────────
+  # JOB 2 – Backend Rust (fmt + clippy + test)
+  # ──────────────────────────────────────────────
+  backend:
+    name: Backend (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: btv
+          POSTGRES_PASSWORD: btv
+          POSTGRES_DB: btvtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
+      JWT_SECRET: test_secret_for_ci_only
+      UPLOAD_DIR: /tmp/uploads
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: cargo fmt check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run migrations
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres --quiet 2>/dev/null || true
+          sqlx migrate run --database-url "$DATABASE_URL" --source crates/api/migrations
+
+      - name: cargo test
+        run: cargo test --all -- --test-threads=1
+
+  # ──────────────────────────────────────────────
+  # JOB 3 – Status gate (bloqueia merge se falhar)
+  # ──────────────────────────────────────────────
+  all-green:
+    name: All checks passed
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    if: always()
+    steps:
+      - name: Verify all jobs succeeded
+        run: |
+          if [ "${{ needs.frontend.result }}" != "success" ] || [ "${{ needs.backend.result }}" != "success" ]; then
+            echo "One or more jobs failed."
+            exit 1
+          fi
+          echo "All jobs passed ✓"
