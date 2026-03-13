@@ -1,11 +1,11 @@
 use axum::{
+    body::Body,
     extract::State,
     http::{header, Request, StatusCode},
     middleware::Next,
     response::Response,
-    body::Body,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,17 +13,17 @@ use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub:          String,
+    pub sub: String,
     pub workspace_id: String,
-    pub role:         String,
-    pub exp:          usize,
+    pub role: String,
+    pub exp: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct AuthUser {
-    pub user_id:      Uuid,
+    pub user_id: Uuid,
     pub workspace_id: Uuid,
-    pub role:         String,
+    pub role: String,
 }
 
 pub async fn require_auth(
@@ -47,9 +47,12 @@ pub async fn require_auth(
 
     let c = token_data.claims;
     req.extensions_mut().insert(AuthUser {
-        user_id:      c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
-        workspace_id: c.workspace_id.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
-        role:         c.role,
+        user_id: c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
+        workspace_id: c
+            .workspace_id
+            .parse()
+            .map_err(|_| StatusCode::UNAUTHORIZED)?,
+        role: c.role,
     });
     Ok(next.run(req).await)
 }

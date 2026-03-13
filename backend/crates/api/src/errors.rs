@@ -6,14 +6,18 @@ use axum::{
 use serde_json::json;
 
 pub struct AppError {
-    pub status:  StatusCode,
-    pub code:    &'static str,
+    pub status: StatusCode,
+    pub code: &'static str,
     pub message: String,
 }
 
 impl AppError {
     pub fn new(status: StatusCode, code: &'static str, msg: impl Into<String>) -> Self {
-        Self { status, code, message: msg.into() }
+        Self {
+            status,
+            code,
+            message: msg.into(),
+        }
     }
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, "not_found", msg)
