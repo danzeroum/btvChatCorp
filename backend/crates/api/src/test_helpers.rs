@@ -1,5 +1,6 @@
-/// Utilitarios de teste de integracao.
-/// Usado exclusivamente em contexto #[cfg(test)].
+#![cfg_attr(not(test), allow(dead_code))]
+//! Utilitarios de teste de integracao.
+//! Usado exclusivamente em contexto #[cfg(test)].
 
 #[cfg(test)]
 pub use helpers::*;
@@ -20,10 +21,10 @@ pub mod helpers {
 
     #[derive(Serialize, Deserialize)]
     pub struct TestClaims {
-        pub sub:          String,
+        pub sub: String,
         pub workspace_id: String,
-        pub role:         String,
-        pub exp:          usize,
+        pub role: String,
+        pub exp: usize,
     }
 
     /// Sobe o Router Axum completo apontado para o banco de teste (DATABASE_URL do env)
@@ -36,16 +37,15 @@ pub mod helpers {
             .expect("Falha ao conectar ao banco de teste");
 
         let state = AppState {
-            db:           pool,
-            jwt_secret:   TEST_JWT_SECRET.to_string(),
-            ollama_url:   std::env::var("OLLAMA_URL")
-                            .unwrap_or_else(|_| "http://localhost:11434".into()),
+            db: pool,
+            jwt_secret: TEST_JWT_SECRET.to_string(),
+            ollama_url: std::env::var("OLLAMA_URL")
+                .unwrap_or_else(|_| "http://localhost:11434".into()),
             ollama_model: std::env::var("OLLAMA_MODEL")
-                            .unwrap_or_else(|_| "llama3.1:8b".into()),
-            ollama_auth:  None,
+                .unwrap_or_else(|_| "llama3.1:8b".into()),
+            ollama_auth: None,
         };
 
-        // v1_routes retorna Router<AppState>, precisamos de Router sem estado
         axum::Router::new()
             .nest("/api/v1", routes::v1_routes(state.clone()))
             .with_state(state)
@@ -64,9 +64,9 @@ pub mod helpers {
     fn jwt_for_workspace(workspace_id: &str, role: &str) -> String {
         let exp = (chrono::Utc::now().timestamp() + 3600) as usize;
         let claims = TestClaims {
-            sub:          Uuid::new_v4().to_string(),
+            sub: Uuid::new_v4().to_string(),
             workspace_id: workspace_id.to_string(),
-            role:         role.to_string(),
+            role: role.to_string(),
             exp,
         };
         let token = encode(
