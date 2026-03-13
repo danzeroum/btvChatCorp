@@ -53,7 +53,8 @@ async fn upload(
         .await
         .map_err(|e| AppError::internal(e.to_string()))?;
 
-    while let Some(field) = multipart
+    // Usa if-let pois so processamos o primeiro campo do multipart
+    if let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::bad_request(e.to_string()))?

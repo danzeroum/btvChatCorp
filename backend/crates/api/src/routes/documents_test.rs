@@ -153,7 +153,7 @@ mod documents_tests {
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri(&format!("/api/v1/documents/{}", doc_id))
+                    .uri(format!("/api/v1/documents/{}", doc_id))
                     .header("Authorization", make_auth_header("user"))
                     .body(Body::empty())
                     .unwrap(),
@@ -196,7 +196,7 @@ mod documents_tests {
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri(&format!("/api/v1/documents/{}", doc_id))
+                    .uri(format!("/api/v1/documents/{}", doc_id))
                     .header(
                         "Authorization",
                         make_auth_header_for_workspace("00000000-0000-0000-0000-000000000040"),
