@@ -73,7 +73,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages", chat_id))
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(json!({ "content": "Ola, mundo!" }).to_string()))
@@ -104,7 +104,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages", chat_id))
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -119,7 +119,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(&format!("/api/v1/chats/{}/messages", chat_id))
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .body(Body::empty())
                     .unwrap(),
@@ -147,7 +147,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages", chat_id))
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(
@@ -168,7 +168,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!(
+                    .uri(format!(
                         "/api/v1/chats/{}/messages/{}/feedback",
                         chat_id, msg_id
                     ))
@@ -193,7 +193,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!("/api/v1/chats/{}/messages", chat_id))
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
                     .header("Authorization", make_auth_header("user"))
                     .header("Content-Type", "application/json")
                     .body(Body::from(json!({ "content": "msg" }).to_string()))
@@ -212,7 +212,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&format!(
+                    .uri(format!(
                         "/api/v1/chats/{}/messages/{}/feedback",
                         chat_id, msg_id
                     ))
@@ -236,7 +236,7 @@ mod chats_tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(&format!("/api/v1/chats/{}", fake_id))
+                    .uri(format!("/api/v1/chats/{}", fake_id))
                     .header("Authorization", make_auth_header("user"))
                     .body(Body::empty())
                     .unwrap(),
