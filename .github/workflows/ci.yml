@@ -104,12 +104,11 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.toml', 'backend/crates/api/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # Formata o codigo em vez de checar — evita falha por estilo
       - name: cargo fmt
         run: cargo fmt --all
 
       - name: cargo clippy
-        run: cargo clippy --all-targets --all-features --locked=false -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Criar diretorio de uploads
         run: mkdir -p $UPLOAD_DIR
@@ -126,7 +125,7 @@ jobs:
           fi
 
       - name: cargo test
-        run: cargo test --all --locked=false -- --test-threads=1
+        run: cargo test --all -- --test-threads=1
 
   # ──────────────────────────────────────────────
   # JOB 3 – Gate: bloqueia merge se falhar
