@@ -15,8 +15,8 @@ use crate::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/chats",           get(list).post(create))
-        .route("/chats/:id",       get(get_one).delete(remove))
+        .route("/chats", get(list).post(create))
+        .route("/chats/:id", get(get_one).delete(remove))
         .route("/chats/:id/messages", get(get_messages).post(send_message))
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
 }
@@ -29,8 +29,10 @@ async fn list(
         "SELECT id,workspace_id,project_id,title,summary,is_pinned,created_by,created_at,updated_at
          FROM chats WHERE workspace_id=$1 AND created_by=$2 ORDER BY updated_at DESC",
     )
-    .bind(auth.workspace_id).bind(auth.user_id)
-    .fetch_all(&state.db).await?;
+    .bind(auth.workspace_id)
+    .bind(auth.user_id)
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows))
 }
 
@@ -43,8 +45,12 @@ async fn create(
     let row = sqlx::query_as::<_, Chat>(
         "INSERT INTO chats (workspace_id,project_id,title,created_by) VALUES ($1,$2,$3,$4) RETURNING *",
     )
-    .bind(auth.workspace_id).bind(dto.project_id).bind(&title).bind(auth.user_id)
-    .fetch_one(&state.db).await?;
+    .bind(auth.workspace_id)
+    .bind(dto.project_id)
+    .bind(&title)
+    .bind(auth.user_id)
+    .fetch_one(&state.db)
+    .await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -56,8 +62,10 @@ async fn get_one(
     let row = sqlx::query_as::<_, Chat>(
         "SELECT * FROM chats WHERE id=$1 AND workspace_id=$2",
     )
-    .bind(id).bind(auth.workspace_id)
-    .fetch_one(&state.db).await?;
+    .bind(id)
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await?;
     Ok(Json(row))
 }
 
@@ -67,9 +75,14 @@ async fn remove(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     let r = sqlx::query("DELETE FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(id).bind(auth.workspace_id)
-        .execute(&state.db).await.map_err(AppError::from)?;
-    if r.rows_affected() == 0 { return Err(AppError::not_found("Chat nao encontrado")); }
+        .bind(id)
+        .bind(auth.workspace_id)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Chat nao encontrado"));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -79,15 +92,19 @@ async fn get_messages(
     Path(chat_id): Path<Uuid>,
 ) -> Result<Json<Vec<Message>>, AppError> {
     sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(chat_id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await
+        .bind(chat_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
     let rows = sqlx::query_as::<_, Message>(
-        "SELECT id,chat_id,role,content,sources,tokens_used,feedback,created_at FROM messages WHERE chat_id=$1 ORDER BY created_at",
+        "SELECT id,chat_id,role,content,sources,tokens_used,feedback,created_at \
+         FROM messages WHERE chat_id=$1 ORDER BY created_at",
     )
     .bind(chat_id)
-    .fetch_all(&state.db).await?;
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows))
 }
 
@@ -98,43 +115,68 @@ async fn send_message(
     Json(dto): Json<SendMessageDto>,
 ) -> Result<Json<Message>, AppError> {
     sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(chat_id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await
+        .bind(chat_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
+    // Salva mensagem do usuario
     sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content) VALUES ($1,'user',$2) RETURNING *",
     )
-    .bind(chat_id).bind(&dto.content)
-    .fetch_one(&state.db).await?;
+    .bind(chat_id)
+    .bind(&dto.content)
+    .fetch_one(&state.db)
+    .await?;
 
+    // Busca historico para contexto
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
     )
     .bind(chat_id)
-    .fetch_all(&state.db).await?;
+    .fetch_all(&state.db)
+    .await?;
 
-    let messages: Vec<serde_json::Value> = history.into_iter().rev()
+    let messages: Vec<serde_json::Value> = history
+        .into_iter()
+        .rev()
         .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
         .collect();
 
-    let ollama_resp = call_llm(
-        &state.ollama_url,
-        &state.ollama_model,
-        state.ollama_auth.as_deref(),
-        &messages,
-        dto.temperature.unwrap_or(0.7),
-        dto.max_tokens.unwrap_or(1024),
-    ).await.map_err(|e| AppError::internal(e.to_string()))?;
+    // Chama LLM ou usa mock em ambiente de teste (OLLAMA_MOCK=true)
+    let llm_resp = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
+        LlmResponse {
+            content: format!("[mock] Resposta para: {}", dto.content),
+            tokens_used: Some(42),
+        }
+    } else {
+        call_llm(
+            &state.ollama_url,
+            &state.ollama_model,
+            state.ollama_auth.as_deref(),
+            &messages,
+            dto.temperature.unwrap_or(0.7),
+            dto.max_tokens.unwrap_or(1024),
+        )
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?
+    };
 
     let assistant_msg = sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content,tokens_used) VALUES ($1,'assistant',$2,$3) RETURNING *",
     )
-    .bind(chat_id).bind(&ollama_resp.content).bind(ollama_resp.tokens_used)
-    .fetch_one(&state.db).await?;
+    .bind(chat_id)
+    .bind(&llm_resp.content)
+    .bind(llm_resp.tokens_used)
+    .fetch_one(&state.db)
+    .await?;
 
     sqlx::query("UPDATE chats SET updated_at=NOW() WHERE id=$1")
-        .bind(chat_id).execute(&state.db).await.ok();
+        .bind(chat_id)
+        .execute(&state.db)
+        .await
+        .ok();
 
     Ok(Json(assistant_msg))
 }
@@ -149,19 +191,25 @@ async fn feedback(
         return Err(AppError::bad_request("feedback deve ser 1 ou -1"));
     }
     sqlx::query("UPDATE messages SET feedback=$1 WHERE id=$2")
-        .bind(dto.feedback).bind(mid)
-        .execute(&state.db).await.map_err(AppError::from)?;
+        .bind(dto.feedback)
+        .bind(mid)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
-struct LlmResponse { content: String, tokens_used: Option<i32> }
+struct LlmResponse {
+    content: String,
+    tokens_used: Option<i32>,
+}
 
 /// Chama LLM compativel com OpenAI /v1/chat/completions
-/// Suporta Ollama local E LLMs externas com Basic Auth (buildtovalue.cloud)
+/// Suporta Ollama local E LLMs externas com Basic Auth
 async fn call_llm(
     base_url: &str,
     model: &str,
-    basic_auth: Option<&str>,   // "user:pass" para auth externa
+    basic_auth: Option<&str>,
     messages: &[serde_json::Value],
     temperature: f32,
     max_tokens: u32,
@@ -187,7 +235,10 @@ async fn call_llm(
     let resp = req.send().await?.json::<serde_json::Value>().await?;
 
     Ok(LlmResponse {
-        content:     resp["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string(),
+        content: resp["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         tokens_used: resp["usage"]["completion_tokens"].as_i64().map(|t| t as i32),
     })
 }

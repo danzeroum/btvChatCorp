@@ -19,6 +19,12 @@ pub mod helpers {
 
     pub const TEST_JWT_SECRET: &str = "test_secret_for_ci_only";
 
+    // User IDs fixos por workspace para garantir consistencia entre chamadas
+    // do mesmo teste (create e list usam o mesmo user_id).
+    // Formato: UUID v5-like fixo derivado do workspace.
+    pub const DEFAULT_USER_ID: &str    = "00000000-0000-0000-0000-000000000099";
+    pub const DEFAULT_WORKSPACE_ID: &str = "00000000-0000-0000-0000-000000000001";
+
     #[derive(Serialize, Deserialize)]
     pub struct TestClaims {
         pub sub: String,
@@ -51,22 +57,29 @@ pub mod helpers {
             .with_state(state)
     }
 
-    /// JWT valido (+1h) para usuario generico no workspace de teste
+    /// JWT valido (+1h) com user_id e workspace_id fixos para testes
     pub fn make_auth_header(role: &str) -> String {
-        jwt_for_workspace("00000000-0000-0000-0000-000000000001", role)
+        jwt_for_ids(DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID, role)
     }
 
-    /// JWT valido (+1h) para workspace especifico
+    /// JWT valido (+1h) para workspace especifico (user_id fixo derivado do workspace)
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
-        jwt_for_workspace(workspace_id, "user")
+        // Deriva user_id fixo a partir dos ultimos digitos do workspace_id
+        // para garantir que seja sempre o mesmo dentro do mesmo workspace.
+        let user_suffix = workspace_id
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>();
+        let user_id = format!("00000000-0000-0000-0000-{:0>12}", &user_suffix[user_suffix.len().saturating_sub(12)..]);
+        jwt_for_ids(&user_id, workspace_id, "user")
     }
 
-    fn jwt_for_workspace(workspace_id: &str, role: &str) -> String {
+    fn jwt_for_ids(user_id: &str, workspace_id: &str, role: &str) -> String {
         let exp = (chrono::Utc::now().timestamp() + 3600) as usize;
         let claims = TestClaims {
-            sub: Uuid::new_v4().to_string(),
+            sub:          user_id.to_string(),
             workspace_id: workspace_id.to_string(),
-            role: role.to_string(),
+            role:         role.to_string(),
             exp,
         };
         let token = encode(
@@ -76,5 +89,10 @@ pub mod helpers {
         )
         .expect("Falha ao gerar token de teste");
         format!("Bearer {}", token)
+    }
+
+    /// Converte UUID string em Uuid (panic se invalido — aceitavel em testes)
+    pub fn uuid(s: &str) -> Uuid {
+        s.parse().expect("UUID invalido no helper de teste")
     }
 }
