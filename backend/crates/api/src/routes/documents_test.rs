@@ -3,9 +3,10 @@ mod documents_tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
+        Router,
     };
     use serde_json::Value;
-    use tower::ServiceExt;
+    use tower::util::ServiceExt;
 
     use crate::test_helpers::{make_app, make_auth_header, make_auth_header_for_workspace};
 
@@ -24,7 +25,7 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_upload_document_created() {
-        let app = make_app().await;
+        let app: Router = make_app().await;
         let (content_type, body) =
             multipart_body("relatorio.pdf", b"%PDF-1.4 fake content", "application/pdf");
 
@@ -42,7 +43,9 @@ mod documents_tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::CREATED);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["original_filename"], "relatorio.pdf");
         assert_eq!(json["processing_status"], "pending");
@@ -50,7 +53,7 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_upload_no_file_returns_400() {
-        let app = make_app().await;
+        let app: Router = make_app().await;
         let boundary = "----EmptyBoundary";
         let body = format!("--{0}--\r\n", boundary);
 
@@ -60,8 +63,10 @@ mod documents_tests {
                     .method("POST")
                     .uri("/api/v1/documents")
                     .header("Authorization", make_auth_header("user"))
-                    .header("Content-Type",
-                        format!("multipart/form-data; boundary={}", boundary))
+                    .header(
+                        "Content-Type",
+                        format!("multipart/form-data; boundary={}", boundary),
+                    )
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -73,7 +78,7 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_list_documents_scoped_to_workspace() {
-        let app = make_app().await;
+        let app: Router = make_app().await;
 
         let (ct, body) = multipart_body("doc-a.txt", b"workspace a content", "text/plain");
         let _ = app
@@ -82,8 +87,10 @@ mod documents_tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/v1/documents")
-                    .header("Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000010"))
+                    .header(
+                        "Authorization",
+                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000010"),
+                    )
                     .header("Content-Type", ct)
                     .body(Body::from(body))
                     .unwrap(),
@@ -96,8 +103,10 @@ mod documents_tests {
                 Request::builder()
                     .method("GET")
                     .uri("/api/v1/documents")
-                    .header("Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000020"))
+                    .header(
+                        "Authorization",
+                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000020"),
+                    )
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -105,7 +114,9 @@ mod documents_tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let docs: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
         assert!(
             docs.iter().all(|d| d["original_filename"] != "doc-a.txt"),
@@ -115,7 +126,7 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_delete_document_returns_204() {
-        let app = make_app().await;
+        let app: Router = make_app().await;
 
         let (ct, body) = multipart_body("para-deletar.txt", b"conteudo", "text/plain");
         let upload_res = app
@@ -133,7 +144,8 @@ mod documents_tests {
             .unwrap();
 
         let bytes = axum::body::to_bytes(upload_res.into_body(), usize::MAX)
-            .await.unwrap();
+            .await
+            .unwrap();
         let doc: Value = serde_json::from_slice(&bytes).unwrap();
         let doc_id = doc["id"].as_str().unwrap();
 
@@ -154,7 +166,7 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_delete_cross_workspace_returns_404() {
-        let app = make_app().await;
+        let app: Router = make_app().await;
 
         let (ct, body) = multipart_body("privado.txt", b"secreto", "text/plain");
         let upload_res = app
@@ -163,8 +175,10 @@ mod documents_tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/v1/documents")
-                    .header("Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000030"))
+                    .header(
+                        "Authorization",
+                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000030"),
+                    )
                     .header("Content-Type", ct)
                     .body(Body::from(body))
                     .unwrap(),
@@ -173,7 +187,8 @@ mod documents_tests {
             .unwrap();
 
         let bytes = axum::body::to_bytes(upload_res.into_body(), usize::MAX)
-            .await.unwrap();
+            .await
+            .unwrap();
         let doc: Value = serde_json::from_slice(&bytes).unwrap();
         let doc_id = doc["id"].as_str().unwrap();
 
@@ -182,8 +197,10 @@ mod documents_tests {
                 Request::builder()
                     .method("DELETE")
                     .uri(&format!("/api/v1/documents/{}", doc_id))
-                    .header("Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000040"))
+                    .header(
+                        "Authorization",
+                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000040"),
+                    )
                     .body(Body::empty())
                     .unwrap(),
             )

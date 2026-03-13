@@ -1,7 +1,7 @@
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{delete, get},
     Extension, Json, Router,
 };
 use sha2::{Digest, Sha256};
@@ -17,9 +17,12 @@ use crate::{
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/documents",                   get(list).post(upload))
-        .route("/documents/:id",               get(get_one).delete(remove))
-        .route("/projects/:id/documents",      get(list_for_project).post(link_to_project))
+        .route("/documents", get(list).post(upload))
+        .route("/documents/:id", get(get_one).delete(remove))
+        .route(
+            "/projects/:id/documents",
+            get(list_for_project).post(link_to_project),
+        )
         .route("/projects/:id/documents/:did", delete(unlink_from_project))
 }
 
@@ -108,11 +111,12 @@ async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Document>, AppError> {
-    let row = sqlx::query_as::<_, Document>(
-        "SELECT * FROM documents WHERE id=$1 AND workspace_id=$2",
-    )
-    .bind(id).bind(auth.workspace_id)
-    .fetch_one(&state.db).await?;
+    let row =
+        sqlx::query_as::<_, Document>("SELECT * FROM documents WHERE id=$1 AND workspace_id=$2")
+            .bind(id)
+            .bind(auth.workspace_id)
+            .fetch_one(&state.db)
+            .await?;
     Ok(Json(row))
 }
 
@@ -121,13 +125,15 @@ async fn remove(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let r = sqlx::query(
-        "DELETE FROM documents WHERE id=$1 AND workspace_id=$2",
-    )
-    .bind(id).bind(auth.workspace_id)
-    .execute(&state.db).await
-    .map_err(AppError::from)?;
-    if r.rows_affected() == 0 { return Err(AppError::not_found("Documento nao encontrado")); }
+    let r = sqlx::query("DELETE FROM documents WHERE id=$1 AND workspace_id=$2")
+        .bind(id)
+        .bind(auth.workspace_id)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Documento nao encontrado"));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -136,12 +142,12 @@ async fn list_for_project(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<Document>>, AppError> {
-    sqlx::query(
-        "SELECT id FROM projects WHERE id=$1 AND workspace_id=$2",
-    )
-    .bind(project_id).bind(auth.workspace_id)
-    .fetch_one(&state.db).await
-    .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
+    sqlx::query("SELECT id FROM projects WHERE id=$1 AND workspace_id=$2")
+        .bind(project_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
 
     let rows = sqlx::query_as::<_, Document>(
         r#"SELECT d.id, d.workspace_id, d.filename, d.original_filename, d.mime_type,
@@ -152,12 +158,15 @@ async fn list_for_project(
         WHERE pd.project_id=$1 ORDER BY pd.linked_at DESC"#,
     )
     .bind(project_id)
-    .fetch_all(&state.db).await?;
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows))
 }
 
 #[derive(serde::Deserialize)]
-struct LinkDto { document_id: Uuid }
+struct LinkDto {
+    document_id: Uuid,
+}
 
 async fn link_to_project(
     Extension(auth): Extension<AuthUser>,
@@ -168,8 +177,11 @@ async fn link_to_project(
     sqlx::query(
         "INSERT INTO project_documents (project_id, document_id, linked_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
     )
-    .bind(project_id).bind(dto.document_id).bind(auth.user_id)
-    .execute(&state.db).await
+    .bind(project_id)
+    .bind(dto.document_id)
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
     .map_err(AppError::from)?;
     Ok(StatusCode::CREATED)
 }
@@ -179,11 +191,11 @@ async fn unlink_from_project(
     State(state): State<AppState>,
     Path((project_id, doc_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
-    sqlx::query(
-        "DELETE FROM project_documents WHERE project_id=$1 AND document_id=$2",
-    )
-    .bind(project_id).bind(doc_id)
-    .execute(&state.db).await
-    .map_err(AppError::from)?;
+    sqlx::query("DELETE FROM project_documents WHERE project_id=$1 AND document_id=$2")
+        .bind(project_id)
+        .bind(doc_id)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
     Ok(StatusCode::NO_CONTENT)
 }

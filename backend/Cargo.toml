@@ -19,6 +19,7 @@ tracing            = "0.1"
 tracing-subscriber = { version = "0.3",   features = ["env-filter"] }
 bcrypt             = "0.15"
 jsonwebtoken       = "9"
+tower              = { version = "0.4",   features = ["util"] }
 tower-http         = { version = "0.5",   features = ["cors", "trace", "compression-gzip"] }
 dotenvy            = "0.15"
 sha2               = "0.10"
