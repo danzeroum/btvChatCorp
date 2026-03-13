@@ -1,18 +1,17 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { Router } from '@angular/router';
-import { RouterTestingModule } from '@angular/router/testing';
 import { authGuard } from './auth.guard';
 import { ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 
-/** Gera um JWT HS256 fake com payload customizável (sem assinatura real – suficiente para testes de guard) */
 function makeToken(payload: Record<string, unknown>): string {
-  const header  = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const body    = btoa(JSON.stringify(payload));
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body   = btoa(JSON.stringify(payload));
   return `${header}.${body}.fakesig`;
 }
 
-const futureExp = Math.floor(Date.now() / 1000) + 3600;  // +1h
-const pastExp   = Math.floor(Date.now() / 1000) - 3600;  // -1h
+const futureExp = Math.floor(Date.now() / 1000) + 3600;
+const pastExp   = Math.floor(Date.now() / 1000) - 3600;
 
 describe('authGuard', () => {
   let router: Router;
@@ -21,14 +20,14 @@ describe('authGuard', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [RouterTestingModule],
+      providers: [provideRouter([])],
     });
     router = TestBed.inject(Router);
     spyOn(router, 'navigate');
     localStorage.clear();
   });
 
-  it('deve redirecionar para /auth/login quando não há token', () => {
+  it('deve redirecionar para /auth/login quando nao ha token', () => {
     const result = TestBed.runInInjectionContext(() =>
       authGuard(dummyRoute, dummyState)
     );
@@ -36,7 +35,7 @@ describe('authGuard', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
   });
 
-  it('deve redirecionar para /auth/login quando token está expirado', () => {
+  it('deve redirecionar para /auth/login quando token expirado', () => {
     localStorage.setItem('jwt_token', makeToken({ sub: 'u1', exp: pastExp }));
     const result = TestBed.runInInjectionContext(() =>
       authGuard(dummyRoute, dummyState)
@@ -45,7 +44,7 @@ describe('authGuard', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
   });
 
-  it('deve permitir acesso com token válido', () => {
+  it('deve permitir acesso com token valido', () => {
     localStorage.setItem('jwt_token', makeToken({ sub: 'u1', exp: futureExp }));
     const result = TestBed.runInInjectionContext(() =>
       authGuard(dummyRoute, dummyState)

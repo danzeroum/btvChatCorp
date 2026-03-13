@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
-import { RouterTestingModule } from '@angular/router/testing';
+import { provideRouter } from '@angular/router';
 import { DocumentViewerComponent, DocumentItem } from './document-viewer.component';
-import { HttpEventType } from '@angular/common/http';
+import { HttpEventType, HttpResponse } from '@angular/common/http';
 
 const MOCK_DOC: DocumentItem = {
   id: 'doc-1',
@@ -22,7 +22,8 @@ describe('DocumentViewerComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [DocumentViewerComponent, HttpClientTestingModule, RouterTestingModule],
+      imports: [DocumentViewerComponent, HttpClientTestingModule],
+      providers: [provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(DocumentViewerComponent);
@@ -34,10 +35,13 @@ describe('DocumentViewerComponent', () => {
 
   it('deve criar o componente', () => {
     expect(component).toBeTruthy();
+    // Cancela request de init para nao vazar
+    fixture.detectChanges();
+    http.expectOne('/api/v1/documents').flush([]);
   });
 
   it('deve carregar lista de documentos no init', fakeAsync(() => {
-    fixture.detectChanges(); // dispara ngOnInit
+    fixture.detectChanges();
     const req = http.expectOne('/api/v1/documents');
     expect(req.request.method).toBe('GET');
     req.flush([MOCK_DOC]);
@@ -57,7 +61,7 @@ describe('DocumentViewerComponent', () => {
     expect(component.filtered().length).toBe(0);
   }));
 
-  it('deve adicionar documento à lista após upload com sucesso', fakeAsync(() => {
+  it('deve adicionar documento a lista apos upload com sucesso', fakeAsync(() => {
     fixture.detectChanges();
     http.expectOne('/api/v1/documents').flush([]);
     tick();
@@ -69,8 +73,8 @@ describe('DocumentViewerComponent', () => {
     expect(uploadReq.request.method).toBe('POST');
     expect(uploadReq.request.body instanceof FormData).toBeTrue();
 
-    // Simula evento de resposta HTTP
-    uploadReq.event({ type: HttpEventType.Response, clone: () => ({} as any), body: MOCK_DOC } as any);
+    // Resposta completa do HTTP
+    uploadReq.flush(MOCK_DOC);
     tick();
 
     expect(component.documents().length).toBe(1);
@@ -94,7 +98,7 @@ describe('DocumentViewerComponent', () => {
     expect(entry.error).toBeTruthy();
   }));
 
-  it('deve remover documento da lista após delete', fakeAsync(() => {
+  it('deve remover documento da lista apos delete', fakeAsync(() => {
     fixture.detectChanges();
     http.expectOne('/api/v1/documents').flush([MOCK_DOC]);
     tick();
@@ -110,7 +114,7 @@ describe('DocumentViewerComponent', () => {
     expect(component.documents().length).toBe(0);
   }));
 
-  it('não deve deletar se usuário cancelar confirm', fakeAsync(() => {
+  it('nao deve deletar se usuario cancelar confirm', fakeAsync(() => {
     fixture.detectChanges();
     http.expectOne('/api/v1/documents').flush([MOCK_DOC]);
     tick();
@@ -121,6 +125,8 @@ describe('DocumentViewerComponent', () => {
   }));
 
   it('formatSize deve retornar valores corretos', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/documents').flush([]);
     expect(component.formatSize(0)).toBe('-');
     expect(component.formatSize(500)).toBe('500 B');
     expect(component.formatSize(2048)).toBe('2.0 KB');
