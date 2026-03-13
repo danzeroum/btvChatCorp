@@ -25,6 +25,7 @@ impl AppError {
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "unauthorized", msg)
     }
+    #[allow(dead_code)]
     pub fn forbidden(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::FORBIDDEN, "forbidden", msg)
     }
