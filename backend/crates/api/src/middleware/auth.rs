@@ -23,6 +23,7 @@ pub struct Claims {
 pub struct AuthUser {
     pub user_id: Uuid,
     pub workspace_id: Uuid,
+    #[allow(dead_code)]
     pub role: String,
 }
 
