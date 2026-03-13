@@ -1,8 +1,9 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './features/auth/auth.guard';
+import { authGuard }  from './features/auth/auth.guard';
+import { adminGuard } from './features/auth/admin.guard';
 
 export const routes: Routes = [
-  // Auth (sem shell, sem guard)
+  // Auth (público)
   {
     path: 'auth',
     children: [
@@ -18,7 +19,13 @@ export const routes: Routes = [
     ]
   },
 
-  // App (com shell, protegido)
+  // 403 – sem shell, sem guards
+  {
+    path: 'unauthorized',
+    loadComponent: () => import('./features/auth/unauthorized.component').then(m => m.UnauthorizedComponent),
+  },
+
+  // App protegido (precisa de JWT válido)
   {
     path: '',
     canActivate: [authGuard],
@@ -57,10 +64,14 @@ export const routes: Routes = [
         path: 'training',
         loadChildren: () => import('./features/training-dashboard/training-dashboard.routes').then(m => m.TRAINING_ROUTES),
       },
+
+      // Admin: precisa de JWT válido (authGuard acima) + role admin (adminGuard aqui)
       {
         path: 'admin',
+        canActivate: [adminGuard],
         loadChildren: () => import('./features/admin/admin.routes').then(m => m.ADMIN_ROUTES),
       },
+
       { path: '', redirectTo: 'projects', pathMatch: 'full' },
     ]
   },
