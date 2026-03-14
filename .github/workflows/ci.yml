@@ -27,7 +27,6 @@ jobs:
 
       - name: Cache node_modules
         uses: actions/cache@v4
-        id: cache-node
         with:
           path: frontend/node_modules
           key: node-modules-${{ hashFiles('frontend/package.json') }}
@@ -35,11 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Build (production)
         run: npm run build -- --configuration production
@@ -47,40 +42,29 @@ jobs:
       - name: Unit tests (headless) + coverage
         run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
 
-      # ── Validações específicas Fase 4 ──────────────────────
-      - name: "[Fase 4] Verifica adminGuard nas rotas de training"
+      - name: "[Fase 4] adminGuard nas rotas de training"
         run: |
-          if ! grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts; then
-            echo "❌ adminGuard não encontrado em training-dashboard.routes.ts"
-            exit 1
-          fi
-          echo "✅ adminGuard presente nas rotas de treinamento"
+          grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts \
+            && echo "✅ adminGuard presente" \
+            || (echo "❌ adminGuard ausente" && exit 1)
 
-      - name: "[Fase 4] Verifica interceptor trata 401/403"
+      - name: "[Fase 4] interceptor trata 401/403"
         run: |
-          if ! grep -q '401' src/app/features/auth/auth.interceptor.ts; then
-            echo "❌ Tratamento de 401 não encontrado no interceptor"
-            exit 1
-          fi
-          if ! grep -q '403' src/app/features/auth/auth.interceptor.ts; then
-            echo "❌ Tratamento de 403 não encontrado no interceptor"
-            exit 1
-          fi
-          echo "✅ auth.interceptor trata 401 e 403"
+          grep -q '401' src/app/features/auth/auth.interceptor.ts \
+            && grep -q '403' src/app/features/auth/auth.interceptor.ts \
+            && echo "✅ auth.interceptor OK" \
+            || (echo "❌ Tratamento 401/403 ausente" && exit 1)
 
-      - name: "[Fase 4] Verifica componentes de UX polish existem"
+      - name: "[Fase 4] componentes de UX polish existem"
         run: |
           for f in \
             src/app/core/components/loading-skeleton.component.ts \
             src/app/core/components/empty-state.component.ts \
             src/app/core/components/error-banner.component.ts \
             src/app/core/handlers/global-error-handler.ts; do
-            if [ ! -f "$f" ]; then
-              echo "❌ Arquivo ausente: $f"
-              exit 1
-            fi
+            [ -f "$f" ] || (echo "❌ Ausente: $f" && exit 1)
           done
-          echo "✅ Todos os componentes de UX polish presentes"
+          echo "✅ Componentes UX polish OK"
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -148,36 +132,30 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Criar diretório de uploads
+      - name: Criar diretorio de uploads
         run: mkdir -p $UPLOAD_DIR
 
       - name: Run migrations
         run: |
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
-          sqlx migrate run \
-            --database-url "$DATABASE_URL" \
-            --source crates/api/migrations
+          sqlx migrate run --database-url "$DATABASE_URL" --source crates/api/migrations
 
       - name: cargo test (unit + integration)
         run: cargo test --all -- --test-threads=1
 
-      # ── Validações específicas Fase 4 ──────────────────────
-      - name: "[Fase 4] Verifica middleware JWT presente"
+      - name: "[Fase 4] Middleware JWT presente"
         run: |
-          if ! grep -rq 'jwt' crates/api/src/middleware/; then
-            echo "❌ Middleware JWT não encontrado em src/middleware/"
-            exit 1
-          fi
-          echo "✅ Middleware JWT presente"
+          grep -rq 'jwt' crates/api/src/middleware/ \
+            && echo "✅ Middleware JWT OK" \
+            || (echo "❌ Middleware JWT ausente" && exit 1)
 
   # ──────────────────────────────────────────────────────────
-  # JOB 3 – Smoke test de integração (runner isolado + DB próprio)
-  # Não depende do job backend para garantir DB limpo
+  # JOB 3 – Smoke test (debug build, cache do job backend)
   # ──────────────────────────────────────────────────────────
   integration-smoke:
     name: Integration smoke test
     runs-on: ubuntu-latest
-    # needs: [backend]  ← removido: cada job tem seu próprio DB isolado
+    needs: [backend]
 
     services:
       postgres:
@@ -211,6 +189,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      # Mesma key do job backend — reutiliza artefatos ja compilados
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -218,80 +197,82 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             backend/target
-          key: ${{ runner.os }}-cargo-smoke-${{ hashFiles('backend/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.toml', 'backend/crates/api/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
 
-      - name: Run migrations (DB limpo neste runner)
+      - name: Run migrations
         working-directory: backend
         run: |
-          sqlx migrate run \
-            --database-url "$DATABASE_URL" \
-            --source crates/api/migrations
+          sqlx migrate run --database-url "$DATABASE_URL" --source crates/api/migrations
 
-      - name: Build backend release
+      # debug build: muito mais rapido que release no CI
+      - name: Build backend (debug)
         working-directory: backend
-        run: cargo build --release -p api
+        run: cargo build -p api
 
       - name: Start backend
         working-directory: backend
         run: |
           mkdir -p $UPLOAD_DIR
-          ./target/release/api &
+          ./target/debug/api &
           echo $! > /tmp/api.pid
-          for i in $(seq 1 30); do
+          echo "PID: $(cat /tmp/api.pid)"
+          for i in $(seq 1 40); do
             if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
               echo "✅ Backend respondeu na tentativa $i"
               break
             fi
-            echo "Aguardando backend... ($i/30)"
-            sleep 2
+            if [ "$i" -eq 40 ]; then
+              echo "❌ Backend nao respondeu em 40 tentativas"
+              cat /proc/$(cat /tmp/api.pid)/fd/1 2>/dev/null || true
+              exit 1
+            fi
+            echo "Aguardando... ($i/40)"
+            sleep 3
           done
 
       - name: "[Smoke] GET /health retorna status ok"
         run: |
-          RESPONSE=$(curl -sf http://localhost:8080/health)
-          echo "Response: $RESPONSE"
-          echo "$RESPONSE" | grep -q '"status"' || (echo '❌ /health não retornou status' && exit 1)
+          R=$(curl -sf http://localhost:8080/health)
+          echo "$R"
+          echo "$R" | grep -q '"status"' || (echo "❌ /health sem campo status" && exit 1)
           echo "✅ /health OK"
 
-      - name: "[Smoke] POST /api/v1/auth/register retorna 200/201/409"
+      - name: "[Smoke] POST /auth/register retorna 201/409"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -X POST http://localhost:8080/api/v1/auth/register \
             -H 'Content-Type: application/json' \
-            -d '{"name":"Smoke Test","email":"smoke@test.com","password":"Smoke@1234"}')
+            -d '{"workspace_name":"Smoke Workspace","name":"Smoke Test","email":"smoke@test.com","password":"Smoke@1234"}')
           echo "Status: $CODE"
-          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "409" ]; then
-            echo "❌ Registro retornou $CODE inesperado"
-            exit 1
-          fi
-          echo "✅ /auth/register OK (status $CODE)"
+          [ "$CODE" = "201" ] || [ "$CODE" = "409" ] \
+            || (echo "❌ /auth/register retornou $CODE" && exit 1)
+          echo "✅ /auth/register OK ($CODE)"
 
-      - name: "[Smoke] POST /api/v1/auth/login retorna token"
+      - name: "[Smoke] POST /auth/login retorna token"
         run: |
+          # Garante usuario existe
           curl -s -X POST http://localhost:8080/api/v1/auth/register \
             -H 'Content-Type: application/json' \
-            -d '{"name":"Smoke Login","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null || true
-          RESPONSE=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
+            -d '{"workspace_name":"Smoke WS2","name":"Smoke Login","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null || true
+          R=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
             -H 'Content-Type: application/json' \
             -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
-          echo "Response: $RESPONSE"
-          echo "$RESPONSE" | grep -q 'token\|access_token' || (echo '❌ Login não retornou token' && exit 1)
-          echo "✅ /auth/login retornou token"
+          echo "$R"
+          echo "$R" | grep -q '"token"' || (echo "❌ /auth/login sem campo token" && exit 1)
+          echo "✅ /auth/login OK"
 
-      - name: "[Smoke] GET /api/v1/training/queue exige autenticação (401/403)"
+      - name: "[Smoke] /training sem token retorna 401/403"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-            http://localhost:8080/api/v1/training/queue)
+            http://localhost:8080/api/v1/training/feedback)
           echo "Status sem token: $CODE"
-          if [ "$CODE" != "401" ] && [ "$CODE" != "403" ]; then
-            echo "❌ Rota protegida retornou $CODE sem token (esperado 401/403)"
-            exit 1
-          fi
-          echo "✅ /training/queue está protegida (status $CODE)"
+          [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
+            || (echo "❌ Rota protegida retornou $CODE (esperado 401/403)" && exit 1)
+          echo "✅ /training protegida OK ($CODE)"
 
       - name: Stop backend
         if: always()
