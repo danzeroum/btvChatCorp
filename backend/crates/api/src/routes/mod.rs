@@ -4,7 +4,6 @@ pub mod documents;
 pub mod projects;
 pub mod training;
 
-// Modulos de teste — compilados apenas em cargo test
 #[cfg(test)]
 mod documents_test;
 #[cfg(test)]
@@ -24,7 +23,6 @@ use crate::state::AppState;
 use crate::middleware::auth::require_auth;
 use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
 
-/// Especificacao OpenAPI 3.0 da API BTV Chat Corp
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -53,14 +51,10 @@ use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
         (name = "Training", description = "Pipeline de treinamento e fine-tuning LoRA"),
         (name = "Admin",    description = "Administracao do workspace"),
     ),
-    security(
-        ("BearerAuth" = [])
-    ),
     modifiers(&SecurityAddon)
 )]
 pub struct ApiDoc;
 
-/// Adiciona esquema de seguranca BearerAuth
 struct SecurityAddon;
 impl utoipa::Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
@@ -78,19 +72,17 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
-/// Retorna o JSON da especificacao OpenAPI
 async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     Json(ApiDoc::openapi())
 }
 
-pub fn docs_router() -> Router {
+/// Router dos docs — tipado como Router<AppState> para ser mergeavel com o app principal
+pub fn docs_router() -> Router<AppState> {
     Router::new()
-        // UI interativa: GET /docs
         .merge(
             SwaggerUi::new("/docs")
                 .url("/docs/openapi.json", ApiDoc::openapi())
         )
-        // JSON raw: GET /docs/openapi.json (tambem servido pelo SwaggerUi, mas exposto explicitamente)
         .route("/docs/openapi.json", get(openapi_json))
 }
 
