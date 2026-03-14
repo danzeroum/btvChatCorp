@@ -1,103 +1,142 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, interval, Subject } from 'rxjs';
+import { switchMap, takeUntil, shareReplay } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
-const BASE = `${environment.apiUrl}/training`;
+const BASE = `${environment.apiUrl}/api/v1`;
 
-export interface TrainingItem {
+// ─── Models (espelham os structs do backend) ────────────────────────────────────
+
+export interface TrainingInteraction {
   id: string;
-  userMessage: string;
-  assistantResponse: string;
-  userCorrection?: string;
-  ragContext?: any;
-  source: 'user_approved' | 'user_corrected' | 'synthetic_from_docs';
-  priority: 'high' | 'normal';
-  classification: string;
-  piiDetected: boolean;
-  curatorStatus: 'pending' | 'approved' | 'rejected';
-  createdAt: string;
-  finalAnswer?: string;  // editável pelo curador
-}
-
-export interface TrainingStats {
-  pendingReview: number;
-  approvedThisWeek: number;
-  rejectedThisWeek: number;
-  nextTrainingIn: string;
-  currentLoraVersion: string;
-  totalExamples: number;
+  user_message: string;
+  assistant_response: string;
+  user_rating: 'positive' | 'negative' | null;
+  user_correction: string | null;
+  feedback_categories: string | null;
+  curator_status: 'pending' | 'approved' | 'rejected';
+  data_classification: string;
+  created_at: string;
 }
 
 export interface TrainingBatch {
   id: string;
-  version: string;
-  totalExamples: number;
-  positiveExamples: number;
-  correctedExamples: number;
-  accuracy: number;
-  status: 'queued' | 'training' | 'evaluating' | 'deployed' | 'rolled_back';
-  deployedAt?: string;
-  completedAt?: string;
+  workspace_id: string;
+  base_model: string;
+  previous_lora_version: string | null;
+  new_lora_version: string | null;
+  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total_examples: number | null;
+  positive_examples: number | null;
+  corrected_examples: number | null;
+  progress: number | null;
+  current_epoch: number | null;
+  total_epochs: number | null;
+  training_loss: number | null;
+  eval_accuracy: number | null;
+  external_job_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  deployed_at: string | null;
 }
 
-export interface DataQualityMetrics {
-  totalInteractions: number;
-  eligibleForTraining: number;
-  piiDetectedCount: number;
-  averageRating: number;
-  approvalRate: number;
-  correctionRate: number;
-  byClassification: Record<string, number>;
-  bySource: Record<string, number>;
-  dailyVolume: { date: string; count: number }[];
+export interface BatchStatus {
+  id: string;
+  status: string;
+  progress: number | null;
+  current_epoch: number | null;
+  total_epochs: number | null;
+  training_loss: number | null;
+  eval_accuracy: number | null;
+  error_message: string | null;
 }
+
+export interface TrainingDocument {
+  id: string;
+  document_name: string;
+  chunk_text: string;
+  generated_question: string;
+  generated_answer: string;
+  classification: string;
+  curator_status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
+
+export interface StartBatchDto {
+  base_model?: string;
+  total_epochs?: number;
+}
+
+export interface QueueQuery {
+  status?: 'pending' | 'approved' | 'rejected';
+  page?: number;
+  per_page?: number;
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────────
 
 @Injectable({ providedIn: 'root' })
 export class TrainingService {
   private http = inject(HttpClient);
 
-  getStats(workspaceId: string): Observable<TrainingStats> {
-    return this.http.get<TrainingStats>(`${BASE}/stats`, { params: { workspaceId } });
+  // ── Fila de curadoria
+
+  getQueue(query: QueueQuery = {}): Observable<TrainingInteraction[]> {
+    let params = new HttpParams();
+    if (query.status)   params = params.set('status',   query.status);
+    if (query.page)     params = params.set('page',     query.page);
+    if (query.per_page) params = params.set('per_page', query.per_page);
+    return this.http.get<TrainingInteraction[]>(`${BASE}/training/queue`, { params });
   }
 
-  getPendingItems(
-    workspaceId: string,
-    source?: string,
-    priority?: string,
-    page = 1,
-    perPage = 20,
-  ): Observable<{ items: TrainingItem[]; total: number }> {
-    let params = new HttpParams()
-      .set('workspaceId', workspaceId)
-      .set('page', page)
-      .set('perPage', perPage);
-    if (source && source !== 'all') params = params.set('source', source);
-    if (priority && priority !== 'all') params = params.set('priority', priority);
-    return this.http.get<{ items: TrainingItem[]; total: number }>(`${BASE}/pending`, { params });
+  approveInteraction(id: string): Observable<void> {
+    return this.http.put<void>(`${BASE}/training/queue/${id}/approve`, {});
   }
 
-  approveItem(id: string, finalAnswer?: string): Observable<void> {
-    return this.http.post<void>(`${BASE}/items/${id}/approve`, { finalAnswer });
+  rejectInteraction(id: string): Observable<void> {
+    return this.http.put<void>(`${BASE}/training/queue/${id}/reject`, {});
   }
 
-  rejectItem(id: string, reason?: string): Observable<void> {
-    return this.http.post<void>(`${BASE}/items/${id}/reject`, { reason });
+  // ── Batches
+
+  getBatches(): Observable<TrainingBatch[]> {
+    return this.http.get<TrainingBatch[]>(`${BASE}/training/batches`);
   }
 
-  bulkApprove(ids: string[]): Observable<void> {
-    return this.http.post<void>(`${BASE}/items/bulk-approve`, { ids });
+  getBatch(id: string): Observable<TrainingBatch> {
+    return this.http.get<TrainingBatch>(`${BASE}/training/batches/${id}`);
   }
 
-  getBatches(workspaceId: string): Observable<TrainingBatch[]> {
-    return this.http.get<TrainingBatch[]>(`${BASE}/batches`, { params: { workspaceId } });
+  startBatch(dto: StartBatchDto = {}): Observable<TrainingBatch> {
+    return this.http.post<TrainingBatch>(`${BASE}/training/batches`, dto);
   }
 
-  triggerTraining(workspaceId: string): Observable<{ jobId: string }> {
-    return this.http.post<{ jobId: string }>(`${BASE}/trigger`, { workspaceId });
+  getBatchStatus(id: string): Observable<BatchStatus> {
+    return this.http.get<BatchStatus>(`${BASE}/training/batches/${id}/status`);
   }
 
-  getDataQuality(workspaceId: string): Observable<DataQualityMetrics> {
-    return this.http.get<DataQualityMetrics>(`${BASE}/quality`, { params: { workspaceId } });
+  /**
+   * Polling de status a cada `intervalMs` ms.
+   * Para automaticamente quando `stop$` emite.
+   */
+  pollBatchStatus(
+    id: string,
+    intervalMs = 3000,
+    stop$: Subject<void> = new Subject(),
+  ): Observable<BatchStatus> {
+    return interval(intervalMs).pipe(
+      switchMap(() => this.getBatchStatus(id)),
+      takeUntil(stop$),
+      shareReplay(1),
+    );
+  }
+
+  // ── Documentos sinteticos
+
+  getDocuments(): Observable<TrainingDocument[]> {
+    return this.http.get<TrainingDocument[]>(`${BASE}/training/documents`);
   }
 }
