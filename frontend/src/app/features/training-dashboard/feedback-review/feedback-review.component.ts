@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TrainingService, TrainingItem, TrainingStats } from '../training.service';
+import { TrainingService, TrainingInteraction } from '../training.service';
 import { WorkspaceContextService } from '../../../core/services/workspace-context.service';
 
 @Component({
@@ -21,179 +21,189 @@ import { WorkspaceContextService } from '../../../core/services/workspace-contex
       </div>
 
       <!-- Métricas rápidas -->
-      <div class="stats-bar" *ngIf="stats">
+      <div class="stats-bar">
         <div class="stat">
-          <span class="number">{{ stats.pendingReview }}</span>
+          <span class="number">{{ pendingCount }}</span>
           <span class="label">Pendentes</span>
         </div>
         <div class="stat">
-          <span class="number">{{ stats.approvedThisWeek }}</span>
-          <span class="label">Aprovados (semana)</span>
+          <span class="number">{{ approvedCount }}</span>
+          <span class="label">Aprovados</span>
         </div>
         <div class="stat">
-          <span class="number">{{ stats.nextTrainingIn }}</span>
-          <span class="label">Próximo treino</span>
-        </div>
-        <div class="stat">
-          <span class="number">{{ stats.currentLoraVersion || '—' }}</span>
-          <span class="label">Versão ativa</span>
+          <span class="number">{{ correctedCount }}</span>
+          <span class="label">Com correção</span>
         </div>
       </div>
 
       <!-- Filtros -->
       <div class="filters">
-        <select [(ngModel)]="sourceFilter" (change)="loadItems()">
-          <option value="all">Todas as fontes</option>
-          <option value="user_approved">Aprovados por usuários</option>
-          <option value="user_corrected">Com correções</option>
-          <option value="synthetic_from_docs">QA sintéticos</option>
+        <select [(ngModel)]="statusFilter" (change)="loadItems()">
+          <option value="">Todos os status</option>
+          <option value="pending">Pendentes</option>
+          <option value="approved">Aprovados</option>
+          <option value="rejected">Rejeitados</option>
         </select>
-        <select [(ngModel)]="priorityFilter" (change)="loadItems()">
-          <option value="all">Todas as prioridades</option>
-          <option value="high">Alta (com correção)</option>
-          <option value="normal">Normal</option>
-        </select>
-        <button class="btn-secondary" (click)="bulkApproveAll()"
-          [disabled]="selectedIds.length === 0">
+        <button class="btn-secondary" (click)="bulkApproveAll()" [disabled]="selectedIds.length === 0">
           Aprovar selecionados ({{ selectedIds.length }})
         </button>
       </div>
 
       <!-- Lista de itens -->
       <div class="items-list">
-        <div *ngFor="let item of items" class="review-card"
-          [class.high-priority]="item.priority === 'high'"
-          [class.selected]="selectedIds.includes(item.id)">
+        @for (item of items; track item.id) {
+          <div class="review-card"
+            [class.selected]="selectedIds.includes(item.id)"
+            [class.has-correction]="!!item.user_correction">
 
-          <!-- Seleção + badge de fonte -->
-          <div class="card-header">
-            <label class="checkbox-wrap">
-              <input type="checkbox" [checked]="selectedIds.includes(item.id)"
-                (change)="toggleSelect(item.id)">
-            </label>
-            <span class="source-badge" [class]="item.source">{{ sourceLabel(item.source) }}</span>
-            <span *ngIf="item.priority === 'high'" class="priority-badge">🔥 Alta prioridade</span>
-            <span class="classification-badge">{{ item.classification }}</span>
-            <span *ngIf="item.piiDetected" class="pii-badge">⚠ PII</span>
-          </div>
-
-          <!-- Par Q&A -->
-          <div class="qa-pair">
-            <div class="question">
-              <strong>Pergunta</strong>
-              <p>{{ item.userMessage }}</p>
+            <div class="card-header">
+              <label class="checkbox-wrap">
+                <input type="checkbox"
+                  [checked]="selectedIds.includes(item.id)"
+                  (change)="toggleSelect(item.id)">
+              </label>
+              <span class="rating-badge" [class]="item.user_rating ?? 'none'">
+                {{ item.user_rating === 'positive' ? '👍 Positivo' : item.user_rating === 'negative' ? '👎 Negativo' : '—' }}
+              </span>
+              @if (item.user_correction) {
+                <span class="correction-badge">✏ Tem correção</span>
+              }
+              <span class="classification-badge">{{ item.data_classification }}</span>
+              <span class="status-badge" [class]="item.curator_status">{{ item.curator_status }}</span>
             </div>
-            <div class="original-response">
-              <strong>Resposta original do modelo</strong>
-              <p>{{ item.assistantResponse }}</p>
-            </div>
-            <div *ngIf="item.userCorrection" class="correction">
-              <strong>✏ Correção do usuário</strong>
-              <p>{{ item.userCorrection }}</p>
-            </div>
-          </div>
 
-          <!-- Campo editável pelo curador -->
-          <div class="curator-edit">
-            <strong>Resposta final para treino</strong>
-            <textarea [(ngModel)]="item.finalAnswer" rows="4"
-              [placeholder]="item.userCorrection || item.assistantResponse">
-            </textarea>
-          </div>
+            <div class="qa-pair">
+              <div class="question">
+                <strong>Pergunta</strong>
+                <p>{{ item.user_message }}</p>
+              </div>
+              <div class="original-response">
+                <strong>Resposta do modelo</strong>
+                <p>{{ item.assistant_response }}</p>
+              </div>
+              @if (item.user_correction) {
+                <div class="correction">
+                  <strong>✏ Correção do usuário</strong>
+                  <p>{{ item.user_correction }}</p>
+                </div>
+              }
+            </div>
 
-          <!-- Ações -->
-          <div class="actions">
-            <button class="approve" (click)="approve(item)">✓ Aprovar</button>
-            <button class="reject" (click)="reject(item)">✗ Rejeitar</button>
+            @if (item.curator_status === 'pending') {
+              <div class="actions">
+                <button class="approve" (click)="approve(item)">&#10003; Aprovar</button>
+                <button class="reject" (click)="reject(item)">&#10007; Rejeitar</button>
+              </div>
+            }
           </div>
-        </div>
+        }
+
+        @if (items.length === 0 && !loading) {
+          <div class="empty-state">
+            <p>Nenhum item encontrado para o filtro selecionado.</p>
+          </div>
+        }
       </div>
 
       <!-- Paginação -->
-      <div class="pagination" *ngIf="total > perPage">
-        <button [disabled]="page === 1" (click)="prevPage()">← Anterior</button>
-        <span>Pág. {{ page }} de {{ totalPages }}</span>
-        <button [disabled]="page >= totalPages" (click)="nextPage()">Próxima →</button>
-      </div>
+      @if (total > perPage) {
+        <div class="pagination">
+          <button [disabled]="page === 1" (click)="prevPage()">← Anterior</button>
+          <span>Pág. {{ page }} de {{ totalPages }}</span>
+          <button [disabled]="page >= totalPages" (click)="nextPage()">Próxima →</button>
+        </div>
+      }
     </div>
   `,
   styleUrls: ['./feedback-review.component.scss'],
 })
 export class FeedbackReviewComponent implements OnInit {
   private trainingService = inject(TrainingService);
-  private wsCtx = inject(WorkspaceContextService);
+  // WorkspaceContextService nao e necessario: o token JWT ja carrega o workspace_id no backend
 
-  stats: TrainingStats | null = null;
-  items: TrainingItem[] = [];
+  items: TrainingInteraction[] = [];
+  allItems: TrainingInteraction[] = []; // cache para calcular metricas
   selectedIds: string[] = [];
-  sourceFilter = 'all';
-  priorityFilter = 'all';
+  statusFilter = '';
   page = 1;
   perPage = 20;
   total = 0;
+  loading = false;
   triggering = false;
 
-  get totalPages() { return Math.ceil(this.total / this.perPage); }
+  get totalPages(): number { return Math.ceil(this.total / this.perPage); }
+  get pendingCount(): number  { return this.allItems.filter(i => i.curator_status === 'pending').length; }
+  get approvedCount(): number { return this.allItems.filter(i => i.curator_status === 'approved').length; }
+  get correctedCount(): number { return this.allItems.filter(i => !!i.user_correction).length; }
 
-  ngOnInit() {
-    this.loadStats();
+  ngOnInit(): void {
+    this.loadAll();
     this.loadItems();
   }
 
-  loadStats() {
-    this.trainingService.getStats(this.wsCtx.workspaceId()).subscribe(
-      (s) => (this.stats = s),
-    );
+  loadAll(): void {
+    this.trainingService.getQueue().subscribe(items => (this.allItems = items));
   }
 
-  loadItems() {
-    this.trainingService
-      .getPendingItems(this.wsCtx.workspaceId(), this.sourceFilter, this.priorityFilter, this.page, this.perPage)
-      .subscribe(({ items, total }) => {
-        this.items = items.map((i) => ({ ...i, finalAnswer: i.userCorrection || i.assistantResponse }));
-        this.total = total;
-        this.selectedIds = [];
-      });
-  }
-
-  approve(item: TrainingItem) {
-    this.trainingService.approveItem(item.id, item.finalAnswer).subscribe(() => {
-      this.items = this.items.filter((i) => i.id !== item.id);
-      this.loadStats();
+  loadItems(): void {
+    this.loading = true;
+    const query = {
+      ...(this.statusFilter ? { status: this.statusFilter as 'pending' | 'approved' | 'rejected' } : {}),
+      page: this.page,
+      per_page: this.perPage,
+    };
+    this.trainingService.getQueue(query).subscribe(items => {
+      this.items = items;
+      this.total = items.length; // backend nao retorna total separado, usar length
+      this.selectedIds = [];
+      this.loading = false;
     });
   }
 
-  reject(item: TrainingItem) {
-    this.trainingService.rejectItem(item.id).subscribe(() => {
-      this.items = this.items.filter((i) => i.id !== item.id);
+  approve(item: TrainingInteraction): void {
+    this.trainingService.approveInteraction(item.id).subscribe(() => {
+      this.items = this.items.filter(i => i.id !== item.id);
+      this.loadAll();
     });
   }
 
-  toggleSelect(id: string) {
+  reject(item: TrainingInteraction): void {
+    this.trainingService.rejectInteraction(item.id).subscribe(() => {
+      this.items = this.items.filter(i => i.id !== item.id);
+    });
+  }
+
+  toggleSelect(id: string): void {
     const idx = this.selectedIds.indexOf(id);
     idx === -1 ? this.selectedIds.push(id) : this.selectedIds.splice(idx, 1);
   }
 
-  bulkApproveAll() {
-    this.trainingService.bulkApprove(this.selectedIds).subscribe(() => {
-      this.items = this.items.filter((i) => !this.selectedIds.includes(i.id));
-      this.selectedIds = [];
-      this.loadStats();
-    });
+  bulkApproveAll(): void {
+    const ids = [...this.selectedIds];
+    const approvals = ids.map(id => this.trainingService.approveInteraction(id));
+    import('rxjs').then(({ forkJoin }) =>
+      forkJoin(approvals).subscribe(() => {
+        this.items = this.items.filter(i => !ids.includes(i.id));
+        this.selectedIds = [];
+        this.loadAll();
+      })
+    );
   }
 
-  triggerTraining() {
+  triggerTraining(): void {
     this.triggering = true;
-    this.trainingService.triggerTraining(this.wsCtx.workspaceId()).subscribe({
-      next: ({ jobId }) => { alert(`Treinamento iniciado! Job: ${jobId}`); this.triggering = false; },
-      error: () => { this.triggering = false; },
+    this.trainingService.startBatch({}).subscribe({
+      next: batch => {
+        alert(`Treinamento iniciado! Batch ID: ${batch.id}`);
+        this.triggering = false;
+      },
+      error: (err) => {
+        alert(err?.error?.message ?? 'Erro ao iniciar treinamento.');
+        this.triggering = false;
+      },
     });
   }
 
-  prevPage() { this.page--; this.loadItems(); }
-  nextPage() { this.page++; this.loadItems(); }
-
-  sourceLabel(s: string): string {
-    return { user_approved: '👍 Aprovado', user_corrected: '✏ Corrigido', synthetic_from_docs: '🤖 Sintético' }[s] ?? s;
-  }
+  prevPage(): void { this.page--; this.loadItems(); }
+  nextPage(): void { this.page++; this.loadItems(); }
 }
