@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 /**
@@ -57,5 +57,5 @@ export class EmptyStateComponent {
   @Input() actionLabel = '';
   @Input() size: 'sm' | 'md' | 'lg' = 'md';
 
-  readonly action = new (require('@angular/core').EventEmitter)();
+  @Output() readonly action = new EventEmitter<void>();
 }
