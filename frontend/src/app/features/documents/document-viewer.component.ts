@@ -10,7 +10,7 @@ export interface DocumentItem {
   mime_type: string;
   size_bytes: number;
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';
-  chunk_count: number;
+  chunk_count: number | null;
   created_at: string;
 }
 
@@ -113,7 +113,7 @@ interface UploadingFile {
                   </td>
                   <td><span class="type-badge">{{ mimeShort(doc.mime_type) }}</span></td>
                   <td>{{ formatSize(doc.size_bytes) }}</td>
-                  <td>{{ doc.chunk_count ?? '-' }}</td>
+                  <td>{{ doc.chunk_count !== null ? doc.chunk_count : '-' }}</td>
                   <td>
                     <span class="status-badge" [class]="doc.processing_status">
                       {{ statusLabel(doc.processing_status) }}
@@ -256,7 +256,6 @@ export class DocumentViewerComponent implements OnInit {
             this.uploading.update(list =>
               list.map(u => u.id === entry.id ? { ...u, status: 'done', progress: 100 } : u)
             );
-            // Adiciona o novo documento no topo da lista
             this.documents.update(docs => [event.body!, ...docs]);
           }
         },

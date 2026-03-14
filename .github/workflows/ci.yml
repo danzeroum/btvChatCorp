@@ -47,11 +47,11 @@ jobs:
       - name: Unit tests (headless) + coverage
         run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
 
-      # ── Validacoes especificas Fase 4 ─────────────────────
-      - name: "[Fase 4] Verifica auth.guard ativo nas rotas de training"
+      # ── Validações específicas Fase 4 ──────────────────────
+      - name: "[Fase 4] Verifica adminGuard nas rotas de training"
         run: |
           if ! grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts; then
-            echo "❌ adminGuard nao encontrado em training-dashboard.routes.ts"
+            echo "❌ adminGuard não encontrado em training-dashboard.routes.ts"
             exit 1
           fi
           echo "✅ adminGuard presente nas rotas de treinamento"
@@ -59,11 +59,11 @@ jobs:
       - name: "[Fase 4] Verifica interceptor trata 401/403"
         run: |
           if ! grep -q '401' src/app/features/auth/auth.interceptor.ts; then
-            echo "❌ Tratamento de 401 nao encontrado no interceptor"
+            echo "❌ Tratamento de 401 não encontrado no interceptor"
             exit 1
           fi
           if ! grep -q '403' src/app/features/auth/auth.interceptor.ts; then
-            echo "❌ Tratamento de 403 nao encontrado no interceptor"
+            echo "❌ Tratamento de 403 não encontrado no interceptor"
             exit 1
           fi
           echo "✅ auth.interceptor trata 401 e 403"
@@ -148,7 +148,7 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Criar diretorio de uploads
+      - name: Criar diretório de uploads
         run: mkdir -p $UPLOAD_DIR
 
       - name: Run migrations
@@ -161,22 +161,23 @@ jobs:
       - name: cargo test (unit + integration)
         run: cargo test --all -- --test-threads=1
 
-      # ── Validacoes especificas Fase 4 ─────────────────────
+      # ── Validações específicas Fase 4 ──────────────────────
       - name: "[Fase 4] Verifica middleware JWT presente"
         run: |
           if ! grep -rq 'jwt' crates/api/src/middleware/; then
-            echo "❌ Middleware JWT nao encontrado em src/middleware/"
+            echo "❌ Middleware JWT não encontrado em src/middleware/"
             exit 1
           fi
           echo "✅ Middleware JWT presente"
 
   # ──────────────────────────────────────────────────────────
-  # JOB 3 – Smoke test de integracao (backend sobe + health OK)
+  # JOB 3 – Smoke test de integração (runner isolado + DB próprio)
+  # Não depende do job backend para garantir DB limpo
   # ──────────────────────────────────────────────────────────
   integration-smoke:
     name: Integration smoke test
     runs-on: ubuntu-latest
-    needs: [backend]
+    # needs: [backend]  ← removido: cada job tem seu próprio DB isolado
 
     services:
       postgres:
@@ -220,10 +221,12 @@ jobs:
           key: ${{ runner.os }}-cargo-smoke-${{ hashFiles('backend/Cargo.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Run migrations
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
+
+      - name: Run migrations (DB limpo neste runner)
         working-directory: backend
         run: |
-          cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run \
             --database-url "$DATABASE_URL" \
             --source crates/api/migrations
@@ -238,13 +241,12 @@ jobs:
           mkdir -p $UPLOAD_DIR
           ./target/release/api &
           echo $! > /tmp/api.pid
-          # Aguarda servidor responder
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
               echo "✅ Backend respondeu na tentativa $i"
               break
             fi
-            echo "Aguardando backend... ($i/20)"
+            echo "Aguardando backend... ($i/30)"
             sleep 2
           done
 
@@ -252,10 +254,10 @@ jobs:
         run: |
           RESPONSE=$(curl -sf http://localhost:8080/health)
           echo "Response: $RESPONSE"
-          echo "$RESPONSE" | grep -q '"status"' || (echo '❌ /health nao retornou status' && exit 1)
+          echo "$RESPONSE" | grep -q '"status"' || (echo '❌ /health não retornou status' && exit 1)
           echo "✅ /health OK"
 
-      - name: "[Smoke] POST /api/v1/auth/register retorna 200 ou 409"
+      - name: "[Smoke] POST /api/v1/auth/register retorna 200/201/409"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -X POST http://localhost:8080/api/v1/auth/register \
@@ -270,19 +272,17 @@ jobs:
 
       - name: "[Smoke] POST /api/v1/auth/login retorna token"
         run: |
-          # Garante usuario existe
           curl -s -X POST http://localhost:8080/api/v1/auth/register \
             -H 'Content-Type: application/json' \
-            -d '{"name":"Smoke Test","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null
-          # Login
+            -d '{"name":"Smoke Login","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null || true
           RESPONSE=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
             -H 'Content-Type: application/json' \
             -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
           echo "Response: $RESPONSE"
-          echo "$RESPONSE" | grep -q 'token\|access_token' || (echo '❌ Login nao retornou token' && exit 1)
+          echo "$RESPONSE" | grep -q 'token\|access_token' || (echo '❌ Login não retornou token' && exit 1)
           echo "✅ /auth/login retornou token"
 
-      - name: "[Smoke] GET /api/v1/training/queue exige autenticacao (401)"
+      - name: "[Smoke] GET /api/v1/training/queue exige autenticação (401/403)"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             http://localhost:8080/api/v1/training/queue)
@@ -291,7 +291,7 @@ jobs:
             echo "❌ Rota protegida retornou $CODE sem token (esperado 401/403)"
             exit 1
           fi
-          echo "✅ /training/queue esta protegida (status $CODE)"
+          echo "✅ /training/queue está protegida (status $CODE)"
 
       - name: Stop backend
         if: always()
@@ -312,9 +312,9 @@ jobs:
              [ "${{ needs.backend.result }}"           != "success" ] || \
              [ "${{ needs.integration-smoke.result }}" != "success" ]; then
             echo "❌ One or more jobs failed."
-            echo "  Frontend:         ${{ needs.frontend.result }}"
-            echo "  Backend:          ${{ needs.backend.result }}"
-            echo "  Integration smoke:${{ needs.integration-smoke.result }}"
+            echo "  Frontend:          ${{ needs.frontend.result }}"
+            echo "  Backend:           ${{ needs.backend.result }}"
+            echo "  Integration smoke: ${{ needs.integration-smoke.result }}"
             exit 1
           fi
           echo "✅ All checks passed — Fase 4.1 OK!"

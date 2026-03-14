@@ -16,7 +16,7 @@ export const TRAINING_ROUTES: Routes = [
     path: 'feedback-review',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./feedback-review/feedback-review.component').then(
+      import('./feedback-review.component').then(
         (m) => m.FeedbackReviewComponent,
       ),
   },
@@ -24,7 +24,7 @@ export const TRAINING_ROUTES: Routes = [
     path: 'data-quality',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./data-quality/data-quality.component').then(
+      import('./data-quality.component').then(
         (m) => m.DataQualityComponent,
       ),
   },
@@ -32,7 +32,7 @@ export const TRAINING_ROUTES: Routes = [
     path: 'training-queue',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./training-queue/training-queue.component').then(
+      import('./training-queue.component').then(
         (m) => m.TrainingQueueComponent,
       ),
   },
@@ -40,7 +40,7 @@ export const TRAINING_ROUTES: Routes = [
     path: 'model-performance',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./model-performance/model-performance.component').then(
+      import('./model-performance.component').then(
         (m) => m.ModelPerformanceComponent,
       ),
   },
@@ -48,7 +48,7 @@ export const TRAINING_ROUTES: Routes = [
     path: 'batches',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./training-batches/training-batches.component').then(
+      import('./training-batches.component').then(
         (m) => m.TrainingBatchesComponent,
       ),
   },
