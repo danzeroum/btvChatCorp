@@ -39,4 +39,10 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () =>
       import('./sso-config/sso-config.component').then(m => m.SsoConfigComponent),
   },
+  {
+    path: 'ai-config',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./ai-config/model-manager.component').then(m => m.ModelManagerComponent),
+  },
 ];
