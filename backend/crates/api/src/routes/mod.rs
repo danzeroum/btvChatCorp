@@ -2,12 +2,15 @@ pub mod auth;
 pub mod chats;
 pub mod documents;
 pub mod projects;
+pub mod training;
 
 // Modulos de teste — compilados apenas em cargo test
 #[cfg(test)]
 mod documents_test;
 #[cfg(test)]
 mod chats_test;
+#[cfg(test)]
+mod training_test;
 
 use axum::Router;
 use crate::state::AppState;
@@ -20,6 +23,7 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(projects::routes())
         .merge(chats::routes())
         .merge(documents::routes())
+        .merge(training::routes())
         .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
 
     Router::new().merge(public).merge(protected)
