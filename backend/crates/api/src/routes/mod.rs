@@ -11,11 +11,7 @@ mod chats_test;
 #[cfg(test)]
 mod training_test;
 
-use axum::{
-    Router,
-    routing::get,
-    Json,
-};
+use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -72,18 +68,13 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
-async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
-    Json(ApiDoc::openapi())
-}
-
-/// Router dos docs — tipado como Router<AppState> para ser mergeavel com o app principal
+/// GET /docs        → Swagger UI
+/// GET /docs/openapi.json → spec JSON (servido pelo SwaggerUi)
 pub fn docs_router() -> Router<AppState> {
-    Router::new()
-        .merge(
-            SwaggerUi::new("/docs")
-                .url("/docs/openapi.json", ApiDoc::openapi())
-        )
-        .route("/docs/openapi.json", get(openapi_json))
+    Router::new().merge(
+        SwaggerUi::new("/docs")
+            .url("/docs/openapi.json", ApiDoc::openapi()),
+    )
 }
 
 pub fn v1_routes(state: AppState) -> Router<AppState> {
