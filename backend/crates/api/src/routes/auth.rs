@@ -7,6 +7,7 @@ use axum::{
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{errors::AppError, middleware::auth::Claims, state::AppState};
@@ -17,15 +18,50 @@ pub fn routes() -> Router<AppState> {
         .route("/auth/login",    post(login))
 }
 
-#[derive(Deserialize)]
-struct RegisterDto { workspace_name: String, name: String, email: String, password: String }
+/// Payload de registro de novo workspace + usuario owner
+#[derive(Deserialize, ToSchema)]
+pub struct RegisterDto {
+    /// Nome do workspace (ex: "Acme Corp")
+    pub workspace_name: String,
+    /// Nome completo do usuario
+    pub name: String,
+    /// Email do usuario
+    pub email: String,
+    /// Senha (minimo 8 caracteres)
+    pub password: String,
+}
 
-#[derive(Deserialize)]
-struct LoginDto { email: String, password: String }
+/// Payload de login
+#[derive(Deserialize, ToSchema)]
+pub struct LoginDto {
+    pub email: String,
+    pub password: String,
+}
 
-#[derive(Serialize)]
-struct AuthResponse { token: String, user_id: Uuid, workspace_id: Uuid, name: String, role: String }
+/// Resposta de autenticacao com JWT
+#[derive(Serialize, ToSchema)]
+pub struct AuthResponse {
+    /// JWT Bearer token
+    pub token: String,
+    pub user_id: Uuid,
+    pub workspace_id: Uuid,
+    pub name: String,
+    /// Role do usuario: owner | admin | member
+    pub role: String,
+}
 
+/// Registra novo workspace e usuario owner
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "Auth",
+    request_body = RegisterDto,
+    responses(
+        (status = 201, description = "Workspace e usuario criados", body = AuthResponse),
+        (status = 409, description = "Email ou slug de workspace ja em uso"),
+        (status = 422, description = "Dados invalidos"),
+    )
+)]
 async fn register(
     State(state): State<AppState>,
     Json(dto): Json<RegisterDto>,
@@ -64,6 +100,17 @@ async fn register(
     Ok((StatusCode::CREATED, Json(AuthResponse { token, user_id, workspace_id, name: dto.name, role: "owner".into() })))
 }
 
+/// Autentica usuario e retorna JWT
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "Auth",
+    request_body = LoginDto,
+    responses(
+        (status = 200, description = "Login realizado", body = AuthResponse),
+        (status = 401, description = "Email ou senha invalidos"),
+    )
+)]
 async fn login(
     State(state): State<AppState>,
     Json(dto): Json<LoginDto>,
