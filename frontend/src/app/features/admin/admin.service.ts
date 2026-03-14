@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/admin`;
+const API  = `${environment.apiUrl}/api/v1`;
 
 export interface AdminUser {
   id: string;
@@ -60,6 +61,40 @@ export interface SsoConfig {
   samlMetadataUrl?: string;
   autoProvision: boolean;
   defaultRole: string;
+}
+
+// ─── AI / LoRA models ─────────────────────────────────────────────
+
+export interface AiModel {
+  id: string;
+  display_name: string;
+  base_model: string;
+  inference_url: string;
+  status: 'active' | 'inactive' | 'loading';
+  default_temperature: number;
+  default_max_tokens: number;
+  context_window_size: number;
+  avg_latency_ms: number;
+  requests_per_minute: number;
+  gpu_utilization: number;
+  active_lora_version: string | null;
+}
+
+export interface LoraAdapter {
+  version: string;
+  path: string;
+  trained_at: string;
+  training_examples: number;
+  training_loss: number;
+  eval_accuracy: number;
+  status: 'pending' | 'ready' | 'active' | 'deprecated';
+  deployed_at: string | null;
+  improvement_vs_previous: number | null;
+}
+
+export interface ActivateLoraDto {
+  model_id: string;
+  lora_version: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -145,5 +180,27 @@ export class AdminService {
 
   updateSettings(settings: any): Observable<void> {
     return this.http.put<void>(`${BASE}/settings`, settings);
+  }
+
+  // ── AI Models & LoRA Adapters
+
+  listAiModels(): Observable<AiModel[]> {
+    return this.http.get<AiModel[]>(`${API}/models`);
+  }
+
+  listLoraAdapters(): Observable<LoraAdapter[]> {
+    return this.http.get<LoraAdapter[]>(`${API}/models/lora`);
+  }
+
+  activateLoraAdapter(dto: ActivateLoraDto): Observable<void> {
+    return this.http.post<void>(`${API}/models/lora/activate`, dto);
+  }
+
+  setDefaultModel(modelId: string): Observable<void> {
+    return this.http.put<void>(`${API}/models/${modelId}/default`, {});
+  }
+
+  reloadModel(modelId: string): Observable<void> {
+    return this.http.post<void>(`${API}/models/${modelId}/reload`, {});
   }
 }
