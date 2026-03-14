@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post, put},
+    routing::{get, put},
     Extension, Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -97,7 +97,6 @@ pub struct StartBatchDto {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-/// GET /training/queue — lista fila de curadoria
 async fn list_queue(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -132,7 +131,6 @@ async fn list_queue(
     Ok(Json(rows))
 }
 
-/// PUT /training/queue/:id/approve
 async fn approve(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -155,7 +153,6 @@ async fn approve(
     Ok(StatusCode::OK)
 }
 
-/// PUT /training/queue/:id/reject
 async fn reject(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -178,7 +175,6 @@ async fn reject(
     Ok(StatusCode::OK)
 }
 
-/// GET /training/batches
 async fn list_batches(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -203,7 +199,6 @@ async fn list_batches(
     Ok(Json(rows))
 }
 
-/// POST /training/batches — inicia novo ciclo de fine-tuning
 async fn start_batch(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -212,7 +207,6 @@ async fn start_batch(
     let base_model   = dto.base_model.unwrap_or_else(|| "llama3.1:8b".into());
     let total_epochs = dto.total_epochs.unwrap_or(3);
 
-    // Conta exemplos aprovados disponíveis
     let (total, positive, corrected): (i64, i64, i64) = sqlx::query_as(
         r#"
         SELECT
@@ -233,7 +227,6 @@ async fn start_batch(
         ));
     }
 
-    // Cria o batch no banco com status 'queued'
     let batch = sqlx::query_as::<_, TrainingBatch>(
         r#"
         INSERT INTO training_batches
@@ -252,11 +245,10 @@ async fn start_batch(
     .fetch_one(&state.db)
     .await?;
 
-    // Chama servico externo de treinamento (ou mock no CI)
-    let external_job_id = submit_to_training_service(&state, &batch).await
+    let external_job_id = submit_to_training_service(&batch)
+        .await
         .unwrap_or_else(|_| format!("mock-job-{}", batch.id));
 
-    // Atualiza batch com job_id externo e status 'running'
     sqlx::query(
         "UPDATE training_batches
          SET external_job_id=$1, status='running', started_at=NOW()
@@ -267,7 +259,6 @@ async fn start_batch(
     .execute(&state.db)
     .await?;
 
-    // Recarrega batch atualizado
     let updated = sqlx::query_as::<_, TrainingBatch>(
         "SELECT * FROM training_batches WHERE id=$1",
     )
@@ -278,7 +269,6 @@ async fn start_batch(
     Ok((StatusCode::CREATED, Json(updated)))
 }
 
-/// GET /training/batches/:id
 async fn get_batch(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -296,7 +286,6 @@ async fn get_batch(
     Ok(Json(row))
 }
 
-/// GET /training/batches/:id/status — polling de progresso
 async fn poll_batch_status(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -311,14 +300,14 @@ async fn poll_batch_status(
     .await
     .map_err(|_| AppError::not_found("Batch nao encontrado"))?;
 
-    // Se tem job externo e nao esta finalizado, sincroniza status
     if let Some(ref job_id) = batch.external_job_id {
         if batch.status == "running" || batch.status == "queued" {
-            if let Ok(remote) = fetch_job_status(&state, job_id).await {
+            if let Ok(remote) = fetch_job_status(job_id).await {
                 sqlx::query(
                     "UPDATE training_batches
                      SET status=$1, progress=$2, current_epoch=$3,
-                         training_loss=$4, completed_at=CASE WHEN $1='completed' THEN NOW() ELSE NULL END
+                         training_loss=$4,
+                         completed_at=CASE WHEN $1='completed' THEN NOW() ELSE completed_at END
                      WHERE id=$5",
                 )
                 .bind(&remote.status)
@@ -333,7 +322,6 @@ async fn poll_batch_status(
         }
     }
 
-    // Retorna status atual (pos sync)
     let refreshed = sqlx::query_as::<_, TrainingBatch>(
         "SELECT * FROM training_batches WHERE id=$1",
     )
@@ -353,7 +341,6 @@ async fn poll_batch_status(
     })))
 }
 
-/// GET /training/documents
 async fn list_documents(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -384,11 +371,7 @@ struct RemoteJobStatus {
     training_loss: Option<f64>,
 }
 
-/// Envia batch para o servico externo (ou retorna mock no CI)
-async fn submit_to_training_service(
-    state: &AppState,
-    batch: &TrainingBatch,
-) -> anyhow::Result<String> {
+async fn submit_to_training_service(batch: &TrainingBatch) -> anyhow::Result<String> {
     if std::env::var("TRAINING_MOCK").as_deref() == Ok("true") {
         return Ok(format!("mock-job-{}", batch.id));
     }
@@ -396,8 +379,7 @@ async fn submit_to_training_service(
     let url = std::env::var("TRAINING_URL")
         .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = reqwest::Client::new()
         .post(format!("{}/v1/training/jobs", url))
         .json(&serde_json::json!({
             "batch_id":     batch.id,
@@ -413,11 +395,7 @@ async fn submit_to_training_service(
     Ok(resp["job_id"].as_str().unwrap_or("").to_string())
 }
 
-/// Consulta status do job no servico externo (ou retorna mock)
-async fn fetch_job_status(
-    state: &AppState,
-    job_id: &str,
-) -> anyhow::Result<RemoteJobStatus> {
+async fn fetch_job_status(job_id: &str) -> anyhow::Result<RemoteJobStatus> {
     if std::env::var("TRAINING_MOCK").as_deref() == Ok("true") {
         return Ok(RemoteJobStatus {
             status:        "running".into(),
@@ -430,8 +408,7 @@ async fn fetch_job_status(
     let url = std::env::var("TRAINING_URL")
         .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = reqwest::Client::new()
         .get(format!("{}/v1/training/jobs/{}", url, job_id))
         .send()
         .await?
@@ -445,6 +422,3 @@ async fn fetch_job_status(
         training_loss: resp["training_loss"].as_f64(),
     })
 }
-
-// Silencia warnings de campos nao lidos no AppState dentro das funcoes de servico
-fn _use_state(_: &AppState) {}
