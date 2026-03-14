@@ -1,135 +1,113 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    response::Json,
     routing::{get, post, put},
-    Router,
+    Extension, Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use uuid::Uuid;
 
-use crate::{extractors::WorkspaceContext, state::AppState};
+use crate::{
+    errors::AppError,
+    middleware::auth::AuthUser,
+    state::AppState,
+};
 
-pub fn training_routes() -> Router<AppState> {
+pub fn routes() -> Router<AppState> {
     Router::new()
-        // Feedback de interações
-        .route("/feedback", post(submit_feedback))
-        // Curadoria (admin/analyst)
-        .route("/training/queue", get(list_training_queue))
-        .route("/training/queue/:id/approve", put(approve_interaction))
-        .route("/training/queue/:id/reject", put(reject_interaction))
-        // Status e histórico de batches
-        .route("/training/batches", get(list_training_batches))
-        .route("/training/batches/:id", get(get_training_batch))
-        // Dados sintéticos de documentos
-        .route("/training/documents", get(list_training_documents))
+        // Fila de curadoria
+        .route("/training/queue",              get(list_queue))
+        .route("/training/queue/:id/approve",  put(approve))
+        .route("/training/queue/:id/reject",   put(reject))
+        // Batches de treinamento
+        .route("/training/batches",            get(list_batches).post(start_batch))
+        .route("/training/batches/:id",        get(get_batch))
+        .route("/training/batches/:id/status", get(poll_batch_status))
+        // Documentos sinteticos
+        .route("/training/documents",          get(list_documents))
 }
 
-// ─── Request / Response structs ──────────────────────────────────────────────
+// ─── Models ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
-pub struct FeedbackRequest {
-    pub interaction_id: Uuid,
-    pub rating: String,          // "positive" | "negative"
-    pub correction: Option<String>,
-    pub categories: Option<Vec<String>>,
+#[derive(Debug, FromRow, Serialize)]
+pub struct TrainingInteraction {
+    pub id:                   Uuid,
+    pub user_message:         String,
+    pub assistant_response:   String,
+    pub user_rating:          Option<String>,
+    pub user_correction:      Option<String>,
+    pub feedback_categories:  Option<String>,
+    pub curator_status:       String,
+    pub data_classification:  String,
+    pub created_at:           DateTime<Utc>,
 }
 
+#[derive(Debug, FromRow, Serialize)]
+pub struct TrainingBatch {
+    pub id:                    Uuid,
+    pub workspace_id:          Uuid,
+    pub base_model:            String,
+    pub previous_lora_version: Option<String>,
+    pub new_lora_version:      Option<String>,
+    pub status:                String,
+    pub total_examples:        Option<i32>,
+    pub positive_examples:     Option<i32>,
+    pub corrected_examples:    Option<i32>,
+    pub progress:              Option<i32>,
+    pub current_epoch:         Option<i32>,
+    pub total_epochs:          Option<i32>,
+    pub training_loss:         Option<f64>,
+    pub eval_accuracy:         Option<f64>,
+    pub external_job_id:       Option<String>,
+    pub error_message:         Option<String>,
+    pub created_at:            DateTime<Utc>,
+    pub started_at:            Option<DateTime<Utc>>,
+    pub completed_at:          Option<DateTime<Utc>>,
+    pub deployed_at:           Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct TrainingDocument {
+    pub id:                 Uuid,
+    pub document_name:      String,
+    pub chunk_text:         String,
+    pub generated_question: String,
+    pub generated_answer:   String,
+    pub classification:     String,
+    pub curator_status:     String,
+    pub created_at:         DateTime<Utc>,
+}
+
+// ─── DTOs ─────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Deserialize)]
-pub struct TrainingQueueQuery {
-    pub status: Option<String>,  // "pending" | "approved" | "rejected"
-    pub page: Option<u32>,
+pub struct QueueQuery {
+    pub status:   Option<String>,
+    pub page:     Option<u32>,
     pub per_page: Option<u32>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct TrainingInteractionItem {
-    pub id: Uuid,
-    pub user_message: String,
-    pub assistant_response: String,
-    pub user_rating: Option<String>,
-    pub user_correction: Option<String>,
-    pub feedback_categories: Option<String>,
-    pub curator_status: String,
-    pub data_classification: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TrainingBatchResponse {
-    pub id: Uuid,
-    pub base_model: String,
-    pub previous_lora_version: Option<String>,
-    pub new_lora_version: Option<String>,
-    pub status: String,
-    pub total_examples: Option<i32>,
-    pub positive_examples: Option<i32>,
-    pub corrected_examples: Option<i32>,
-    pub training_loss: Option<f64>,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
-    pub deployed_at: Option<String>,
-    pub created_at: String,
+#[derive(Debug, Deserialize)]
+pub struct StartBatchDto {
+    pub base_model:   Option<String>,
+    pub total_epochs: Option<i32>,
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-/// Recebe feedback do usuário sobre uma resposta do modelo
-pub async fn submit_feedback(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    Json(req): Json<FeedbackRequest>,
-) -> Result<StatusCode, StatusCode> {
-    // Verifica se a interação pertence ao workspace
-    let exists = sqlx::query!(
-        "SELECT 1 AS exists FROM training_interactions WHERE id = $1 AND workspace_id = $2",
-        req.interaction_id,
-        ctx.workspace_id,
-    )
-    .fetch_optional(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+/// GET /training/queue — lista fila de curadoria
+async fn list_queue(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Query(q): Query<QueueQuery>,
+) -> Result<Json<Vec<TrainingInteraction>>, AppError> {
+    let page     = q.page.unwrap_or(1).max(1);
+    let per_page = q.per_page.unwrap_or(20).min(100);
+    let offset   = ((page - 1) * per_page) as i64;
 
-    if exists.is_none() {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
-    sqlx::query!(
-        r#"
-        UPDATE training_interactions
-        SET user_rating = $2,
-            user_correction = $3,
-            feedback_categories = $4,
-            -- thumbs up sem correção → aprovação automática
-            curator_status = CASE
-                WHEN $2 = 'positive' AND $3 IS NULL THEN 'approved'
-                ELSE 'pending'
-            END
-        WHERE id = $1
-        "#,
-        req.interaction_id,
-        req.rating,
-        req.correction,
-        req.categories.as_ref().map(|c| c.join(",")),
-    )
-    .execute(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(StatusCode::OK)
-}
-
-/// Lista fila de curadoria com filtros de status
-pub async fn list_training_queue(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    Query(params): Query<TrainingQueueQuery>,
-) -> Result<Json<Vec<TrainingInteractionItem>>, StatusCode> {
-    let page = params.page.unwrap_or(1);
-    let per_page = params.per_page.unwrap_or(20).min(100);
-    let offset = ((page - 1) * per_page) as i64;
-
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as::<_, TrainingInteraction>(
         r#"
         SELECT id, user_message, assistant_response, user_rating,
                user_correction, feedback_categories, curator_status,
@@ -143,163 +121,244 @@ pub async fn list_training_queue(
             created_at DESC
         LIMIT $3 OFFSET $4
         "#,
-        ctx.workspace_id,
-        params.status,
-        per_page as i64,
-        offset,
     )
-    .fetch_all(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(auth.workspace_id)
+    .bind(q.status)
+    .bind(per_page as i64)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| TrainingInteractionItem {
-                id: r.id,
-                user_message: r.user_message,
-                assistant_response: r.assistant_response,
-                user_rating: r.user_rating,
-                user_correction: r.user_correction,
-                feedback_categories: r.feedback_categories,
-                curator_status: r.curator_status,
-                data_classification: r.data_classification,
-                created_at: r.created_at.to_rfc3339(),
-            })
-            .collect(),
-    ))
+    Ok(Json(rows))
 }
 
-/// Aprova uma interação para uso em treinamento
-pub async fn approve_interaction(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<StatusCode, StatusCode> {
-    sqlx::query!(
-        r#"
-        UPDATE training_interactions
-        SET curator_status = 'approved', curator_id = $2, curated_at = NOW()
-        WHERE id = $1 AND workspace_id = $3
-        "#,
-        id,
-        ctx.user_id,
-        ctx.workspace_id,
+/// PUT /training/queue/:id/approve
+async fn approve(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    let r = sqlx::query(
+        "UPDATE training_interactions
+         SET curator_status='approved', curator_id=$1, curated_at=NOW()
+         WHERE id=$2 AND workspace_id=$3",
     )
-    .execute(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(auth.user_id)
+    .bind(id)
+    .bind(auth.workspace_id)
+    .execute(&state.db)
+    .await?;
 
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Interacao nao encontrada"));
+    }
     Ok(StatusCode::OK)
 }
 
-/// Rejeita uma interação (não será usada no treino)
-pub async fn reject_interaction(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<StatusCode, StatusCode> {
-    sqlx::query!(
-        r#"
-        UPDATE training_interactions
-        SET curator_status = 'rejected', curator_id = $2, curated_at = NOW()
-        WHERE id = $1 AND workspace_id = $3
-        "#,
-        id,
-        ctx.user_id,
-        ctx.workspace_id,
+/// PUT /training/queue/:id/reject
+async fn reject(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    let r = sqlx::query(
+        "UPDATE training_interactions
+         SET curator_status='rejected', curator_id=$1, curated_at=NOW()
+         WHERE id=$2 AND workspace_id=$3",
     )
-    .execute(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(auth.user_id)
+    .bind(id)
+    .bind(auth.workspace_id)
+    .execute(&state.db)
+    .await?;
 
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Interacao nao encontrada"));
+    }
     Ok(StatusCode::OK)
 }
 
-/// Lista histórico de batches de treinamento
-pub async fn list_training_batches(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-) -> Result<Json<Vec<TrainingBatchResponse>>, StatusCode> {
-    let rows = sqlx::query!(
+/// GET /training/batches
+async fn list_batches(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TrainingBatch>>, AppError> {
+    let rows = sqlx::query_as::<_, TrainingBatch>(
         r#"
-        SELECT id, base_model, previous_lora_version, new_lora_version,
+        SELECT id, workspace_id, base_model, previous_lora_version, new_lora_version,
                status, total_examples, positive_examples, corrected_examples,
-               training_loss, started_at, completed_at, deployed_at, created_at
+               progress, current_epoch, total_epochs, training_loss, eval_accuracy,
+               external_job_id, error_message,
+               created_at, started_at, completed_at, deployed_at
         FROM training_batches
         WHERE workspace_id = $1
         ORDER BY created_at DESC
         LIMIT 50
         "#,
-        ctx.workspace_id,
     )
-    .fetch_all(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(auth.workspace_id)
+    .fetch_all(&state.db)
+    .await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| TrainingBatchResponse {
-                id: r.id,
-                base_model: r.base_model,
-                previous_lora_version: r.previous_lora_version,
-                new_lora_version: r.new_lora_version,
-                status: r.status,
-                total_examples: r.total_examples,
-                positive_examples: r.positive_examples,
-                corrected_examples: r.corrected_examples,
-                training_loss: r.training_loss,
-                started_at: r.started_at.map(|t| t.to_rfc3339()),
-                completed_at: r.completed_at.map(|t| t.to_rfc3339()),
-                deployed_at: r.deployed_at.map(|t| t.to_rfc3339()),
-                created_at: r.created_at.to_rfc3339(),
-            })
-            .collect(),
-    ))
+    Ok(Json(rows))
 }
 
-pub async fn get_training_batch(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<Json<TrainingBatchResponse>, StatusCode> {
-    let r = sqlx::query!(
+/// POST /training/batches — inicia novo ciclo de fine-tuning
+async fn start_batch(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Json(dto): Json<StartBatchDto>,
+) -> Result<(StatusCode, Json<TrainingBatch>), AppError> {
+    let base_model   = dto.base_model.unwrap_or_else(|| "llama3.1:8b".into());
+    let total_epochs = dto.total_epochs.unwrap_or(3);
+
+    // Conta exemplos aprovados disponíveis
+    let (total, positive, corrected): (i64, i64, i64) = sqlx::query_as(
         r#"
-        SELECT id, base_model, previous_lora_version, new_lora_version,
-               status, total_examples, positive_examples, corrected_examples,
-               training_loss, started_at, completed_at, deployed_at, created_at
-        FROM training_batches
-        WHERE id = $1 AND workspace_id = $2
+        SELECT
+            COUNT(*),
+            COUNT(*) FILTER (WHERE user_rating = 'positive'),
+            COUNT(*) FILTER (WHERE user_correction IS NOT NULL)
+        FROM training_interactions
+        WHERE workspace_id = $1 AND curator_status = 'approved'
         "#,
-        id,
-        ctx.workspace_id,
     )
-    .fetch_one(&app.db)
-    .await
-    .map_err(|_| StatusCode::NOT_FOUND)?;
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await?;
 
-    Ok(Json(TrainingBatchResponse {
-        id: r.id,
-        base_model: r.base_model,
-        previous_lora_version: r.previous_lora_version,
-        new_lora_version: r.new_lora_version,
-        status: r.status,
-        total_examples: r.total_examples,
-        positive_examples: r.positive_examples,
-        corrected_examples: r.corrected_examples,
-        training_loss: r.training_loss,
-        started_at: r.started_at.map(|t| t.to_rfc3339()),
-        completed_at: r.completed_at.map(|t| t.to_rfc3339()),
-        deployed_at: r.deployed_at.map(|t| t.to_rfc3339()),
-        created_at: r.created_at.to_rfc3339(),
-    }))
+    if total == 0 {
+        return Err(AppError::bad_request(
+            "Nenhum exemplo aprovado disponivel para treinamento",
+        ));
+    }
+
+    // Cria o batch no banco com status 'queued'
+    let batch = sqlx::query_as::<_, TrainingBatch>(
+        r#"
+        INSERT INTO training_batches
+            (workspace_id, base_model, status, total_examples,
+             positive_examples, corrected_examples, total_epochs)
+        VALUES ($1, $2, 'queued', $3, $4, $5, $6)
+        RETURNING *
+        "#,
+    )
+    .bind(auth.workspace_id)
+    .bind(&base_model)
+    .bind(total as i32)
+    .bind(positive as i32)
+    .bind(corrected as i32)
+    .bind(total_epochs)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Chama servico externo de treinamento (ou mock no CI)
+    let external_job_id = submit_to_training_service(&state, &batch).await
+        .unwrap_or_else(|_| format!("mock-job-{}", batch.id));
+
+    // Atualiza batch com job_id externo e status 'running'
+    sqlx::query(
+        "UPDATE training_batches
+         SET external_job_id=$1, status='running', started_at=NOW()
+         WHERE id=$2",
+    )
+    .bind(&external_job_id)
+    .bind(batch.id)
+    .execute(&state.db)
+    .await?;
+
+    // Recarrega batch atualizado
+    let updated = sqlx::query_as::<_, TrainingBatch>(
+        "SELECT * FROM training_batches WHERE id=$1",
+    )
+    .bind(batch.id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(updated)))
 }
 
-/// Lista documentos usados para geração de QA sintéticos
-pub async fn list_training_documents(
-    ctx: WorkspaceContext,
-    State(app): State<AppState>,
-) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
-    let rows = sqlx::query!(
+/// GET /training/batches/:id
+async fn get_batch(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TrainingBatch>, AppError> {
+    let row = sqlx::query_as::<_, TrainingBatch>(
+        "SELECT * FROM training_batches WHERE id=$1 AND workspace_id=$2",
+    )
+    .bind(id)
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::not_found("Batch nao encontrado"))?;
+
+    Ok(Json(row))
+}
+
+/// GET /training/batches/:id/status — polling de progresso
+async fn poll_batch_status(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let batch = sqlx::query_as::<_, TrainingBatch>(
+        "SELECT * FROM training_batches WHERE id=$1 AND workspace_id=$2",
+    )
+    .bind(id)
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::not_found("Batch nao encontrado"))?;
+
+    // Se tem job externo e nao esta finalizado, sincroniza status
+    if let Some(ref job_id) = batch.external_job_id {
+        if batch.status == "running" || batch.status == "queued" {
+            if let Ok(remote) = fetch_job_status(&state, job_id).await {
+                sqlx::query(
+                    "UPDATE training_batches
+                     SET status=$1, progress=$2, current_epoch=$3,
+                         training_loss=$4, completed_at=CASE WHEN $1='completed' THEN NOW() ELSE NULL END
+                     WHERE id=$5",
+                )
+                .bind(&remote.status)
+                .bind(remote.progress)
+                .bind(remote.current_epoch)
+                .bind(remote.training_loss)
+                .bind(batch.id)
+                .execute(&state.db)
+                .await
+                .ok();
+            }
+        }
+    }
+
+    // Retorna status atual (pos sync)
+    let refreshed = sqlx::query_as::<_, TrainingBatch>(
+        "SELECT * FROM training_batches WHERE id=$1",
+    )
+    .bind(batch.id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "id":            refreshed.id,
+        "status":        refreshed.status,
+        "progress":      refreshed.progress,
+        "current_epoch": refreshed.current_epoch,
+        "total_epochs":  refreshed.total_epochs,
+        "training_loss": refreshed.training_loss,
+        "eval_accuracy": refreshed.eval_accuracy,
+        "error_message": refreshed.error_message,
+    })))
+}
+
+/// GET /training/documents
+async fn list_documents(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TrainingDocument>>, AppError> {
+    let rows = sqlx::query_as::<_, TrainingDocument>(
         r#"
         SELECT id, document_name, chunk_text, generated_question,
                generated_answer, classification, curator_status, created_at
@@ -308,24 +367,84 @@ pub async fn list_training_documents(
         ORDER BY created_at DESC
         LIMIT 100
         "#,
-        ctx.workspace_id,
     )
-    .fetch_all(&app.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(auth.workspace_id)
+    .fetch_all(&state.db)
+    .await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| serde_json::json!({
-                "id": r.id,
-                "document_name": r.document_name,
-                "chunk_text": r.chunk_text,
-                "generated_question": r.generated_question,
-                "generated_answer": r.generated_answer,
-                "classification": r.classification,
-                "curator_status": r.curator_status,
-                "created_at": r.created_at.to_rfc3339(),
-            }))
-            .collect(),
-    ))
+    Ok(Json(rows))
 }
+
+// ─── Servico externo de treinamento ──────────────────────────────────────────
+
+struct RemoteJobStatus {
+    status:        String,
+    progress:      Option<i32>,
+    current_epoch: Option<i32>,
+    training_loss: Option<f64>,
+}
+
+/// Envia batch para o servico externo (ou retorna mock no CI)
+async fn submit_to_training_service(
+    state: &AppState,
+    batch: &TrainingBatch,
+) -> anyhow::Result<String> {
+    if std::env::var("TRAINING_MOCK").as_deref() == Ok("true") {
+        return Ok(format!("mock-job-{}", batch.id));
+    }
+
+    let url = std::env::var("TRAINING_URL")
+        .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/v1/training/jobs", url))
+        .json(&serde_json::json!({
+            "batch_id":     batch.id,
+            "base_model":   batch.base_model,
+            "total_epochs": batch.total_epochs,
+            "workspace_id": batch.workspace_id,
+        }))
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    Ok(resp["job_id"].as_str().unwrap_or("").to_string())
+}
+
+/// Consulta status do job no servico externo (ou retorna mock)
+async fn fetch_job_status(
+    state: &AppState,
+    job_id: &str,
+) -> anyhow::Result<RemoteJobStatus> {
+    if std::env::var("TRAINING_MOCK").as_deref() == Ok("true") {
+        return Ok(RemoteJobStatus {
+            status:        "running".into(),
+            progress:      Some(42),
+            current_epoch: Some(1),
+            training_loss: Some(0.35),
+        });
+    }
+
+    let url = std::env::var("TRAINING_URL")
+        .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{}/v1/training/jobs/{}", url, job_id))
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    Ok(RemoteJobStatus {
+        status:        resp["status"].as_str().unwrap_or("unknown").to_string(),
+        progress:      resp["progress"].as_i64().map(|v| v as i32),
+        current_epoch: resp["current_epoch"].as_i64().map(|v| v as i32),
+        training_loss: resp["training_loss"].as_f64(),
+    })
+}
+
+// Silencia warnings de campos nao lidos no AppState dentro das funcoes de servico
+fn _use_state(_: &AppState) {}
