@@ -21,8 +21,7 @@ pub mod helpers {
 
     // User IDs fixos por workspace para garantir consistencia entre chamadas
     // do mesmo teste (create e list usam o mesmo user_id).
-    // Formato: UUID v5-like fixo derivado do workspace.
-    pub const DEFAULT_USER_ID: &str    = "00000000-0000-0000-0000-000000000099";
+    pub const DEFAULT_USER_ID: &str      = "00000000-0000-0000-0000-000000000099";
     pub const DEFAULT_WORKSPACE_ID: &str = "00000000-0000-0000-0000-000000000001";
 
     #[derive(Serialize, Deserialize)]
@@ -64,13 +63,14 @@ pub mod helpers {
 
     /// JWT valido (+1h) para workspace especifico (user_id fixo derivado do workspace)
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
-        // Deriva user_id fixo a partir dos ultimos digitos do workspace_id
-        // para garantir que seja sempre o mesmo dentro do mesmo workspace.
         let user_suffix = workspace_id
             .chars()
             .filter(|c| c.is_ascii_digit())
             .collect::<String>();
-        let user_id = format!("00000000-0000-0000-0000-{:0>12}", &user_suffix[user_suffix.len().saturating_sub(12)..]);
+        let user_id = format!(
+            "00000000-0000-0000-0000-{:0>12}",
+            &user_suffix[user_suffix.len().saturating_sub(12)..]
+        );
         jwt_for_ids(&user_id, workspace_id, "user")
     }
 
@@ -92,6 +92,7 @@ pub mod helpers {
     }
 
     /// Converte UUID string em Uuid (panic se invalido — aceitavel em testes)
+    #[allow(dead_code)]
     pub fn uuid(s: &str) -> Uuid {
         s.parse().expect("UUID invalido no helper de teste")
     }
