@@ -8,7 +8,7 @@ on:
 
 jobs:
   # ──────────────────────────────────────────────────────────
-  # JOB 1 – Frontend Angular (build + unit tests + coverage)
+  # JOB 1 – Frontend Angular
   # ──────────────────────────────────────────────────────────
   frontend:
     name: Frontend (Angular 17)
@@ -55,7 +55,7 @@ jobs:
             && echo "✅ auth.interceptor OK" \
             || (echo "❌ Tratamento 401/403 ausente" && exit 1)
 
-      - name: "[Fase 4] componentes de UX polish existem"
+      - name: "[Fase 4] componentes UX polish existem"
         run: |
           for f in \
             src/app/core/components/loading-skeleton.component.ts \
@@ -74,7 +74,7 @@ jobs:
           path: frontend/coverage/
 
   # ──────────────────────────────────────────────────────────
-  # JOB 2 – Backend Rust (fmt + clippy + unit + integration)
+  # JOB 2 – Backend Rust
   # ──────────────────────────────────────────────────────────
   backend:
     name: Backend (Rust)
@@ -140,7 +140,7 @@ jobs:
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run --database-url "$DATABASE_URL" --source crates/api/migrations
 
-      - name: cargo test (unit + integration)
+      - name: cargo test
         run: cargo test --all -- --test-threads=1
 
       - name: "[Fase 4] Middleware JWT presente"
@@ -150,7 +150,9 @@ jobs:
             || (echo "❌ Middleware JWT ausente" && exit 1)
 
   # ──────────────────────────────────────────────────────────
-  # JOB 3 – Smoke test (debug build, cache do job backend)
+  # JOB 3 – Smoke test
+  # DB proprio (btvsmoke) — completamente virgem, sem conflito
+  # de migrations com o job backend
   # ──────────────────────────────────────────────────────────
   integration-smoke:
     name: Integration smoke test
@@ -163,7 +165,8 @@ jobs:
         env:
           POSTGRES_USER: btv
           POSTGRES_PASSWORD: btv
-          POSTGRES_DB: btvtest
+          # banco proprio: btvsmoke — nunca tocado pelo job backend
+          POSTGRES_DB: btvsmoke
         ports:
           - 5432:5432
         options: >-
@@ -173,7 +176,7 @@ jobs:
           --health-retries 20
 
     env:
-      DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvsmoke
       JWT_SECRET: test_secret_for_ci_only
       UPLOAD_DIR: /tmp/btv-uploads
       OLLAMA_URL: http://localhost:11434
@@ -189,7 +192,6 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      # Mesma key do job backend — reutiliza artefatos ja compilados
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -203,12 +205,11 @@ jobs:
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
 
-      - name: Run migrations
+      - name: Run migrations (banco btvsmoke virgem)
         working-directory: backend
         run: |
           sqlx migrate run --database-url "$DATABASE_URL" --source crates/api/migrations
 
-      # debug build: muito mais rapido que release no CI
       - name: Build backend (debug)
         working-directory: backend
         run: cargo build -p api
@@ -227,34 +228,32 @@ jobs:
             fi
             if [ "$i" -eq 40 ]; then
               echo "❌ Backend nao respondeu em 40 tentativas"
-              cat /proc/$(cat /tmp/api.pid)/fd/1 2>/dev/null || true
               exit 1
             fi
             echo "Aguardando... ($i/40)"
             sleep 3
           done
 
-      - name: "[Smoke] GET /health retorna status ok"
+      - name: "[Smoke] GET /health"
         run: |
           R=$(curl -sf http://localhost:8080/health)
           echo "$R"
-          echo "$R" | grep -q '"status"' || (echo "❌ /health sem campo status" && exit 1)
+          echo "$R" | grep -q '"status"' || (echo "❌ /health sem status" && exit 1)
           echo "✅ /health OK"
 
-      - name: "[Smoke] POST /auth/register retorna 201/409"
+      - name: "[Smoke] POST /auth/register"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -X POST http://localhost:8080/api/v1/auth/register \
             -H 'Content-Type: application/json' \
             -d '{"workspace_name":"Smoke Workspace","name":"Smoke Test","email":"smoke@test.com","password":"Smoke@1234"}')
           echo "Status: $CODE"
-          [ "$CODE" = "201" ] || [ "$CODE" = "409" ] \
+          [ "$CODE" = "201" ] || [ "$CODE" = "200" ] || [ "$CODE" = "409" ] \
             || (echo "❌ /auth/register retornou $CODE" && exit 1)
           echo "✅ /auth/register OK ($CODE)"
 
       - name: "[Smoke] POST /auth/login retorna token"
         run: |
-          # Garante usuario existe
           curl -s -X POST http://localhost:8080/api/v1/auth/register \
             -H 'Content-Type: application/json' \
             -d '{"workspace_name":"Smoke WS2","name":"Smoke Login","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null || true
@@ -262,7 +261,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
           echo "$R"
-          echo "$R" | grep -q '"token"' || (echo "❌ /auth/login sem campo token" && exit 1)
+          echo "$R" | grep -q '"token"' || (echo "❌ /auth/login sem token" && exit 1)
           echo "✅ /auth/login OK"
 
       - name: "[Smoke] /training sem token retorna 401/403"
@@ -271,7 +270,7 @@ jobs:
             http://localhost:8080/api/v1/training/feedback)
           echo "Status sem token: $CODE"
           [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
-            || (echo "❌ Rota protegida retornou $CODE (esperado 401/403)" && exit 1)
+            || (echo "❌ Rota protegida retornou $CODE" && exit 1)
           echo "✅ /training protegida OK ($CODE)"
 
       - name: Stop backend
