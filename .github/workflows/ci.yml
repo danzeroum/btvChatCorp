@@ -1,4 +1,4 @@
-name: CI – Fase 3
+name: CI – Fase 4
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  # ──────────────────────────────────────────────
-  # JOB 1 – Frontend Angular (build + test)
-  # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────
+  # JOB 1 – Frontend Angular (build + unit tests + coverage)
+  # ──────────────────────────────────────────────────────────
   frontend:
     name: Frontend (Angular 17)
     runs-on: ubuntu-latest
@@ -44,8 +44,43 @@ jobs:
       - name: Build (production)
         run: npm run build -- --configuration production
 
-      - name: Unit tests (headless)
+      - name: Unit tests (headless) + coverage
         run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
+
+      # ── Validacoes especificas Fase 4 ─────────────────────
+      - name: "[Fase 4] Verifica auth.guard ativo nas rotas de training"
+        run: |
+          if ! grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts; then
+            echo "❌ adminGuard nao encontrado em training-dashboard.routes.ts"
+            exit 1
+          fi
+          echo "✅ adminGuard presente nas rotas de treinamento"
+
+      - name: "[Fase 4] Verifica interceptor trata 401/403"
+        run: |
+          if ! grep -q '401' src/app/features/auth/auth.interceptor.ts; then
+            echo "❌ Tratamento de 401 nao encontrado no interceptor"
+            exit 1
+          fi
+          if ! grep -q '403' src/app/features/auth/auth.interceptor.ts; then
+            echo "❌ Tratamento de 403 nao encontrado no interceptor"
+            exit 1
+          fi
+          echo "✅ auth.interceptor trata 401 e 403"
+
+      - name: "[Fase 4] Verifica componentes de UX polish existem"
+        run: |
+          for f in \
+            src/app/core/components/loading-skeleton.component.ts \
+            src/app/core/components/empty-state.component.ts \
+            src/app/core/components/error-banner.component.ts \
+            src/app/core/handlers/global-error-handler.ts; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Arquivo ausente: $f"
+              exit 1
+            fi
+          done
+          echo "✅ Todos os componentes de UX polish presentes"
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -54,9 +89,9 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
 
-  # ──────────────────────────────────────────────
-  # JOB 2 – Backend Rust (fmt + clippy + test)
-  # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────
+  # JOB 2 – Backend Rust (fmt + clippy + unit + integration)
+  # ──────────────────────────────────────────────────────────
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
@@ -123,25 +158,163 @@ jobs:
             --database-url "$DATABASE_URL" \
             --source crates/api/migrations
 
-      - name: cargo test
+      - name: cargo test (unit + integration)
         run: cargo test --all -- --test-threads=1
 
-  # ──────────────────────────────────────────────
-  # JOB 3 – Gate: bloqueia merge se falhar
-  # ──────────────────────────────────────────────
+      # ── Validacoes especificas Fase 4 ─────────────────────
+      - name: "[Fase 4] Verifica middleware JWT presente"
+        run: |
+          if ! grep -rq 'jwt' crates/api/src/middleware/; then
+            echo "❌ Middleware JWT nao encontrado em src/middleware/"
+            exit 1
+          fi
+          echo "✅ Middleware JWT presente"
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3 – Smoke test de integracao (backend sobe + health OK)
+  # ──────────────────────────────────────────────────────────
+  integration-smoke:
+    name: Integration smoke test
+    runs-on: ubuntu-latest
+    needs: [backend]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: btv
+          POSTGRES_PASSWORD: btv
+          POSTGRES_DB: btvtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
+      JWT_SECRET: test_secret_for_ci_only
+      UPLOAD_DIR: /tmp/btv-uploads
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_MOCK: "true"
+      TRAINING_MOCK: "true"
+      TRAINING_URL: https://api.buildtovalue.cloud
+      LISTEN_ADDR: "0.0.0.0:8080"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-smoke-${{ hashFiles('backend/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run migrations
+        working-directory: backend
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
+          sqlx migrate run \
+            --database-url "$DATABASE_URL" \
+            --source crates/api/migrations
+
+      - name: Build backend release
+        working-directory: backend
+        run: cargo build --release -p api
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          mkdir -p $UPLOAD_DIR
+          ./target/release/api &
+          echo $! > /tmp/api.pid
+          # Aguarda servidor responder
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "✅ Backend respondeu na tentativa $i"
+              break
+            fi
+            echo "Aguardando backend... ($i/20)"
+            sleep 2
+          done
+
+      - name: "[Smoke] GET /health retorna status ok"
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8080/health)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"status"' || (echo '❌ /health nao retornou status' && exit 1)
+          echo "✅ /health OK"
+
+      - name: "[Smoke] POST /api/v1/auth/register retorna 200 ou 409"
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://localhost:8080/api/v1/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Smoke Test","email":"smoke@test.com","password":"Smoke@1234"}')
+          echo "Status: $CODE"
+          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ] && [ "$CODE" != "409" ]; then
+            echo "❌ Registro retornou $CODE inesperado"
+            exit 1
+          fi
+          echo "✅ /auth/register OK (status $CODE)"
+
+      - name: "[Smoke] POST /api/v1/auth/login retorna token"
+        run: |
+          # Garante usuario existe
+          curl -s -X POST http://localhost:8080/api/v1/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Smoke Test","email":"smoke2@test.com","password":"Smoke@1234"}' > /dev/null
+          # Login
+          RESPONSE=$(curl -sf -X POST http://localhost:8080/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | grep -q 'token\|access_token' || (echo '❌ Login nao retornou token' && exit 1)
+          echo "✅ /auth/login retornou token"
+
+      - name: "[Smoke] GET /api/v1/training/queue exige autenticacao (401)"
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            http://localhost:8080/api/v1/training/queue)
+          echo "Status sem token: $CODE"
+          if [ "$CODE" != "401" ] && [ "$CODE" != "403" ]; then
+            echo "❌ Rota protegida retornou $CODE sem token (esperado 401/403)"
+            exit 1
+          fi
+          echo "✅ /training/queue esta protegida (status $CODE)"
+
+      - name: Stop backend
+        if: always()
+        run: kill $(cat /tmp/api.pid) 2>/dev/null || true
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 4 – Gate final
+  # ──────────────────────────────────────────────────────────
   all-green:
     name: All checks passed
     runs-on: ubuntu-latest
-    needs: [frontend, backend]
+    needs: [frontend, backend, integration-smoke]
     if: always()
     steps:
       - name: Verify all jobs succeeded
         run: |
-          if [ "${{ needs.frontend.result }}" != "success" ] || \
-             [ "${{ needs.backend.result }}" != "success" ]; then
+          if [ "${{ needs.frontend.result }}"          != "success" ] || \
+             [ "${{ needs.backend.result }}"           != "success" ] || \
+             [ "${{ needs.integration-smoke.result }}" != "success" ]; then
             echo "❌ One or more jobs failed."
-            echo "  Frontend: ${{ needs.frontend.result }}"
-            echo "  Backend:  ${{ needs.backend.result }}"
+            echo "  Frontend:         ${{ needs.frontend.result }}"
+            echo "  Backend:          ${{ needs.backend.result }}"
+            echo "  Integration smoke:${{ needs.integration-smoke.result }}"
             exit 1
           fi
-          echo "✅ All jobs passed!"
+          echo "✅ All checks passed — Fase 4.1 OK!"
