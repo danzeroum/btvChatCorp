@@ -35,7 +35,8 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     tracing::info!("Banco conectado. Rodando migrations...");
-    sqlx::migrate!("../../migrations").run(&db).await?;
+    // Caminho relativo ao Cargo.toml da crate (backend/crates/api/)
+    sqlx::migrate!("./migrations").run(&db).await?;
     tracing::info!("Migrations OK");
 
     let ollama_url   = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
@@ -58,7 +59,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", axum::routing::get(|| async {
             axum::Json(serde_json::json!({ "status": "ok" }))
         }))
-        // Swagger UI: GET /docs  |  spec JSON: GET /docs/openapi.json
         .merge(routes::docs_router())
         .nest("/api/v1", routes::v1_routes(state.clone()))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
