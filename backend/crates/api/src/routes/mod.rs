@@ -18,6 +18,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::state::AppState;
 use crate::middleware::auth::require_auth;
 use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
+use crate::models::project::{Project, CreateProjectDto, UpdateProjectDto};
+use crate::models::chat::{Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -25,25 +27,36 @@ use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
         title = "BTV Chat Corp API",
         version = "1.0.0",
         description = "API REST do BTV Chat Corp — autenticacao, chat, documentos, treinamento e admin",
-        contact(
-            name = "BTV Team",
-            url = "https://buildtovalue.cloud"
-        ),
+        contact(name = "BTV Team", url = "https://buildtovalue.cloud"),
     ),
     paths(
         auth::register,
         auth::login,
+        projects::list,
+        projects::create,
+        projects::get_one,
+        projects::update,
+        projects::remove,
+        projects::stats,
+        chats::list,
+        chats::create,
+        chats::get_one,
+        chats::remove,
+        chats::get_messages,
+        chats::send_message,
+        chats::feedback,
     ),
     components(
         schemas(
-            RegisterDto,
-            LoginDto,
-            AuthResponse,
+            RegisterDto, LoginDto, AuthResponse,
+            Project, CreateProjectDto, UpdateProjectDto,
+            Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto,
         )
     ),
     tags(
         (name = "Auth",     description = "Registro e autenticacao de usuarios"),
-        (name = "Chat",     description = "Sessoes e mensagens de chat"),
+        (name = "Projects", description = "Gerenciamento de projetos do workspace"),
+        (name = "Chat",     description = "Sessoes de chat e mensagens com o LLM"),
         (name = "Training", description = "Pipeline de treinamento e fine-tuning LoRA"),
         (name = "Admin",    description = "Administracao do workspace"),
     ),
@@ -68,8 +81,6 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
-/// GET /docs        → Swagger UI
-/// GET /docs/openapi.json → spec JSON (servido pelo SwaggerUi)
 pub fn docs_router() -> Router<AppState> {
     Router::new().merge(
         SwaggerUi::new("/docs")
@@ -79,13 +90,11 @@ pub fn docs_router() -> Router<AppState> {
 
 pub fn v1_routes(state: AppState) -> Router<AppState> {
     let public = auth::routes();
-
     let protected = Router::new()
         .merge(projects::routes())
         .merge(chats::routes())
         .merge(documents::routes())
         .merge(training::routes())
         .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
-
     Router::new().merge(public).merge(protected)
 }
