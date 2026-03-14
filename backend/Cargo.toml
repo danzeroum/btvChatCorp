@@ -23,3 +23,5 @@ tower              = { version = "0.4",   features = ["util"] }
 tower-http         = { version = "0.5",   features = ["cors", "trace", "compression-gzip"] }
 dotenvy            = "0.15"
 sha2               = "0.10"
+utoipa             = { version = "4",     features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui  = { version = "7",     features = ["axum"] }

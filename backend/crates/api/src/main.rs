@@ -12,7 +12,6 @@ mod models;
 mod routes;
 mod state;
 
-// Modulos de teste — compilados apenas em modo test
 #[cfg(test)]
 mod test_helpers;
 
@@ -59,6 +58,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", axum::routing::get(|| async {
             axum::Json(serde_json::json!({ "status": "ok" }))
         }))
+        // Swagger UI: GET /docs  |  spec JSON: GET /docs/openapi.json
+        .merge(routes::docs_router())
         .nest("/api/v1", routes::v1_routes(state.clone()))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
         .layer(TraceLayer::new_for_http())
@@ -69,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
 
     tracing::info!("Servidor em http://{}", addr);
+    tracing::info!("Swagger UI em http://{}/docs", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
