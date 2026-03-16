@@ -7,11 +7,14 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod errors;
+mod extractors;
 mod middleware;
 mod models;
 mod rag;
+mod rag_test;
 mod routes;
 mod state;
+mod test_helpers;
 
 use state::AppState;
 
@@ -48,7 +51,6 @@ async fn main() -> anyhow::Result<()> {
         None => None,
     };
 
-    // RAG — URLs opcionais (graceful degradation se não configurado)
     let qdrant_url = env::var("QDRANT_URL")
         .unwrap_or_else(|_| "http://localhost:6333".into());
     let embedding_url = env::var("EMBEDDING_URL")

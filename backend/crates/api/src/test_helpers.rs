@@ -19,8 +19,6 @@ pub mod helpers {
 
     pub const TEST_JWT_SECRET: &str = "test_secret_for_ci_only";
 
-    // User IDs fixos por workspace para garantir consistencia entre chamadas
-    // do mesmo teste (create e list usam o mesmo user_id).
     pub const DEFAULT_USER_ID: &str      = "00000000-0000-0000-0000-000000000099";
     pub const DEFAULT_WORKSPACE_ID: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -32,7 +30,9 @@ pub mod helpers {
         pub exp: usize,
     }
 
-    /// Sobe o Router Axum completo apontado para o banco de teste (DATABASE_URL do env)
+    /// Sobe o Router Axum completo com suporte a RAG (URLs mockadas).
+    /// QDRANT_URL e EMBEDDING_URL apontam para localhost que não existe em CI —
+    /// o código trata gracefully (retorna [] sem quebrar).
     pub async fn make_app() -> Router {
         let db_url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL deve estar definida para os testes de integracao");
@@ -49,6 +49,12 @@ pub mod helpers {
             ollama_model: std::env::var("OLLAMA_MODEL")
                 .unwrap_or_else(|_| "llama3.1:8b".into()),
             ollama_auth: None,
+            // RAG: aponta para serviços que não estão no ar em CI —
+            // o search_rag() retorna [] graciosamente
+            qdrant_url:    std::env::var("QDRANT_URL")
+                .unwrap_or_else(|_| "http://localhost:6333".into()),
+            embedding_url: std::env::var("EMBEDDING_URL")
+                .unwrap_or_else(|_| "http://localhost:8001".into()),
         };
 
         axum::Router::new()
@@ -56,12 +62,10 @@ pub mod helpers {
             .with_state(state)
     }
 
-    /// JWT valido (+1h) com user_id e workspace_id fixos para testes
     pub fn make_auth_header(role: &str) -> String {
         jwt_for_ids(DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID, role)
     }
 
-    /// JWT valido (+1h) para workspace especifico (user_id fixo derivado do workspace)
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
         let user_suffix = workspace_id
             .chars()
@@ -91,7 +95,6 @@ pub mod helpers {
         format!("Bearer {}", token)
     }
 
-    /// Converte UUID string em Uuid (panic se invalido — aceitavel em testes)
     #[allow(dead_code)]
     pub fn uuid(s: &str) -> Uuid {
         s.parse().expect("UUID invalido no helper de teste")

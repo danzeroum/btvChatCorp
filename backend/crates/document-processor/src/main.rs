@@ -4,6 +4,8 @@ mod strategy;
 mod chunker;
 mod embedder;
 mod indexer;
+#[cfg(test)]
+mod tests;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,8 +97,6 @@ async fn main() -> Result<()> {
 }
 
 async fn fetch_pending(db: &sqlx::PgPool, limit: i64) -> Result<Vec<PendingDoc>> {
-    // Usa SELECT ... FOR UPDATE SKIP LOCKED para evitar que dois workers
-    // processem o mesmo documento em ambiente multi-instância
     let docs = sqlx::query_as::<_, PendingDoc>(
         r#"
         SELECT id, workspace_id, storage_path, mime_type,
@@ -126,7 +126,6 @@ async fn process_document(
 ) {
     info!(doc_id = %doc.id, filename = %doc.original_filename, "Processando documento");
 
-    // Marca como processing
     if let Err(e) = set_status(&db, doc.id, "processing", None).await {
         error!("Erro ao marcar processing: {}", e);
         return;
@@ -152,7 +151,7 @@ async fn process_document(
             let next_status = if next_retry >= cfg.max_retries {
                 "failed"
             } else {
-                "pending" // volta para a fila
+                "pending"
             };
 
             let _ = sqlx::query(
@@ -178,7 +177,6 @@ async fn run_pipeline(
     indexer: &Indexer,
     cfg: &Config,
 ) -> Result<usize> {
-    // 1. Extrai texto
     let full_path = format!("{}/{}", cfg.storage_path, doc.storage_path
         .split(['/', '\\']).last().unwrap_or(&doc.original_filename));
     let text = extract_text(&full_path, &doc.mime_type).await?;
@@ -187,20 +185,16 @@ async fn run_pipeline(
         return Err(anyhow::anyhow!("Documento sem texto extraível"));
     }
 
-    // 2. Detecta estratégia
     let strategy = detect_strategy(&text, &doc.original_filename, None);
     info!(doc_id = %doc.id, ?strategy, "Estratégia de chunking selecionada");
 
-    // 3. Gera chunks
     let chunks = chunk_text(&text, &strategy);
     let total  = chunks.len();
     info!(doc_id = %doc.id, chunks = total, "Chunks gerados");
 
-    // 4. Gera embeddings em batches de 32
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
     let embeddings = embedder.embed_batch(&texts).await?;
 
-    // 5. Indexa
     indexer.index_document(
         doc.id,
         doc.workspace_id,
