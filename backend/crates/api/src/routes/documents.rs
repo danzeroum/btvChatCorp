@@ -207,9 +207,9 @@ async fn list_for_project(
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
-struct LinkDto {
+pub struct LinkDto {
     /// ID do documento a vincular
-    document_id: Uuid,
+    pub document_id: Uuid,
 }
 
 /// Vincula documento existente a um projeto
