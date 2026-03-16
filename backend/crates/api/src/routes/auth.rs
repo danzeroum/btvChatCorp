@@ -85,8 +85,9 @@ async fn register(
         .map_err(|_| AppError::internal("Erro ao processar senha"))?;
     let user_id = Uuid::new_v4();
 
+    // Coluna correta: role_name (definida em 0001_auth.sql)
     sqlx::query(
-        "INSERT INTO users (id,workspace_id,name,email,password_hash,role) VALUES ($1,$2,$3,$4,$5,'owner')",
+        "INSERT INTO users (id,workspace_id,name,email,password_hash,role_name) VALUES ($1,$2,$3,$4,$5,'owner')",
     )
     .bind(user_id).bind(workspace_id).bind(&dto.name).bind(&dto.email).bind(&hash)
     .execute(&state.db).await
@@ -115,8 +116,9 @@ async fn login(
     State(state): State<AppState>,
     Json(dto): Json<LoginDto>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    // role_name (schema real) | status='active' em vez de is_active
     let row: (Uuid, Uuid, String, String, String, String) = sqlx::query_as(
-        "SELECT id,workspace_id,name,email,password_hash,role FROM users WHERE email=$1 AND is_active=true",
+        "SELECT id,workspace_id,name,email,password_hash,role_name FROM users WHERE email=$1 AND status='active'",
     )
     .bind(&dto.email)
     .fetch_one(&state.db).await
