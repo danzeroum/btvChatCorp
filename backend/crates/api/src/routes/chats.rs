@@ -10,6 +10,7 @@ use crate::{
     errors::AppError,
     middleware::auth::AuthUser,
     models::chat::{Chat, CreateChatDto, FeedbackDto, Message, SendMessageDto},
+    rag::{build_rag_context, build_sources_json, search_rag},
     state::AppState,
 };
 
@@ -149,7 +150,7 @@ async fn get_messages(
     Ok(Json(rows))
 }
 
-/// Envia mensagem e recebe resposta do LLM
+/// Envia mensagem e recebe resposta do LLM com contexto RAG
 #[utoipa::path(
     post,
     path = "/api/v1/chats/{id}/messages",
@@ -168,36 +169,100 @@ async fn send_message(
     Path(chat_id): Path<Uuid>,
     Json(dto): Json<SendMessageDto>,
 ) -> Result<Json<Message>, AppError> {
+    // ── Valida que o chat pertence ao workspace ───────────────────────────────
     sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
         .bind(chat_id).bind(auth.workspace_id)
         .fetch_one(&state.db).await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
+    // ── Salva mensagem do usuário ─────────────────────────────────────────────
     sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content) VALUES ($1,'user',$2) RETURNING *",
-    ).bind(chat_id).bind(&dto.content).fetch_one(&state.db).await?;
+    ).bind(chat_id).bind(&dto.content)
+    .fetch_one(&state.db).await?;
 
+    // ── Busca contexto RAG (falha graciosamente se Qdrant offline) ────────────
+    let rag_chunks = search_rag(
+        &state.qdrant_url,
+        &state.embedding_url,
+        &auth.workspace_id.to_string(),
+        &dto.content,
+        5,    // top_k
+        0.35, // min_score — descarta chunks pouco relevantes
+    )
+    .await
+    .unwrap_or_default();
+
+    let rag_context  = build_rag_context(&rag_chunks);
+    let sources_json = build_sources_json(&rag_chunks);
+
+    // ── Monta histórico de mensagens ──────────────────────────────────────────
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
     ).bind(chat_id).fetch_all(&state.db).await?;
 
-    let messages: Vec<serde_json::Value> = history.into_iter().rev()
-        .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
-        .collect();
-
-    let llm_resp = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
-        LlmResponse { content: format!("[mock] Resposta para: {}", dto.content), tokens_used: Some(42) }
+    // System prompt: instrução base + contexto RAG (se houver)
+    let system_content = if let Some(ctx) = rag_context {
+        format!(
+            "Você é um assistente especializado da empresa. \
+             Responda sempre em português, seja preciso e conciso. \
+             Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
+             {}",
+            ctx
+        )
     } else {
-        call_llm(
-            &state.ollama_url, &state.ollama_model, state.ollama_auth.as_deref(),
-            &messages, dto.temperature.unwrap_or(0.7), dto.max_tokens.unwrap_or(1024),
-        ).await.map_err(|e| AppError::internal(e.to_string()))?
+        "Você é um assistente especializado da empresa. \
+         Responda sempre em português, seja preciso e conciso. \
+         Se não souber a resposta, diga que não tem essa informação disponível."
+            .to_string()
     };
 
+    let mut messages: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "role": "system", "content": system_content }),
+    ];
+    messages.extend(
+        history.into_iter().rev()
+            .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
+    );
+
+    // ── Chama o LLM ──────────────────────────────────────────────────────────
+    let llm_resp = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
+        let mock_info = if rag_chunks.is_empty() {
+            "[sem contexto RAG]".to_string()
+        } else {
+            format!("[{} chunks RAG de: {}]",
+                rag_chunks.len(),
+                rag_chunks.iter().map(|c| c.filename.as_str()).collect::<Vec<_>>().join(", "))
+        };
+        LlmResponse {
+            content: format!("[mock] {} — Resposta para: {}", mock_info, dto.content),
+            tokens_used: Some(42),
+        }
+    } else {
+        call_llm(
+            &state.ollama_url,
+            &state.ollama_model,
+            state.ollama_auth.as_deref(),
+            &messages,
+            dto.temperature.unwrap_or(0.7),
+            dto.max_tokens.unwrap_or(1024),
+        )
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?
+    };
+
+    // ── Salva resposta do assistente (com fontes RAG) ─────────────────────────
     let assistant_msg = sqlx::query_as::<_, Message>(
-        "INSERT INTO messages (chat_id,role,content,tokens_used) VALUES ($1,'assistant',$2,$3) RETURNING *",
-    ).bind(chat_id).bind(&llm_resp.content).bind(llm_resp.tokens_used)
-    .fetch_one(&state.db).await?;
+        "INSERT INTO messages (chat_id, role, content, sources, tokens_used)
+         VALUES ($1, 'assistant', $2, $3, $4)
+         RETURNING *",
+    )
+    .bind(chat_id)
+    .bind(&llm_resp.content)
+    .bind(&sources_json)
+    .bind(llm_resp.tokens_used)
+    .fetch_one(&state.db)
+    .await?;
 
     sqlx::query("UPDATE chats SET updated_at=NOW() WHERE id=$1")
         .bind(chat_id).execute(&state.db).await.ok();
@@ -236,18 +301,30 @@ async fn feedback(
     Ok(StatusCode::OK)
 }
 
-struct LlmResponse { content: String, tokens_used: Option<i32> }
+// ── LLM client ───────────────────────────────────────────────────────────────
+
+struct LlmResponse {
+    content:    String,
+    tokens_used: Option<i32>,
+}
 
 async fn call_llm(
-    base_url: &str, model: &str, basic_auth: Option<&str>,
-    messages: &[serde_json::Value], temperature: f32, max_tokens: u32,
+    base_url:   &str,
+    model:      &str,
+    basic_auth: Option<&str>,
+    messages:   &[serde_json::Value],
+    temperature: f32,
+    max_tokens:  u32,
 ) -> anyhow::Result<LlmResponse> {
     let client = reqwest::Client::new();
     let mut req = client
         .post(format!("{}/v1/chat/completions", base_url))
         .json(&serde_json::json!({
-            "model": model, "messages": messages,
-            "stream": false, "temperature": temperature, "max_tokens": max_tokens,
+            "model":       model,
+            "messages":    messages,
+            "stream":      false,
+            "temperature": temperature,
+            "max_tokens":  max_tokens,
         }));
     if let Some(auth) = basic_auth {
         let mut parts = auth.splitn(2, ':');
@@ -257,7 +334,9 @@ async fn call_llm(
     }
     let resp = req.send().await?.json::<serde_json::Value>().await?;
     Ok(LlmResponse {
-        content: resp["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string(),
-        tokens_used: resp["usage"]["completion_tokens"].as_i64().map(|t| t as i32),
+        content: resp["choices"][0]["message"]["content"]
+            .as_str().unwrap_or("").to_string(),
+        tokens_used: resp["usage"]["completion_tokens"]
+            .as_i64().map(|t| t as i32),
     })
 }
