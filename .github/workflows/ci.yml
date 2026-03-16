@@ -1,4 +1,4 @@
-name: CI – Fase 5 (RAG Worker)
+name: CI - Fase 5 (RAG Worker)
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  # ────────────────────────────────────
-  # JOB 1 – Frontend Angular
-  # ────────────────────────────────────
+  # ------------------------------------
+  # JOB 1 - Frontend Angular
+  # ------------------------------------
   frontend:
     name: Frontend (Angular 17)
     runs-on: ubuntu-latest
@@ -45,15 +45,15 @@ jobs:
       - name: "[Fase 4] adminGuard nas rotas de training"
         run: |
           grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts \
-            && echo "✅ adminGuard presente" \
-            || (echo "❌ adminGuard ausente" && exit 1)
+            && echo "adminGuard presente" \
+            || (echo "adminGuard ausente" && exit 1)
 
       - name: "[Fase 4] interceptor trata 401/403"
         run: |
           grep -q '401' src/app/features/auth/auth.interceptor.ts \
             && grep -q '403' src/app/features/auth/auth.interceptor.ts \
-            && echo "✅ auth.interceptor OK" \
-            || (echo "❌ Tratamento 401/403 ausente" && exit 1)
+            && echo "auth.interceptor OK" \
+            || (echo "Tratamento 401/403 ausente" && exit 1)
 
       - name: "[Fase 4] componentes UX polish existem"
         run: |
@@ -62,9 +62,9 @@ jobs:
             src/app/core/components/empty-state.component.ts \
             src/app/core/components/error-banner.component.ts \
             src/app/core/handlers/global-error-handler.ts; do
-            [ -f "$f" ] || (echo "❌ Ausente: $f" && exit 1)
+            [ -f "$f" ] || (echo "Ausente: $f" && exit 1)
           done
-          echo "✅ Componentes UX polish OK"
+          echo "Componentes UX polish OK"
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -73,9 +73,9 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
 
-  # ────────────────────────────────────
-  # JOB 2 – Backend Rust (unit + integração)
-  # ────────────────────────────────────
+  # ------------------------------------
+  # JOB 2 - Backend Rust (unit + integracao)
+  # ------------------------------------
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
@@ -99,17 +99,16 @@ jobs:
           --health-retries 20
 
     env:
-      DATABASE_URL:    postgres://btv:btv@localhost:5432/btvtest
-      JWT_SECRET:      test_secret_for_ci_only
-      UPLOAD_DIR:      /tmp/btv-uploads
-      OLLAMA_URL:      http://localhost:11434
-      OLLAMA_MODEL:    llama3.1:8b
-      OLLAMA_MOCK:     "true"
-      TRAINING_MOCK:   "true"
-      TRAINING_URL:    https://api.buildtovalue.cloud
-      # RAG — não sobem em CI, o código degrada graciosamente
-      QDRANT_URL:      http://localhost:6333
-      EMBEDDING_URL:   http://localhost:8001
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
+      JWT_SECRET: test_secret_for_ci_only
+      UPLOAD_DIR: /tmp/btv-uploads
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_MOCK: "true"
+      TRAINING_MOCK: "true"
+      TRAINING_URL: https://api.buildtovalue.cloud
+      QDRANT_URL: http://localhost:6333
+      EMBEDDING_URL: http://localhost:8001
 
     steps:
       - uses: actions/checkout@v4
@@ -143,33 +142,29 @@ jobs:
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run --database-url "$DATABASE_URL" --source migrations
 
-      # ── Testes unitários: document-processor (sem banco) ──
-      - name: "[RAG] Testes unitários — strategy"
+      - name: "[RAG] Testes unitarios - strategy"
         run: cargo test -p document-processor strategy_tests -- --test-threads=1 --nocapture
 
-      - name: "[RAG] Testes unitários — chunker"
+      - name: "[RAG] Testes unitarios - chunker"
         run: cargo test -p document-processor chunker_tests -- --test-threads=1 --nocapture
 
-      - name: "[RAG] Testes unitários — extractor"
+      - name: "[RAG] Testes unitarios - extractor"
         run: cargo test -p document-processor extractor_tests -- --test-threads=1 --nocapture
 
-      # ── Testes unitários: api/rag (funções puras, sem banco) ──
-      - name: "[RAG] Testes unitários — rag.rs (build_context, sources_json)"
+      - name: "[RAG] Testes unitarios - rag.rs"
         run: cargo test -p api rag_unit_tests -- --test-threads=1 --nocapture
 
-      # ── Testes de integração: chat + RAG mock (com banco) ──
-      - name: "[RAG] Testes de integração — chat com RAG graceful degradation"
+      - name: "[RAG] Testes de integracao - chat com RAG graceful degradation"
         run: cargo test -p api rag_integration_tests -- --test-threads=1 --nocapture
 
-      # ── Suite completa ──
       - name: cargo test (suite completa)
         run: cargo test --all -- --test-threads=1
 
       - name: "[Fase 4] Middleware JWT presente"
         run: |
           grep -rq 'jwt' crates/api/src/middleware/ \
-            && echo "✅ Middleware JWT OK" \
-            || (echo "❌ Middleware JWT ausente" && exit 1)
+            && echo "Middleware JWT OK" \
+            || (echo "Middleware JWT ausente" && exit 1)
 
       - name: "[Fase 5] Arquivos RAG worker existem"
         run: |
@@ -181,25 +176,25 @@ jobs:
             crates/document-processor/src/embedder.rs \
             crates/document-processor/src/indexer.rs \
             crates/api/src/rag.rs; do
-            [ -f "$f" ] || (echo "❌ Ausente: $f" && exit 1)
+            [ -f "$f" ] || (echo "Ausente: $f" && exit 1)
           done
-          echo "✅ Todos os arquivos RAG presentes"
+          echo "Todos os arquivos RAG presentes"
 
       - name: "[Fase 5] RAG integrado ao chats.rs"
         run: |
           grep -q 'search_rag' crates/api/src/routes/chats.rs \
-            && echo "✅ search_rag presente no chats.rs" \
-            || (echo "❌ search_rag ausente no chats.rs" && exit 1)
+            && echo "search_rag presente no chats.rs" \
+            || (echo "search_rag ausente no chats.rs" && exit 1)
 
       - name: "[Fase 5] Migration document_chunks existe"
         run: |
           ls migrations/ | grep -q '002_rag' \
-            && echo "✅ Migration 002_rag presente" \
-            || (echo "❌ Migration 002_rag ausente" && exit 1)
+            && echo "Migration 002_rag presente" \
+            || (echo "Migration 002_rag ausente" && exit 1)
 
-  # ────────────────────────────────────
-  # JOB 3 – Smoke test (API + RAG degradation)
-  # ────────────────────────────────────
+  # ------------------------------------
+  # JOB 3 - Smoke test (API + RAG degradation)
+  # ------------------------------------
   integration-smoke:
     name: Integration smoke test
     runs-on: ubuntu-latest
@@ -220,17 +215,16 @@ jobs:
           --health-retries 20
 
     env:
-      DATABASE_URL:  postgres://btv:btv@localhost:5432/btvsmoke
-      JWT_SECRET:    test_secret_for_ci_only
-      UPLOAD_DIR:    /tmp/btv-uploads
-      OLLAMA_URL:    http://localhost:11434
-      OLLAMA_MODEL:  llama3.1:8b
-      OLLAMA_MOCK:   "true"
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvsmoke
+      JWT_SECRET: test_secret_for_ci_only
+      UPLOAD_DIR: /tmp/btv-uploads
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_MOCK: "true"
       TRAINING_MOCK: "true"
-      TRAINING_URL:  https://api.buildtovalue.cloud
-      QDRANT_URL:    http://localhost:6333
+      TRAINING_URL: https://api.buildtovalue.cloud
+      QDRANT_URL: http://localhost:6333
       EMBEDDING_URL: http://localhost:8001
-      LISTEN_ADDR:   "0.0.0.0:8080"
 
     steps:
       - uses: actions/checkout@v4
@@ -267,18 +261,18 @@ jobs:
           echo $! > /tmp/api.pid
           for i in $(seq 1 40); do
             if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
-              echo "✅ Backend respondeu na tentativa $i"
+              echo "Backend respondeu na tentativa $i"
               break
             fi
-            [ "$i" -eq 40 ] && echo "❌ Backend não respondeu" && exit 1
+            [ "$i" -eq 40 ] && echo "Backend nao respondeu" && exit 1
             echo "Aguardando... ($i/40)" && sleep 3
           done
 
       - name: "[Smoke] GET /health"
         run: |
           R=$(curl -sf http://localhost:3000/health)
-          echo "$R" | grep -q '"status"' || (echo "❌ /health sem status" && exit 1)
-          echo "✅ /health OK"
+          echo "$R" | grep -q '"status"' || (echo "/health sem status" && exit 1)
+          echo "/health OK"
 
       - name: "[Smoke] POST /auth/register"
         run: |
@@ -287,8 +281,8 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"workspace_name":"Smoke WS","name":"Smoke","email":"smoke@test.com","password":"Smoke@1234"}')
           [ "$CODE" = "201" ] || [ "$CODE" = "409" ] \
-            || (echo "❌ /auth/register retornou $CODE" && exit 1)
-          echo "✅ /auth/register OK ($CODE)"
+            || (echo "/auth/register retornou $CODE" && exit 1)
+          echo "/auth/register OK ($CODE)"
 
       - name: "[Smoke] POST /auth/login retorna token"
         run: |
@@ -298,71 +292,71 @@ jobs:
           R=$(curl -sf -X POST http://localhost:3000/api/v1/auth/login \
             -H 'Content-Type: application/json' \
             -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
-          echo "$R" | grep -q '"token"' || (echo "❌ /auth/login sem token" && exit 1)
-          echo "✅ /auth/login OK"
-          TOKEN=$(echo "$R" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+          echo "$R" | grep -q '"token"' || (echo "/auth/login sem token" && exit 1)
+          echo "/auth/login OK"
+          TOKEN=$(echo "$R" | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
           echo "TOKEN=$TOKEN" >> $GITHUB_ENV
 
-      - name: "[Smoke RAG] Chat sem Qdrant não quebra"
+      - name: "[Smoke RAG] Chat sem Qdrant nao quebra"
         run: |
-          # Cria chat
           CHAT=$(curl -sf -X POST http://localhost:3000/api/v1/chats \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
             -d '{"title": "Smoke RAG Test"}')
-          CHAT_ID=$(echo "$CHAT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          CHAT_ID=$(echo "$CHAT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
           echo "Chat ID: $CHAT_ID"
 
-          # Envia mensagem (Qdrant offline — deve degradar graciosamente)
           R=$(curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
             -d '{"content": "Teste de RAG sem Qdrant"}')
           echo "$R"
-          echo "$R" | grep -q '"role"' || (echo "❌ Resposta sem role" && exit 1)
-          echo "$R" | python3 -c "
-import sys, json
-m = json.load(sys.stdin)
-assert m['role'] == 'assistant', f\"role={m['role']}\" 
-assert len(m['content']) > 0, 'conteúdo vazio'
-print('✅ Chat RAG degradation OK')
-"
+          echo "$R" | grep -q '"role"' || (echo "Resposta sem role" && exit 1)
 
-      - name: "[Smoke RAG] sources é null sem documentos indexados"
+          echo "$R" | python3 - <<'PYEOF'
+import sys, json
+m = json.loads(sys.stdin.read())
+assert m['role'] == 'assistant', 'role errado: ' + m['role']
+assert len(m['content']) > 0, 'conteudo vazio'
+print('Chat RAG degradation OK')
+PYEOF
+
+      - name: "[Smoke RAG] sources e null sem documentos indexados"
         run: |
           CHAT=$(curl -sf -X POST http://localhost:3000/api/v1/chats \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
             -d '{"title": "Sources Test"}')
-          CHAT_ID=$(echo "$CHAT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          CHAT_ID=$(echo "$CHAT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
 
           R=$(curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
             -d '{"content": "Pergunta qualquer"}')
           echo "$R"
-          echo "$R" | python3 -c "
+
+          echo "$R" | python3 - <<'PYEOF'
 import sys, json
-m = json.load(sys.stdin)
-assert m.get('sources') is None, f\"sources deveria ser null: {m.get('sources')}\"
-print('✅ sources=null OK (sem documentos indexados)')
-"
+m = json.loads(sys.stdin.read())
+assert m.get('sources') is None, 'sources deveria ser null: ' + str(m.get('sources'))
+print('sources=null OK (sem documentos indexados)')
+PYEOF
 
       - name: "[Smoke] /training sem token retorna 401/403"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             http://localhost:3000/api/v1/training/feedback)
           [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
-            || (echo "❌ Rota protegida retornou $CODE" && exit 1)
-          echo "✅ /training protegida OK"
+            || (echo "Rota protegida retornou $CODE" && exit 1)
+          echo "/training protegida OK"
 
       - name: Stop backend
         if: always()
         run: kill $(cat /tmp/api.pid) 2>/dev/null || true
 
-  # ────────────────────────────────────
-  # JOB 4 – Gate final
-  # ────────────────────────────────────
+  # ------------------------------------
+  # JOB 4 - Gate final
+  # ------------------------------------
   all-green:
     name: All checks passed
     runs-on: ubuntu-latest
@@ -371,13 +365,13 @@ print('✅ sources=null OK (sem documentos indexados)')
     steps:
       - name: Verify all jobs succeeded
         run: |
-          if [ "${{ needs.frontend.result }}"          != "success" ] || \
-             [ "${{ needs.backend.result }}"           != "success" ] || \
+          if [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.backend.result }}" != "success" ] || \
              [ "${{ needs.integration-smoke.result }}" != "success" ]; then
-            echo "❌ One or more jobs failed."
+            echo "One or more jobs failed."
             echo "  Frontend:          ${{ needs.frontend.result }}"
             echo "  Backend:           ${{ needs.backend.result }}"
             echo "  Integration smoke: ${{ needs.integration-smoke.result }}"
             exit 1
           fi
-          echo "✅ All checks passed — Fase 5 (RAG Worker) OK!"
+          echo "All checks passed - Fase 5 (RAG Worker) OK!"
