@@ -20,6 +20,12 @@ use crate::middleware::auth::require_auth;
 use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
 use crate::models::project::{Project, CreateProjectDto, UpdateProjectDto};
 use crate::models::chat::{Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto};
+use crate::models::document::Document;
+use crate::routes::training::{
+    TrainingInteraction, TrainingBatch, TrainingDocument,
+    QueueQuery, StartBatchDto,
+};
+use crate::routes::documents::LinkDto;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -45,20 +51,39 @@ use crate::models::chat::{Chat, Message, CreateChatDto, SendMessageDto, Feedback
         chats::get_messages,
         chats::send_message,
         chats::feedback,
+        documents::list,
+        documents::upload,
+        documents::get_one,
+        documents::remove,
+        documents::list_for_project,
+        documents::link_to_project,
+        documents::unlink_from_project,
+        training::list_queue,
+        training::approve,
+        training::reject,
+        training::list_batches,
+        training::start_batch,
+        training::get_batch,
+        training::poll_batch_status,
+        training::list_documents,
     ),
     components(
         schemas(
             RegisterDto, LoginDto, AuthResponse,
             Project, CreateProjectDto, UpdateProjectDto,
             Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto,
+            Document, LinkDto,
+            TrainingInteraction, TrainingBatch, TrainingDocument,
+            QueueQuery, StartBatchDto,
         )
     ),
     tags(
-        (name = "Auth",     description = "Registro e autenticacao de usuarios"),
-        (name = "Projects", description = "Gerenciamento de projetos do workspace"),
-        (name = "Chat",     description = "Sessoes de chat e mensagens com o LLM"),
-        (name = "Training", description = "Pipeline de treinamento e fine-tuning LoRA"),
-        (name = "Admin",    description = "Administracao do workspace"),
+        (name = "Auth",      description = "Registro e autenticacao de usuarios"),
+        (name = "Projects",  description = "Gerenciamento de projetos do workspace"),
+        (name = "Chat",      description = "Sessoes de chat e mensagens com o LLM"),
+        (name = "Documents", description = "Upload e gestao de documentos para RAG"),
+        (name = "Training",  description = "Pipeline de treinamento e fine-tuning LoRA"),
+        (name = "Admin",     description = "Administracao do workspace"),
     ),
     modifiers(&SecurityAddon)
 )]
