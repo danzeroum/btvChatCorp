@@ -1,6 +1,5 @@
 #![cfg_attr(not(test), allow(dead_code))]
 //! Utilitarios de teste de integracao.
-//! Usado exclusivamente em contexto #[cfg(test)].
 
 #[cfg(test)]
 pub use helpers::*;
@@ -27,7 +26,6 @@ pub mod helpers {
         pub exp: usize,
     }
 
-    /// Sobe o Router Axum completo com suporte a RAG (URLs mockadas).
     pub async fn make_app() -> Router {
         let db_url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL deve estar definida para os testes de integracao");
@@ -55,12 +53,10 @@ pub mod helpers {
             .with_state(state)
     }
 
-    /// JWT valido (+1h) com user_id e workspace_id fixos para testes
     pub fn make_auth_header(role: &str) -> String {
         jwt_for_ids(DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID, role)
     }
 
-    /// JWT valido (+1h) para workspace especifico
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
         let user_suffix = workspace_id
             .chars()
