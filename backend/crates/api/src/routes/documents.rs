@@ -28,8 +28,8 @@ pub fn routes() -> Router<AppState> {
 #[allow(dead_code)]
 pub struct UploadForm {
     /// Arquivo a enviar (PDF, DOCX, TXT, etc — max 50 MB)
-    #[schema(format = Binary, content_media_type = "application/octet-stream")]
-    pub file: String,
+    #[schema(format = Binary, value_type = String)]
+    pub file: Vec<u8>,
 }
 
 /// Lista documentos do workspace
