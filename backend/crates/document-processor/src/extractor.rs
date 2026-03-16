@@ -1,126 +1,75 @@
 use std::path::Path;
-use serde::{Deserialize, Serialize};
+use anyhow::{Result, bail};
+use tracing::{info, warn};
 
-use crate::{
-    errors::ExtractionError,
-    DocumentSection, SectionType, LegalSection, MedicalSection,
-};
+use crate::models::{ExtractedDocument, DocumentSection, SectionType};
 
-/// Documento após extraeço de texto
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtractedDocument {
-    pub raw_text: String,
-    pub sections: Vec<DocumentSection>,
-    pub extraction_method: String,
-    pub has_tables: bool,
-    pub page_breaks: Vec<usize>, // posições de quebra de página
-}
+// ---------------------------------------------------------------------------
+// Extrator principal — roteia por mime_type
+// ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
-pub struct OcrResponse {
-    pub text: String,
-    pub sections: Vec<DocumentSection>,
-    pub has_tables: bool,
-    pub page_breaks: Vec<usize>,
-}
-
-pub struct TextExtractor {
-    pub ocr_service_url: String,
-}
+pub struct TextExtractor;
 
 impl TextExtractor {
-    pub fn new(ocr_service_url: impl Into<String>) -> Self {
-        Self { ocr_service_url: ocr_service_url.into() }
-    }
-
-    /// Roteador principal: detecta formato e chama extrator específico
-    pub async fn extract(
-        &self,
-        filepath: &Path,
-        mime_type: &str,
-    ) -> Result<ExtractedDocument, ExtractionError> {
+    /// Ponto de entrada: detecta formato e delega
+    pub async fn extract(filepath: &Path, mime_type: &str) -> Result<ExtractedDocument> {
+        info!("Extraindo texto: {:?} ({})", filepath, mime_type);
         match mime_type {
-            "application/pdf" => self.extract_pdf(filepath).await,
+            "application/pdf" => Self::extract_pdf(filepath).await,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            | "application/msword" => self.extract_docx(filepath).await,
-            "text/plain" | "text/markdown" => self.extract_text(filepath).await,
-            "text/html" => self.extract_html(filepath).await,
-            _ => Err(ExtractionError::UnsupportedFormat(mime_type.to_string())),
+            | "application/msword" => Self::extract_docx(filepath).await,
+            "text/plain" | "text/markdown" => Self::extract_text(filepath).await,
+            "text/csv" => Self::extract_text(filepath).await,
+            "text/html" => Self::extract_html(filepath).await,
+            other => bail!("Formato não suportado: {other}"),
         }
     }
 
-    // ─── PDF ──────────────────────────────────────────────────────────────────
-
-    async fn extract_pdf(&self, path: &Path) -> Result<ExtractedDocument, ExtractionError> {
+    // -----------------------------------------------------------------------
+    // PDF — texto selecionável primeiro, OCR como fallback
+    // -----------------------------------------------------------------------
+    async fn extract_pdf(path: &Path) -> Result<ExtractedDocument> {
         let bytes = tokio::fs::read(path).await?;
-
-        // Tenta extraeço direta (PDFs com texto selectável)
         match pdf_extract::extract_text_from_mem(&bytes) {
-            Ok(text) if !text.trim().is_empty() && text.len() > 100 => {
-                let sections = Self::detect_pdf_structure(&text);
-                let has_tables = Self::detect_tables_in_text(&text);
-                let page_breaks = Self::detect_page_breaks(&text);
+            Ok(text) if !text.trim().is_empty() => {
+                info!("PDF nativo OK: {} chars", text.len());
+                let sections = Self::detect_structure(&text);
+                let has_tables = Self::detect_tables(&text);
                 Ok(ExtractedDocument {
                     raw_text: text,
                     sections,
-                    extraction_method: "pdf-extract-native".into(),
                     has_tables,
-                    page_breaks,
+                    page_breaks: vec![],
+                    extraction_method: "pdf_native".into(),
                 })
             }
-            // Fallback OCR para PDFs digitalizados (comum em jurídico)
-            _ => self.extract_pdf_ocr(path).await,
+            _ => {
+                // Fallback: texto simples do conteúdo binário
+                warn!("PDF sem texto selecionável, usando fallback plaintext");
+                let text = String::from_utf8_lossy(&bytes)
+                    .chars()
+                    .filter(|c| c.is_ascii_graphic() || c.is_whitespace())
+                    .collect::<String>();
+                Ok(ExtractedDocument {
+                    raw_text: text,
+                    sections: vec![],
+                    has_tables: false,
+                    page_breaks: vec![],
+                    extraction_method: "pdf_fallback".into(),
+                })
+            }
         }
     }
 
-    /// OCR via serviço Python com Tesseract (PDFs digitalizados)
-    async fn extract_pdf_ocr(&self, path: &Path) -> Result<ExtractedDocument, ExtractionError> {
-        let file_bytes = tokio::fs::read(path).await?;
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("document.pdf")
-            .to_string();
-
-        let part = reqwest::multipart::Part::bytes(file_bytes)
-            .file_name(filename)
-            .mime_str("application/pdf")
-            .map_err(|e| ExtractionError::OcrUnavailable(e.to_string()))?;
-
-        let form = reqwest::multipart::Form::new().part("file", part);
-
-        let response: OcrResponse = reqwest::Client::new()
-            .post(format!("{}/ocr", self.ocr_service_url))
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| ExtractionError::OcrUnavailable(e.to_string()))?
-            .json()
-            .await
-            .map_err(|e| ExtractionError::OcrUnavailable(e.to_string()))?;
-
-        Ok(ExtractedDocument {
-            raw_text: response.text,
-            sections: response.sections,
-            extraction_method: "tesseract-ocr".into(),
-            has_tables: response.has_tables,
-            page_breaks: response.page_breaks,
-        })
-    }
-
-    // ─── DOCX ────────────────────────────────────────────────────────────────
-
-    async fn extract_docx(&self, path: &Path) -> Result<ExtractedDocument, ExtractionError> {
+    // -----------------------------------------------------------------------
+    // DOCX
+    // -----------------------------------------------------------------------
+    async fn extract_docx(path: &Path) -> Result<ExtractedDocument> {
         let bytes = tokio::fs::read(path).await?;
-
-        let docx = docx_rs::read_docx(&bytes)
-            .map_err(|e| ExtractionError::DocxError(format!("{:?}", e)))?;
-
+        // docx-rs expoe o XML internamente; extraimos o texto de cada parágrafo
+        let docx = docx_rs::read_docx(&bytes)?;
         let mut paragraphs: Vec<String> = Vec::new();
-        let mut sections: Vec<DocumentSection> = Vec::new();
-        let mut current_section = DocumentSection::default();
-
-        for child in &docx.document.children {
+        for child in &docx.document.body.children {
             if let docx_rs::DocumentChild::Paragraph(p) = child {
                 let text: String = p
                     .children
@@ -144,97 +93,70 @@ impl TextExtractor {
                         }
                     })
                     .collect();
-
-                let trimmed = text.trim().to_string();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                // Detecta se é um cabeçalho de seção
-                if Self::is_section_header(&trimmed) {
-                    if !current_section.content.is_empty() {
-                        sections.push(current_section.clone());
-                    }
-                    current_section = DocumentSection {
-                        title: trimmed.clone(),
-                        content: String::new(),
-                        level: Self::detect_header_level(&trimmed),
-                        section_type: Self::classify_section(&trimmed),
-                    };
-                } else {
-                    current_section.content.push_str(&trimmed);
-                    current_section.content.push('\n');
-                    paragraphs.push(trimmed);
+                if !text.trim().is_empty() {
+                    paragraphs.push(text);
                 }
             }
         }
-
-        if !current_section.content.is_empty() {
-            sections.push(current_section);
-        }
-
-        let raw_text = paragraphs.join("\n");
-        let has_tables = Self::detect_tables_in_text(&raw_text);
-
+        let raw_text = paragraphs.join("\n\n");
+        let sections = Self::detect_structure(&raw_text);
         Ok(ExtractedDocument {
             raw_text,
             sections,
-            extraction_method: "docx-rs-native".into(),
-            has_tables,
+            has_tables: false,
             page_breaks: vec![],
+            extraction_method: "docx".into(),
         })
     }
 
-    // ─── Texto simples / Markdown ────────────────────────────────────────────────
-
-    async fn extract_text(&self, path: &Path) -> Result<ExtractedDocument, ExtractionError> {
-        let text = tokio::fs::read_to_string(path).await?;
-        let sections = Self::detect_pdf_structure(&text);
-        let has_tables = Self::detect_tables_in_text(&text);
-
+    // -----------------------------------------------------------------------
+    // Texto plano / CSV / Markdown
+    // -----------------------------------------------------------------------
+    async fn extract_text(path: &Path) -> Result<ExtractedDocument> {
+        let raw_text = tokio::fs::read_to_string(path).await?;
+        let sections = Self::detect_structure(&raw_text);
         Ok(ExtractedDocument {
-            raw_text: text,
+            raw_text,
             sections,
-            extraction_method: "plain-text".into(),
-            has_tables,
+            has_tables: false,
             page_breaks: vec![],
+            extraction_method: "plaintext".into(),
         })
     }
 
-    // ─── HTML ─────────────────────────────────────────────────────────────────────
-
-    async fn extract_html(&self, path: &Path) -> Result<ExtractedDocument, ExtractionError> {
+    // -----------------------------------------------------------------------
+    // HTML — remove tags, mantém texto
+    // -----------------------------------------------------------------------
+    async fn extract_html(path: &Path) -> Result<ExtractedDocument> {
         let raw_html = tokio::fs::read_to_string(path).await?;
-        // Remove tags HTML e decodifica entidades
+        // Remove tags HTML simples
         let tag_re = regex::Regex::new(r"<[^>]+>").unwrap();
-        let text = tag_re.replace_all(&raw_html, " ").to_string();
+        let raw_text = tag_re.replace_all(&raw_html, " ").to_string();
         // Normaliza espaços múltiplos
-        let ws_re = regex::Regex::new(r"\s{2,}").unwrap();
-        let text = ws_re.replace_all(&text, "\n").to_string();
-
-        let sections = Self::detect_pdf_structure(&text);
-        let has_tables = raw_html.contains("<table");
-
+        let space_re = regex::Regex::new(r"[ \t]+").unwrap();
+        let raw_text = space_re.replace_all(&raw_text, " ").to_string();
+        let sections = Self::detect_structure(&raw_text);
         Ok(ExtractedDocument {
-            raw_text: text,
+            raw_text,
             sections,
-            extraction_method: "html-strip".into(),
-            has_tables,
+            has_tables: raw_html.to_lowercase().contains("<table"),
             page_breaks: vec![],
+            extraction_method: "html".into(),
         })
     }
 
-    // ─── Análise estrutural ───────────────────────────────────────────────────────────
+    // -----------------------------------------------------------------------
+    // Helpers: estrutura, tabelas, nível de título
+    // -----------------------------------------------------------------------
 
-    pub fn detect_pdf_structure(text: &str) -> Vec<DocumentSection> {
+    fn detect_structure(text: &str) -> Vec<DocumentSection> {
         let mut sections: Vec<DocumentSection> = Vec::new();
         let mut current = DocumentSection::default();
 
         for line in text.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
+            if trimmed.is_empty() { continue; }
+
             if Self::is_section_header(trimmed) {
                 if !current.content.is_empty() {
                     sections.push(current.clone());
@@ -246,8 +168,10 @@ impl TextExtractor {
                     section_type: Self::classify_section(trimmed),
                 };
             } else {
+                if !current.content.is_empty() {
+                    current.content.push('\n');
+                }
                 current.content.push_str(trimmed);
-                current.content.push('\n');
             }
         }
         if !current.content.is_empty() {
@@ -256,98 +180,44 @@ impl TextExtractor {
         sections
     }
 
-    /// Heurísticas para identificar cabeçalhos (PT-BR, jurídico, médico)
-    pub fn is_section_header(line: &str) -> bool {
-        let patterns: &[&str] = &[
-            // Jurídico
-            r"(?i)CL[AÁ]USULA",
-            r"(?i)Art\.?",
-            r"(?i)Artigo",
-            r"(?i)CAP[IÍ]TULO\s+[IVXLCDM]+",
-            r"(?i)SE[CÇ][AÃ]O\s+[IVXLCDM]+",
-            r"(?i)T[IÍ]TULO\s+[IVXLCDM]+",
-            // Numéricos genéricos: 1. Objetivo | 1.1 Escopo | 1.1.1
-            r"^\d+\.\s+[A-Z]",
-            r"^\d+\.\d+\.?\s+[A-Z]",
-            r"^\d+\.\d+\.\d+\.?\s+[A-Z]",
-            // Linha toda em maiúsculas (contratos BR)
-            r"^[A-Z\s]{10,}$",
-            // Médico
-            r"(?i)anamnese|diagn[oó]stico|prescri[cç][aã]o|evolu[cç][aã]o|exames",
+    fn is_section_header(line: &str) -> bool {
+        // Padrões: "1.", "Art. 5", "CLÁUSULA", "##", linhas curtas em caps
+        let patterns = [
+            r"^\d+\.\d*\s+[A-Z]",     // 1.1 Título
+            r"(?i)^(art\.?|artigo)\s+\d+",
+            r"(?i)^(cláusula|capítulo|seção|parte)\s+",
+            r"^#{1,4}\s+",            // Markdown heading
         ];
-        patterns.iter().any(|p| {
-            regex::Regex::new(p)
-                .map(|re| re.is_match(line))
-                .unwrap_or(false)
-        })
+        patterns.iter().any(|p| regex::Regex::new(p).unwrap().is_match(line))
+            || (line.len() < 80 && line == line.to_uppercase() && line.len() > 5)
     }
 
-    fn detect_header_level(line: &str) -> u8 {
-        if regex::Regex::new(r"^\d+\.\d+\.\d+").unwrap().is_match(line) {
-            return 3;
-        }
-        if regex::Regex::new(r"^\d+\.\d+").unwrap().is_match(line) {
-            return 2;
-        }
-        1
+    fn detect_header_level(line: &str) -> u32 {
+        if line.starts_with("#### ") { return 4; }
+        if line.starts_with("### ") { return 3; }
+        if line.starts_with("## ") { return 2; }
+        if line.starts_with("# ") { return 1; }
+        // Número de pontos no prefixo numérico: 1. -> 1, 1.1 -> 2
+        let dot_count = line.splitn(3, '.').count().saturating_sub(1) as u32;
+        dot_count.max(1)
     }
 
-    pub fn classify_section(title: &str) -> SectionType {
+    fn classify_section(title: &str) -> SectionType {
         let lower = title.to_lowercase();
-
-        // Jurídico
-        if lower.contains("cláusula") || lower.contains("artigo") || lower.contains("art.") {
-            if lower.contains("penalidade") || lower.contains("multa") || lower.contains("rescisão") {
-                return SectionType::Legal(LegalSection::Penalty);
-            }
-            if lower.contains("obrigação") || lower.contains("dever") {
-                return SectionType::Legal(LegalSection::Obligation);
-            }
-            if lower.contains("definição") || lower.contains("glossário") {
-                return SectionType::Legal(LegalSection::Definition);
-            }
-            return SectionType::Legal(LegalSection::Clause);
-        }
-
-        // Médico
-        if lower.contains("anamnese") || lower.contains("história clínica") {
-            return SectionType::Medical(MedicalSection::Anamnesis);
-        }
-        if lower.contains("diagnóstico") || lower.contains("hipótese") {
-            return SectionType::Medical(MedicalSection::Diagnosis);
-        }
-        if lower.contains("prescrição") || lower.contains("receita") {
-            return SectionType::Medical(MedicalSection::Prescription);
-        }
-        if lower.contains("evolução") {
-            return SectionType::Medical(MedicalSection::Evolution);
-        }
-
+        let legal = ["cláusula", "artigo", "art.", "penalidade", "obrigação", "contrato"];
+        let medical = ["anamnese", "diagnóstico", "prescrição", "evolução", "prontuário"];
+        let financial = ["balanço", "receita", "despesa", "ativo", "passivo", "resultado"];
+        if legal.iter().any(|k| lower.contains(k)) { return SectionType::Legal; }
+        if medical.iter().any(|k| lower.contains(k)) { return SectionType::Medical; }
+        if financial.iter().any(|k| lower.contains(k)) { return SectionType::Financial; }
         SectionType::Generic
     }
 
-    pub fn detect_tables_in_text(text: &str) -> bool {
-        // Heurística: 3+ linhas consecutivas com 2+ colunas separadas por espaços
-        let lines: Vec<&str> = text.lines().collect();
-        let mut consecutive = 0usize;
-        for line in &lines {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() >= 2 && line.contains("  ") {
-                consecutive += 1;
-                if consecutive >= 3 {
-                    return true;
-                }
-            } else {
-                consecutive = 0;
-            }
-        }
-        false
-    }
-
-    fn detect_page_breaks(text: &str) -> Vec<usize> {
-        // Form-feed character \x0C indica quebra de página em PDFs
-        text.char_indices()
-            .filter_map(|(i, c)| if c == '\x0C' { Some(i) } else { None })
-            .collect()
+    fn detect_tables(text: &str) -> bool {
+        // Heurística: linhas com múltiplos separadores de coluna
+        text.lines()
+            .filter(|l| l.matches('|').count() >= 2 || l.matches('\t').count() >= 2)
+            .count()
+            >= 3
     }
 }
