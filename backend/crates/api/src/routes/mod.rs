@@ -5,9 +5,9 @@ pub mod projects;
 pub mod training;
 
 #[cfg(test)]
-mod documents_test;
-#[cfg(test)]
 mod chats_test;
+#[cfg(test)]
+mod documents_test;
 #[cfg(test)]
 mod training_test;
 
@@ -15,40 +15,27 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::state::AppState;
 use crate::middleware::auth::require_auth;
-use crate::routes::auth::{RegisterDto, LoginDto, AuthResponse};
-use crate::models::project::{Project, CreateProjectDto, UpdateProjectDto};
-use crate::models::chat::{Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto};
+use crate::models::chat::{Chat, CreateChatDto, FeedbackDto, Message, SendMessageDto};
 use crate::models::document::Document;
-use crate::routes::training::{
-    TrainingInteraction, TrainingBatch, TrainingDocument,
-    QueueQuery, StartBatchDto,
-};
+use crate::models::project::{CreateProjectDto, Project, UpdateProjectDto};
+use crate::routes::auth::{AuthResponse, LoginDto, RegisterDto};
 use crate::routes::documents::{LinkDto, UploadForm};
+use crate::routes::training::{
+    QueueQuery, StartBatchDto, TrainingBatch, TrainingDocument, TrainingInteraction,
+};
+use crate::state::AppState;
 
 #[derive(OpenApi)]
 #[openapi(
-    info(
-        title = "BTV Chat Corp API",
-        version = "1.0.0",
-        description = "API REST do BTV Chat Corp — autenticacao, chat, documentos, treinamento e admin",
-        contact(name = "BTV Team", url = "https://buildtovalue.cloud"),
-    ),
     paths(
         auth::register,
         auth::login,
-        projects::list,
-        projects::create,
-        projects::get_one,
-        projects::update,
-        projects::remove,
-        projects::stats,
         chats::list,
         chats::create,
         chats::get_one,
-        chats::remove,
-        chats::get_messages,
+        chats::delete,
+        chats::list_messages,
         chats::send_message,
         chats::feedback,
         documents::list,
@@ -58,6 +45,16 @@ use crate::routes::documents::{LinkDto, UploadForm};
         documents::list_for_project,
         documents::link_to_project,
         documents::unlink_from_project,
+        projects::list,
+        projects::create,
+        projects::get_one,
+        projects::update,
+        projects::remove,
+        projects::stats,
+        projects::list_instructions,
+        projects::create_instruction,
+        projects::update_instruction,
+        projects::delete_instruction,
         training::list_queue,
         training::approve,
         training::reject,
@@ -70,56 +67,37 @@ use crate::routes::documents::{LinkDto, UploadForm};
     components(
         schemas(
             RegisterDto, LoginDto, AuthResponse,
-            Project, CreateProjectDto, UpdateProjectDto,
-            Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto,
+            Chat, CreateChatDto, SendMessageDto, FeedbackDto, Message,
             Document, LinkDto, UploadForm,
+            Project, CreateProjectDto, UpdateProjectDto,
             TrainingInteraction, TrainingBatch, TrainingDocument,
             QueueQuery, StartBatchDto,
         )
     ),
     tags(
-        (name = "Auth",      description = "Registro e autenticacao de usuarios"),
-        (name = "Projects",  description = "Gerenciamento de projetos do workspace"),
-        (name = "Chat",      description = "Sessoes de chat e mensagens com o LLM"),
-        (name = "Documents", description = "Upload e gestao de documentos para RAG"),
-        (name = "Training",  description = "Pipeline de treinamento e fine-tuning LoRA"),
-        (name = "Admin",     description = "Administracao do workspace"),
-    ),
-    modifiers(&SecurityAddon)
+        (name = "auth", description = "Autenticacao"),
+        (name = "chats", description = "Chats e mensagens"),
+        (name = "documents", description = "Documentos e RAG"),
+        (name = "projects", description = "Projetos"),
+        (name = "training", description = "Fine-tuning e curadoria"),
+    )
 )]
-pub struct ApiDoc;
-
-struct SecurityAddon;
-impl utoipa::Modify for SecurityAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        if let Some(components) = openapi.components.as_mut() {
-            components.add_security_scheme(
-                "BearerAuth",
-                utoipa::openapi::security::SecurityScheme::Http(
-                    utoipa::openapi::security::HttpBuilder::new()
-                        .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
-                        .bearer_format("JWT")
-                        .build(),
-                ),
-            );
-        }
-    }
-}
+struct ApiDoc;
 
 pub fn docs_router() -> Router<AppState> {
-    Router::new().merge(
-        SwaggerUi::new("/docs")
-            .url("/docs/openapi.json", ApiDoc::openapi()),
-    )
+    Router::new().merge(SwaggerUi::new("/docs").url("/docs/openapi.json", ApiDoc::openapi()))
 }
 
 pub fn v1_routes(state: AppState) -> Router<AppState> {
-    let public = auth::routes();
-    let protected = Router::new()
-        .merge(projects::routes())
+    Router::new()
+        .merge(auth::routes())
         .merge(chats::routes())
         .merge(documents::routes())
+        .merge(projects::routes())
         .merge(training::routes())
-        .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
-    Router::new().merge(public).merge(protected)
+        .merge(docs_router())
+        .route_layer(axum::middleware::from_fn_with_state(
+            state,
+            require_auth,
+        ))
 }
