@@ -1,37 +1,43 @@
-# ---- Build stage ----
+# ── Build stage ────────────────────────────────────────────────────────────
 FROM rust:1.82-slim AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+WORKDIR /app
+
+# Dependências do sistema para pdf-extract e reqwest TLS
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpoppler-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia workspace Cargo files para cache de dependências
+COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/crates/document-processor/Cargo.toml crates/document-processor/
+
+# Build só das dependências (cache layer)
+RUN mkdir -p crates/document-processor/src && \
+    echo 'fn main() {}' > crates/document-processor/src/main.rs && \
+    cargo build --release --bin rag-worker 2>/dev/null || true
+
+# Copia o código real
+COPY backend/crates/document-processor/src crates/document-processor/src
+
+# Build final
+RUN cargo build --release --bin rag-worker
+
+# ── Runtime stage ───────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libpoppler-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copia workspace Cargo.toml para cache de dependências
-COPY Cargo.toml Cargo.lock ./
-COPY crates/ crates/
+COPY --from=builder /app/target/release/rag-worker /app/rag-worker
 
-# Build do binário do worker
-RUN cargo build --release --bin rag-worker
-
-# ---- Runtime stage ----
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/target/release/rag-worker /usr/local/bin/rag-worker
-
-# Cria diretório de uploads
 RUN mkdir -p /data/uploads
 
-ENV DATABASE_URL=""
-ENV QDRANT_URL="http://qdrant:6333"
-ENV EMBEDDING_URL="http://embedding:8001"
-ENV STORAGE_PATH="/data/uploads"
-ENV POLL_INTERVAL_SECS="10"
-ENV WORKER_CONCURRENCY="4"
-ENV MAX_RETRIES="3"
-
-CMD ["rag-worker"]
+ENTRYPOINT ["/app/rag-worker"]

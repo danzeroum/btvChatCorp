@@ -1,102 +1,93 @@
-use crate::models::{
-    ExtractedDocument, ChunkingStrategy,
-};
-
-/// Seleciona a melhor estratégia de chunking baseada no conteúdo e setor
-pub struct StrategySelector;
-
-impl StrategySelector {
-    pub fn select(
-        extracted: &ExtractedDocument,
-        workspace_sector: &str,
-    ) -> ChunkingStrategy {
-        // 1. Documento predominantemente tabular
-        if extracted.has_tables && Self::is_mostly_tabular(&extracted.raw_text) {
-            return ChunkingStrategy::Table;
-        }
-
-        // 2. Baseado no setor configurado no workspace
-        match workspace_sector {
-            "legal" | "juridico" if Self::has_legal_structure(&extracted.raw_text) => {
-                return ChunkingStrategy::Legal {
-                    max_clause_size: 800,
-                    group_sub_clauses: true,
-                };
-            }
-            "health" | "saude" | "medical" if Self::has_medical_structure(&extracted.raw_text) => {
-                return ChunkingStrategy::Medical {
-                    max_section_size: 600,
-                    include_patient_context: true,
-                };
-            }
-            _ => {}
-        }
-
-        // 3. Documento com estrutura clara (seções detectadas)
-        if extracted.sections.len() >= 3 {
-            return ChunkingStrategy::Semantic {
-                max_chunk_size: 512,
-                min_chunk_size: 100,
-                respect_sections: true,
-            };
-        }
-
-        // 4. Texto corrido sem estrutura
-        if Self::avg_paragraph_length(&extracted.raw_text) > 200 {
-            return ChunkingStrategy::Sentence {
-                target_size: 400,
-                max_size: 600,
-            };
-        }
-
-        // 5. Fallback: tamanho fixo com overlap
-        ChunkingStrategy::FixedSize {
-            chunk_size: 512,
-            overlap: 50,
-        }
-    }
-
-    fn is_mostly_tabular(text: &str) -> bool {
-        let table_lines = text
-            .lines()
-            .filter(|l| l.matches('|').count() >= 2 || l.matches('\t').count() >= 3)
-            .count();
-        let total = text.lines().count().max(1);
-        (table_lines as f32 / total as f32) > 0.25
-    }
-
-    fn has_legal_structure(text: &str) -> bool {
-        let re = regex::Regex::new(r"(?i)(cláusula|artigo|art\.\s*\d+)").unwrap();
-        re.find_iter(text).count() >= 3
-    }
-
-    fn has_medical_structure(text: &str) -> bool {
-        let terms = [
-            "anamnese", "diagnóstico", "prescrição",
-            "evolução", "exames", "prontuário", "cid-10",
-        ];
-        let lower = text.to_lowercase();
-        terms.iter().filter(|t| lower.contains(*t)).count() >= 2
-    }
-
-    fn avg_paragraph_length(text: &str) -> f32 {
-        let paragraphs: Vec<&str> = text
-            .split("\n\n")
-            .filter(|p| !p.trim().is_empty())
-            .collect();
-        if paragraphs.is_empty() { return 0.0; }
-        let total: usize = paragraphs.iter().map(|p| p.len()).sum();
-        total as f32 / paragraphs.len() as f32
-    }
-}
-
-// Necessario definir ChunkingStrategy aqui para o models.rs poder re-exportar
+/// Estratégia de chunking a aplicar no documento.
 #[derive(Debug, Clone)]
 pub enum ChunkingStrategy {
-    FixedSize { chunk_size: usize, overlap: usize },
-    Semantic  { max_chunk_size: usize, min_chunk_size: usize, respect_sections: bool },
-    Sentence  { target_size: usize, max_size: usize },
-    Legal     { max_clause_size: usize, group_sub_clauses: bool },
-    Medical   { max_section_size: usize, include_patient_context: bool },
+    /// Divide por seções (##, títulos, separadores).
+    Semantic,
+    /// Preserva cláusulas jurídicas longas.
+    Legal,
+    /// Preserva terminologia médica e seções clínicas.
+    Medical,
+    /// Divide por frases para texto corrido.
+    Sentence,
+    /// Tamanho fixo com overlap — fallback.
+    FixedSize { size: usize, overlap: usize },
+    /// Mantém blocos de tabelas intactos.
     Table,
+}
+
+/// Detecta automaticamente a melhor estratégia.
+///
+/// * `text`     — texto extraído do documento
+/// * `filename` — nome original do arquivo
+/// * `sector`   — setor do workspace (ex: `Some("juridico")`)
+pub fn detect_strategy(
+    text: &str,
+    filename: &str,
+    sector: Option<&str>,
+) -> ChunkingStrategy {
+    let lower    = text.to_lowercase();
+    let filename = filename.to_lowercase();
+
+    // Setor explícito tem prioridade
+    if let Some(s) = sector {
+        match s {
+            "juridico" | "legal" => return ChunkingStrategy::Legal,
+            "saude" | "medico" | "health" => return ChunkingStrategy::Medical,
+            _ => {}
+        }
+    }
+
+    // Detecção por palavras-chave no conteúdo
+    let legal_keywords = [
+        "cláusula", "contrato", "artigo", "parágrafo", "inciso",
+        "lei n", "decreto", "portaria", "resolução", "instrução normativa",
+    ];
+    let medical_keywords = [
+        "paciente", "diagnóstico", "prescrição", "anamnese",
+        "cid-", "prontuário", "laudo", "exame",
+    ];
+    let table_indicators = ["|\t", "| ---", "+-", "\t\t\t"];
+
+    let legal_score: usize = legal_keywords.iter()
+        .filter(|&&kw| lower.contains(kw))
+        .count();
+    let medical_score: usize = medical_keywords.iter()
+        .filter(|&&kw| lower.contains(kw))
+        .count();
+    let table_score: usize = table_indicators.iter()
+        .filter(|&&ind| text.contains(ind))
+        .count();
+
+    // Heurísticas de nome de arquivo
+    let legal_names  = ["contrato", "acordo", "lei", "decreto", "portaria", "inpi"];
+    let legal_name_hit = legal_names.iter().any(|&n| filename.contains(n));
+
+    if legal_score >= 3 || legal_name_hit {
+        return ChunkingStrategy::Legal;
+    }
+    if medical_score >= 3 {
+        return ChunkingStrategy::Medical;
+    }
+    if table_score >= 2 {
+        return ChunkingStrategy::Table;
+    }
+
+    // Texto tem estrutura de seções?
+    let has_sections = text.contains("\n## ")
+        || text.contains("\n# ")
+        || text.contains("\n1. ")
+        || text.contains("\nCapítulo")
+        || text.contains("\nSeção");
+
+    if has_sections {
+        return ChunkingStrategy::Semantic;
+    }
+
+    // Texto longo e corrido
+    let avg_sentence_len = text.len() / (text.matches('.').count().max(1));
+    if avg_sentence_len < 200 {
+        return ChunkingStrategy::Sentence;
+    }
+
+    ChunkingStrategy::FixedSize { size: 512, overlap: 50 }
 }
