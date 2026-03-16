@@ -22,7 +22,6 @@ pub fn routes() -> Router<AppState> {
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
 }
 
-/// Lista chats do usuario autenticado
 #[utoipa::path(
     get,
     path = "/api/v1/chats",
@@ -41,12 +40,13 @@ async fn list(
         "SELECT id,workspace_id,project_id,title,summary,is_pinned,created_by,created_at,updated_at
          FROM chats WHERE workspace_id=$1 AND created_by=$2 ORDER BY updated_at DESC",
     )
-    .bind(auth.workspace_id).bind(auth.user_id)
-    .fetch_all(&state.db).await?;
+    .bind(auth.workspace_id)
+    .bind(auth.user_id)
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows))
 }
 
-/// Cria novo chat
 #[utoipa::path(
     post,
     path = "/api/v1/chats",
@@ -67,12 +67,15 @@ async fn create(
     let row = sqlx::query_as::<_, Chat>(
         "INSERT INTO chats (workspace_id,project_id,title,created_by) VALUES ($1,$2,$3,$4) RETURNING *",
     )
-    .bind(auth.workspace_id).bind(dto.project_id).bind(&title).bind(auth.user_id)
-    .fetch_one(&state.db).await?;
+    .bind(auth.workspace_id)
+    .bind(dto.project_id)
+    .bind(&title)
+    .bind(auth.user_id)
+    .fetch_one(&state.db)
+    .await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
-/// Busca chat por ID
 #[utoipa::path(
     get,
     path = "/api/v1/chats/{id}",
@@ -90,12 +93,13 @@ async fn get_one(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Chat>, AppError> {
     let row = sqlx::query_as::<_, Chat>("SELECT * FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await?;
+        .bind(id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await?;
     Ok(Json(row))
 }
 
-/// Remove chat
 #[utoipa::path(
     delete,
     path = "/api/v1/chats/{id}",
@@ -113,15 +117,17 @@ async fn remove(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     let r = sqlx::query("DELETE FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(id).bind(auth.workspace_id)
-        .execute(&state.db).await.map_err(AppError::from)?;
+        .bind(id)
+        .bind(auth.workspace_id)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
     if r.rows_affected() == 0 {
         return Err(AppError::not_found("Chat nao encontrado"));
     }
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Lista mensagens de um chat
 #[utoipa::path(
     get,
     path = "/api/v1/chats/{id}/messages",
@@ -139,18 +145,22 @@ async fn get_messages(
     Path(chat_id): Path<Uuid>,
 ) -> Result<Json<Vec<Message>>, AppError> {
     sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(chat_id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await
+        .bind(chat_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
     let rows = sqlx::query_as::<_, Message>(
         "SELECT id,chat_id,role,content,sources,tokens_used,feedback,created_at \
          FROM messages WHERE chat_id=$1 ORDER BY created_at",
-    ).bind(chat_id).fetch_all(&state.db).await?;
+    )
+    .bind(chat_id)
+    .fetch_all(&state.db)
+    .await?;
     Ok(Json(rows))
 }
 
-/// Envia mensagem e recebe resposta do LLM com contexto RAG
 #[utoipa::path(
     post,
     path = "/api/v1/chats/{id}/messages",
@@ -169,39 +179,42 @@ async fn send_message(
     Path(chat_id): Path<Uuid>,
     Json(dto): Json<SendMessageDto>,
 ) -> Result<Json<Message>, AppError> {
-    // ── Valida que o chat pertence ao workspace ───────────────────────────────
     sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(chat_id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await
+        .bind(chat_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
         .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
-    // ── Salva mensagem do usuário ─────────────────────────────────────────────
     sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content) VALUES ($1,'user',$2) RETURNING *",
-    ).bind(chat_id).bind(&dto.content)
-    .fetch_one(&state.db).await?;
+    )
+    .bind(chat_id)
+    .bind(&dto.content)
+    .fetch_one(&state.db)
+    .await?;
 
-    // ── Busca contexto RAG (falha graciosamente se Qdrant offline) ────────────
     let rag_chunks = search_rag(
         &state.qdrant_url,
         &state.embedding_url,
         &auth.workspace_id.to_string(),
         &dto.content,
-        5,    // top_k
-        0.35, // min_score — descarta chunks pouco relevantes
+        5,
+        0.35,
     )
     .await
     .unwrap_or_default();
 
-    let rag_context  = build_rag_context(&rag_chunks);
+    let rag_context = build_rag_context(&rag_chunks);
     let sources_json = build_sources_json(&rag_chunks);
 
-    // ── Monta histórico de mensagens ──────────────────────────────────────────
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
-    ).bind(chat_id).fetch_all(&state.db).await?;
+    )
+    .bind(chat_id)
+    .fetch_all(&state.db)
+    .await?;
 
-    // System prompt: instrução base + contexto RAG (se houver)
     let system_content = if let Some(ctx) = rag_context {
         format!(
             "Você é um assistente especializado da empresa. \
@@ -217,22 +230,28 @@ async fn send_message(
             .to_string()
     };
 
-    let mut messages: Vec<serde_json::Value> = vec![
-        serde_json::json!({ "role": "system", "content": system_content }),
-    ];
+    let mut messages: Vec<serde_json::Value> =
+        vec![serde_json::json!({ "role": "system", "content": system_content })];
     messages.extend(
-        history.into_iter().rev()
-            .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
+        history
+            .into_iter()
+            .rev()
+            .map(|(role, content)| serde_json::json!({ "role": role, "content": content })),
     );
 
-    // ── Chama o LLM ──────────────────────────────────────────────────────────
     let llm_resp = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
         let mock_info = if rag_chunks.is_empty() {
             "[sem contexto RAG]".to_string()
         } else {
-            format!("[{} chunks RAG de: {}]",
+            format!(
+                "[{} chunks RAG de: {}]",
                 rag_chunks.len(),
-                rag_chunks.iter().map(|c| c.filename.as_str()).collect::<Vec<_>>().join(", "))
+                rag_chunks
+                    .iter()
+                    .map(|c| c.filename.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         };
         LlmResponse {
             content: format!("[mock] {} — Resposta para: {}", mock_info, dto.content),
@@ -251,7 +270,6 @@ async fn send_message(
         .map_err(|e| AppError::internal(e.to_string()))?
     };
 
-    // ── Salva resposta do assistente (com fontes RAG) ─────────────────────────
     let assistant_msg = sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id, role, content, sources, tokens_used)
          VALUES ($1, 'assistant', $2, $3, $4)
@@ -265,12 +283,14 @@ async fn send_message(
     .await?;
 
     sqlx::query("UPDATE chats SET updated_at=NOW() WHERE id=$1")
-        .bind(chat_id).execute(&state.db).await.ok();
+        .bind(chat_id)
+        .execute(&state.db)
+        .await
+        .ok();
 
     Ok(Json(assistant_msg))
 }
 
-/// Envia feedback (thumbs up/down) para uma mensagem
 #[utoipa::path(
     post,
     path = "/api/v1/chats/{id}/messages/{mid}/feedback",
@@ -296,25 +316,28 @@ async fn feedback(
         return Err(AppError::bad_request("feedback deve ser 1 ou -1"));
     }
     sqlx::query("UPDATE messages SET feedback=$1 WHERE id=$2")
-        .bind(dto.feedback).bind(mid)
-        .execute(&state.db).await.map_err(AppError::from)?;
+        .bind(dto.feedback)
+        .bind(mid)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
-// ── LLM client ───────────────────────────────────────────────────────────────
+// -- LLM client
 
 struct LlmResponse {
-    content:    String,
+    content: String,
     tokens_used: Option<i32>,
 }
 
 async fn call_llm(
-    base_url:   &str,
-    model:      &str,
+    base_url: &str,
+    model: &str,
     basic_auth: Option<&str>,
-    messages:   &[serde_json::Value],
+    messages: &[serde_json::Value],
     temperature: f32,
-    max_tokens:  u32,
+    max_tokens: u32,
 ) -> anyhow::Result<LlmResponse> {
     let client = reqwest::Client::new();
     let mut req = client
@@ -335,8 +358,11 @@ async fn call_llm(
     let resp = req.send().await?.json::<serde_json::Value>().await?;
     Ok(LlmResponse {
         content: resp["choices"][0]["message"]["content"]
-            .as_str().unwrap_or("").to_string(),
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         tokens_used: resp["usage"]["completion_tokens"]
-            .as_i64().map(|t| t as i32),
+            .as_i64()
+            .map(|t| t as i32),
     })
 }
