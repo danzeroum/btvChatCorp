@@ -31,7 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Extração de PDF (usa pdfium via binding nativo)
+# Extração de PDF
 pdf-extract = "0.7"
 
 # Extração de DOCX
@@ -46,5 +46,6 @@ anyhow = "1"
 # Regex (chunking semântico)
 regex = "1"
 
-# Semáforo para concorrência
-tokio = { version = "1", features = ["full"] }
+[dev-dependencies]
+# Arquivos temporários nos testes de extractor
+tempfile = "3"
