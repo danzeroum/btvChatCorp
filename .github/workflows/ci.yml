@@ -293,54 +293,44 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"email":"smoke2@test.com","password":"Smoke@1234"}')
           echo "$R" | grep -q '"token"' || (echo "/auth/login sem token" && exit 1)
-          echo "/auth/login OK"
-          TOKEN=$(echo "$R" | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+          echo "$R" > /tmp/login_resp.json
+          TOKEN=$(python3 .github/scripts/extract_json_field.py token < /tmp/login_resp.json)
           echo "TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "/auth/login OK"
 
       - name: "[Smoke RAG] Chat sem Qdrant nao quebra"
         run: |
-          CHAT=$(curl -sf -X POST http://localhost:3000/api/v1/chats \
+          curl -sf -X POST http://localhost:3000/api/v1/chats \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
-            -d '{"title": "Smoke RAG Test"}')
-          CHAT_ID=$(echo "$CHAT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+            -d '{"title": "Smoke RAG Test"}' > /tmp/chat_resp.json
+          CHAT_ID=$(python3 .github/scripts/extract_json_field.py id < /tmp/chat_resp.json)
           echo "Chat ID: $CHAT_ID"
 
-          R=$(curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
+          curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
-            -d '{"content": "Teste de RAG sem Qdrant"}')
-          echo "$R"
-          echo "$R" | grep -q '"role"' || (echo "Resposta sem role" && exit 1)
+            -d '{"content": "Teste de RAG sem Qdrant"}' > /tmp/msg_resp.json
+          cat /tmp/msg_resp.json
 
-          echo "$R" | python3 - <<'PYEOF'
-import sys, json
-m = json.loads(sys.stdin.read())
-assert m['role'] == 'assistant', 'role errado: ' + m['role']
-assert len(m['content']) > 0, 'conteudo vazio'
-print('Chat RAG degradation OK')
-PYEOF
+          grep -q '"role"' /tmp/msg_resp.json || (echo "Resposta sem role" && exit 1)
+          python3 .github/scripts/check_rag_response.py /tmp/msg_resp.json
 
       - name: "[Smoke RAG] sources e null sem documentos indexados"
         run: |
-          CHAT=$(curl -sf -X POST http://localhost:3000/api/v1/chats \
+          curl -sf -X POST http://localhost:3000/api/v1/chats \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
-            -d '{"title": "Sources Test"}')
-          CHAT_ID=$(echo "$CHAT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+            -d '{"title": "Sources Test"}' > /tmp/chat2_resp.json
+          CHAT_ID=$(python3 .github/scripts/extract_json_field.py id < /tmp/chat2_resp.json)
 
-          R=$(curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
+          curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
-            -d '{"content": "Pergunta qualquer"}')
-          echo "$R"
+            -d '{"content": "Pergunta qualquer"}' > /tmp/msg2_resp.json
+          cat /tmp/msg2_resp.json
 
-          echo "$R" | python3 - <<'PYEOF'
-import sys, json
-m = json.loads(sys.stdin.read())
-assert m.get('sources') is None, 'sources deveria ser null: ' + str(m.get('sources'))
-print('sources=null OK (sem documentos indexados)')
-PYEOF
+          python3 .github/scripts/check_rag_response.py /tmp/msg2_resp.json --check-sources-null
 
       - name: "[Smoke] /training sem token retorna 401/403"
         run: |
@@ -374,4 +364,4 @@ PYEOF
             echo "  Integration smoke: ${{ needs.integration-smoke.result }}"
             exit 1
           fi
-          echo "All checks passed - Fase 5 (RAG Worker) OK!"
+          echo "All checks passed - Fase 5 RAG Worker OK"
