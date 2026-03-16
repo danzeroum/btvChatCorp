@@ -25,7 +25,7 @@ use crate::routes::training::{
     TrainingInteraction, TrainingBatch, TrainingDocument,
     QueueQuery, StartBatchDto,
 };
-use crate::routes::documents::LinkDto;
+use crate::routes::documents::{LinkDto, UploadForm};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -72,7 +72,7 @@ use crate::routes::documents::LinkDto;
             RegisterDto, LoginDto, AuthResponse,
             Project, CreateProjectDto, UpdateProjectDto,
             Chat, Message, CreateChatDto, SendMessageDto, FeedbackDto,
-            Document, LinkDto,
+            Document, LinkDto, UploadForm,
             TrainingInteraction, TrainingBatch, TrainingDocument,
             QueueQuery, StartBatchDto,
         )
