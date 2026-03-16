@@ -21,7 +21,12 @@ mod rag_unit_tests {
 
     #[test]
     fn build_rag_context_includes_filename_and_section() {
-        let chunks = vec![make_chunk("manual_rh.pdf", "Ferias", "Ferias sao 30 dias.", 0.9)];
+        let chunks = vec![make_chunk(
+            "manual_rh.pdf",
+            "Ferias",
+            "Ferias sao 30 dias.",
+            0.9,
+        )];
         let ctx = build_rag_context(&chunks).unwrap();
         assert!(ctx.contains("manual_rh.pdf"), "filename ausente: {}", ctx);
         assert!(ctx.contains("Ferias"), "section ausente: {}", ctx);
@@ -45,7 +50,11 @@ mod rag_unit_tests {
     fn build_rag_context_contains_instruction_text() {
         let chunks = vec![make_chunk("doc.pdf", "Intro", "Texto qualquer.", 0.85)];
         let ctx = build_rag_context(&chunks).unwrap();
-        assert!(ctx.contains("Cite a fonte"), "Instrucao de citacao ausente: {}", ctx);
+        assert!(
+            ctx.contains("Cite a fonte"),
+            "Instrucao de citacao ausente: {}",
+            ctx
+        );
     }
 
     #[test]

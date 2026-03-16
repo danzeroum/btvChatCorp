@@ -96,8 +96,5 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(projects::routes())
         .merge(training::routes())
         .merge(docs_router())
-        .route_layer(axum::middleware::from_fn_with_state(
-            state,
-            require_auth,
-        ))
+        .route_layer(axum::middleware::from_fn_with_state(state, require_auth))
 }

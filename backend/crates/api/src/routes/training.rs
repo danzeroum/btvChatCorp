@@ -387,10 +387,11 @@ async fn poll_batch_status(
         }
     }
 
-    let refreshed = sqlx::query_as::<_, TrainingBatch>("SELECT * FROM training_batches WHERE id=$1")
-        .bind(batch.id)
-        .fetch_one(&state.db)
-        .await?;
+    let refreshed =
+        sqlx::query_as::<_, TrainingBatch>("SELECT * FROM training_batches WHERE id=$1")
+            .bind(batch.id)
+            .fetch_one(&state.db)
+            .await?;
 
     Ok(Json(serde_json::json!({
         "id":            refreshed.id,
@@ -445,8 +446,8 @@ async fn submit_to_training_service(batch: &TrainingBatch) -> anyhow::Result<Str
     if std::env::var("TRAINING_MOCK").as_deref() == Ok("true") {
         return Ok(format!("mock-job-{}", batch.id));
     }
-    let url = std::env::var("TRAINING_URL")
-        .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+    let url =
+        std::env::var("TRAINING_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
     let resp = reqwest::Client::new()
         .post(format!("{}/v1/training/jobs", url))
         .json(&serde_json::json!({
@@ -471,8 +472,8 @@ async fn fetch_job_status(job_id: &str) -> anyhow::Result<RemoteJobStatus> {
             training_loss: Some(0.35),
         });
     }
-    let url = std::env::var("TRAINING_URL")
-        .unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+    let url =
+        std::env::var("TRAINING_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
     let resp = reqwest::Client::new()
         .get(format!("{}/v1/training/jobs/{}", url, job_id))
         .send()

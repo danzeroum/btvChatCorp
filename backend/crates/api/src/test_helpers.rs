@@ -39,8 +39,7 @@ pub mod helpers {
             jwt_secret: TEST_JWT_SECRET.to_string(),
             ollama_url: std::env::var("OLLAMA_URL")
                 .unwrap_or_else(|_| "http://localhost:11434".into()),
-            ollama_model: std::env::var("OLLAMA_MODEL")
-                .unwrap_or_else(|_| "llama3.1:8b".into()),
+            ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.1:8b".into()),
             ollama_auth: None,
             qdrant_url: std::env::var("QDRANT_URL")
                 .unwrap_or_else(|_| "http://localhost:6333".into()),
