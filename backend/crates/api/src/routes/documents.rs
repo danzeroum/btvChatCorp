@@ -23,6 +23,15 @@ pub fn routes() -> Router<AppState> {
         .route("/projects/:id/documents/:did", delete(unlink_from_project))
 }
 
+/// Schema auxiliar para exibir botao "Choose File" no Swagger UI
+#[derive(utoipa::ToSchema)]
+#[allow(dead_code)]
+pub struct UploadForm {
+    /// Arquivo a enviar (PDF, DOCX, TXT, etc — max 50 MB)
+    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    pub file: String,
+}
+
 /// Lista documentos do workspace
 #[utoipa::path(
     get,
@@ -58,8 +67,8 @@ async fn list(
     security(("BearerAuth" = [])),
     request_body(
         content_type = "multipart/form-data",
-        content = String,
-        description = "Arquivo a ser enviado (campo: file)"
+        content = UploadForm,
+        description = "Selecione o arquivo a enviar (max 50 MB)"
     ),
     responses(
         (status = 201, description = "Documento enviado", body = Document),
@@ -72,7 +81,7 @@ async fn upload(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<Document>), AppError> {
-    let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "/uploads".into());
+    let upload_dir = std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".into());
     let upload_path = PathBuf::from(&upload_dir);
     tokio::fs::create_dir_all(&upload_path)
         .await
