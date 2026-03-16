@@ -1,148 +1,155 @@
-use anyhow::{Result, Context};
-use qdrant_client::{
-    Qdrant,
-    qdrant::{
-        CreateCollectionBuilder, Distance, PointStruct,
-        UpsertPointsBuilder, VectorParamsBuilder, vectors::VectorsOptions,
-    },
-};
+use anyhow::Result;
 use serde_json::json;
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
-use crate::models::Chunk;
+use crate::chunker::Chunk;
 
-// ---------------------------------------------------------------------------
-// Indexer: persiste chunks (com embeddings) no Qdrant
-// ---------------------------------------------------------------------------
-
-pub struct DocumentIndexer {
-    qdrant: Qdrant,
+/// Responsável por persistir chunks no PostgreSQL e vetores no Qdrant.
+pub struct Indexer {
+    db:         sqlx::PgPool,
+    qdrant_url: String,
+    client:     reqwest::Client,
 }
 
-impl DocumentIndexer {
-    pub fn new(qdrant_url: impl Into<String>) -> Result<Self> {
-        let qdrant = Qdrant::from_url(&qdrant_url.into()).build()?;
-        Ok(Self { qdrant })
+impl Indexer {
+    pub async fn new(db: sqlx::PgPool, qdrant_url: &str) -> Result<Self> {
+        let indexer = Self {
+            db,
+            qdrant_url: qdrant_url.to_string(),
+            client: reqwest::Client::new(),
+        };
+        Ok(indexer)
     }
 
-    /// Indexa todos os chunks de um documento.
-    /// Pré-requisito: todos os chunks devem ter `embedding` preenchido.
+    /// Indexa todos os chunks de um documento:
+    /// 1. Garante que a collection do workspace existe no Qdrant
+    /// 2. Salva cada chunk na tabela `document_chunks` (PostgreSQL)
+    /// 3. Faz upsert dos vetores no Qdrant
     pub async fn index_document(
         &self,
-        chunks: &[Chunk],
+        doc_id:       Uuid,
         workspace_id: Uuid,
-    ) -> Result<IndexResult> {
-        let collection = format!("workspace_{workspace_id}");
+        filename:     &str,
+        chunks:       Vec<Chunk>,
+        embeddings:   Vec<Vec<f32>>,
+        db:           &sqlx::PgPool,
+    ) -> Result<()> {
+        let collection = format!("workspace_{}", workspace_id.simple());
+
+        // 1. Garante collection
         self.ensure_collection(&collection).await?;
 
-        // Monta pontos em batches de 100
-        let mut indexed = 0usize;
-        for batch in chunks.chunks(100) {
-            let points: Vec<PointStruct> = batch
-                .iter()
-                .filter_map(|chunk| {
-                    let embedding = chunk.embedding.clone()?;
-                    let payload = json!({
-                        "document_id":    chunk.document_id.to_string(),
-                        "workspace_id":   chunk.workspace_id.to_string(),
-                        "content":        chunk.content,
-                        "chunk_index":    chunk.chunk_index,
-                        "total_chunks":   chunk.total_chunks,
-                        "section_title":  chunk.section_title,
-                        "chunk_type":     chunk.chunk_type.to_string(),
-                        "token_count":    chunk.token_count,
-                        "previous_chunk_id": chunk.previous_chunk_id.map(|u| u.to_string()),
-                        "next_chunk_id":     chunk.next_chunk_id.map(|u| u.to_string()),
-                    });
-                    Some(PointStruct::new(
-                        chunk.id.to_string(),
-                        embedding,
-                        payload
-                            .as_object()
-                            .unwrap()
-                            .iter()
-                            .map(|(k, v)| (k.clone(), qdrant_payload_value(v)))
-                            .collect::<std::collections::HashMap<_, _>>(),
-                    ))
-                })
-                .collect();
+        // 2. Salva no Postgres + monta payload para Qdrant
+        let mut qdrant_points = Vec::with_capacity(chunks.len());
 
-            self.qdrant
-                .upsert_points(
-                    UpsertPointsBuilder::new(&collection, points).wait(true),
-                )
-                .await
-                .context("qdrant upsert")?;
+        for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
+            // Gera chunk_id determinístico
+            let chunk_id = Uuid::new_v4();
 
-            indexed += batch.len();
-        }
-
-        info!("Indexado {indexed} chunks na collection {collection}");
-        Ok(IndexResult { chunks_indexed: indexed, collection })
-    }
-
-    // -----------------------------------------------------------------------
-    // Garante que a collection existe com a config correta
-    // -----------------------------------------------------------------------
-    async fn ensure_collection(&self, name: &str) -> Result<()> {
-        if self.qdrant.collection_exists(name).await? {
-            return Ok(());
-        }
-        info!("Criando collection Qdrant: {name}");
-        self.qdrant
-            .create_collection(
-                CreateCollectionBuilder::new(name)
-                    .vectors_config(VectorParamsBuilder::new(
-                        768,              // Nomic Embed V2: 768 dimensões
-                        Distance::Cosine,
-                    )),
+            sqlx::query(
+                r#"
+                INSERT INTO document_chunks
+                    (id, document_id, workspace_id, chunk_index,
+                     section_title, content, token_count)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (document_id, chunk_index) DO UPDATE
+                    SET content = EXCLUDED.content,
+                        section_title = EXCLUDED.section_title,
+                        updated_at = NOW()
+                "#,
             )
-            .await
-            .context("create collection")?;
+            .bind(chunk_id)
+            .bind(doc_id)
+            .bind(workspace_id)
+            .bind(chunk.index as i32)
+            .bind(&chunk.section)
+            .bind(&chunk.content)
+            .bind(chunk.tokens as i32)
+            .execute(db)
+            .await?;
 
-        // Índices para filtros frequentes
-        for field in ["document_id", "workspace_id", "chunk_type"] {
-            self.qdrant
-                .create_field_index(
-                    name,
-                    field,
-                    qdrant_client::qdrant::FieldType::Keyword,
-                    None,
-                    None,
-                )
-                .await
-                .ok(); // não fatal se já existir
+            // Payload rico para filtragem no Qdrant
+            qdrant_points.push(json!({
+                "id": chunk_id.to_string(),
+                "vector": embedding,
+                "payload": {
+                    "doc_id":       doc_id.to_string(),
+                    "workspace_id": workspace_id.to_string(),
+                    "filename":     filename,
+                    "section":      chunk.section,
+                    "chunk_index":  chunk.index,
+                    "content":      chunk.content,
+                    "token_count":  chunk.tokens,
+                }
+            }));
         }
+
+        // 3. Upsert em batch no Qdrant
+        self.upsert_points(&collection, qdrant_points).await?;
+
+        info!(
+            doc_id = %doc_id,
+            collection = %collection,
+            chunks = chunks.len(),
+            "Indexação concluída"
+        );
+
         Ok(())
     }
-}
 
-#[derive(Debug)]
-pub struct IndexResult {
-    pub chunks_indexed: usize,
-    pub collection: String,
-}
+    // ── Qdrant helpers ──────────────────────────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Helper: converte serde_json::Value -> qdrant Payload Value
-// ---------------------------------------------------------------------------
-fn qdrant_payload_value(v: &serde_json::Value) -> qdrant_client::qdrant::Value {
-    use qdrant_client::qdrant::{value::Kind, Value};
-    let kind = match v {
-        serde_json::Value::Null      => Kind::NullValue(0),
-        serde_json::Value::Bool(b)   => Kind::BoolValue(*b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() { Kind::IntegerValue(i) }
-            else { Kind::DoubleValue(n.as_f64().unwrap_or_default()) }
+    async fn ensure_collection(&self, collection: &str) -> Result<()> {
+        let url = format!("{}/collections/{}", self.qdrant_url, collection);
+
+        let resp = self.client.get(&url).send().await?;
+        if resp.status().is_success() {
+            return Ok(()); // já existe
         }
-        serde_json::Value::String(s) => Kind::StringValue(s.clone()),
-        serde_json::Value::Array(a)  => {
-            Kind::ListValue(qdrant_client::qdrant::ListValue {
-                values: a.iter().map(qdrant_payload_value).collect(),
-            })
+
+        // Cria a collection com vector size 768 (Nomic V2)
+        let create_url = format!("{}/collections/{}", self.qdrant_url, collection);
+        let body = json!({
+            "vectors": {
+                "size": 768,
+                "distance": "Cosine"
+            },
+            "optimizers_config": {
+                "indexing_threshold": 10000
+            }
+        });
+
+        self.client
+            .put(&create_url)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        info!("Collection '{}' criada no Qdrant (dim=768, Cosine)", collection);
+        Ok(())
+    }
+
+    async fn upsert_points(
+        &self,
+        collection: &str,
+        points: Vec<serde_json::Value>,
+    ) -> Result<()> {
+        if points.is_empty() {
+            return Ok(());
         }
-        serde_json::Value::Object(_) => Kind::StringValue(v.to_string()),
-    };
-    Value { kind: Some(kind) }
+
+        let url  = format!("{}/collections/{}/points", self.qdrant_url, collection);
+        let body = json!({ "points": points });
+
+        self.client
+            .put(&url)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
 }
