@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/api",
+    "crates/document-processor",
 ]
 resolver = "2"
 
