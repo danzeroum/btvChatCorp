@@ -184,7 +184,7 @@ async fn run_pipeline(
         cfg.storage_path,
         doc.storage_path
             .split(['/', '\\'])
-            .last()
+            .next_back()
             .unwrap_or(&doc.original_filename)
     );
     let text = extract_text(&full_path, &doc.mime_type).await?;
