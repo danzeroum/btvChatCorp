@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { ChatStreamService } from '../../core/services/chat-stream.service';
+import { genId } from '../../core/utils/uuid';
 
 interface Message {
   id: string;
@@ -137,7 +138,7 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
     this.streamBuffer.set('');
 
     const userMsg: Message = {
-      id: crypto.randomUUID(),
+      id: genId(),
       role: 'user',
       content: text,
       created_at: new Date().toISOString(),
@@ -157,24 +158,22 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
         }
       },
       error: () => {
-        const errMsg: Message = {
-          id: crypto.randomUUID(),
+        this.messages.update(m => [...m, {
+          id: genId(),
           role: 'assistant',
           content: 'Erro ao obter resposta. Tente novamente.',
           created_at: new Date().toISOString(),
-        };
-        this.messages.update(m => [...m, errMsg]);
+        }]);
         this.streaming.set(false);
         this.streamBuffer.set('');
       },
       complete: () => {
-        const assistantMsg: Message = {
-          id: this.currentInteractionId || crypto.randomUUID(),
+        this.messages.update(m => [...m, {
+          id: this.currentInteractionId || genId(),
           role: 'assistant',
           content: this.streamBuffer(),
           created_at: new Date().toISOString(),
-        };
-        this.messages.update(m => [...m, assistantMsg]);
+        }]);
         this.streaming.set(false);
         this.streamBuffer.set('');
         this.shouldScrollToBottom = true;
@@ -183,7 +182,6 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
   }
 
   sendFeedback(msg: Message, rating: 'positive' | 'negative') {
-    // Evita duplicar feedback
     if (msg.feedback === rating) return;
     this.messages.update(msgs =>
       msgs.map(m => m.id === msg.id ? { ...m, feedback: rating } : m)
