@@ -97,8 +97,7 @@ pub async fn get_checklist(
     let workspace_id = Uuid::parse_str(&claims.workspace_id)
         .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
 
-    let result =
-        onboarding::checklist::get_checklist_status(&state.db, workspace_id).await?;
+    let result = onboarding::checklist::get_checklist_status(&state.db, workspace_id).await?;
     Ok(Json(ChecklistResponse {
         items: result.items,
         completed_count: result.completed_count,

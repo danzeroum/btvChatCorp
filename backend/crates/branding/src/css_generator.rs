@@ -58,29 +58,75 @@ pub struct BrandTheme {
     pub custom_css: String,
 }
 
-fn default_mode() -> String { "light".into() }
-fn default_primary() -> String { "2563EB".into() }
-fn default_secondary() -> String { "7C3AED".into() }
-fn default_background() -> String { "FFFFFF".into() }
-fn default_surface() -> String { "F8FAFC".into() }
-fn default_surface_hover() -> String { "F1F5F9".into() }
-fn default_sidebar_bg() -> String { "0F172A".into() }
-fn default_sidebar_text() -> String { "E2E8F0".into() }
-fn default_sidebar_active() -> String { "1E40AF".into() }
-fn default_text_primary() -> String { "0F172A".into() }
-fn default_text_secondary() -> String { "64748B".into() }
-fn default_text_on_primary() -> String { "FFFFFF".into() }
-fn default_border() -> String { "E2E8F0".into() }
-fn default_border_focus() -> String { "2563EB".into() }
-fn default_success() -> String { "22C55E".into() }
-fn default_warning() -> String { "F59E0B".into() }
-fn default_error() -> String { "EF4444".into() }
-fn default_info() -> String { "3B82F6".into() }
-fn default_font_family() -> String { "Inter, system-ui, sans-serif".into() }
-fn default_font_mono() -> String { "JetBrains Mono, monospace".into() }
-fn default_radius() -> String { "8px".into() }
-fn default_radius_lg() -> String { "12px".into() }
-fn default_radius_full() -> String { "9999px".into() }
+fn default_mode() -> String {
+    "light".into()
+}
+fn default_primary() -> String {
+    "2563EB".into()
+}
+fn default_secondary() -> String {
+    "7C3AED".into()
+}
+fn default_background() -> String {
+    "FFFFFF".into()
+}
+fn default_surface() -> String {
+    "F8FAFC".into()
+}
+fn default_surface_hover() -> String {
+    "F1F5F9".into()
+}
+fn default_sidebar_bg() -> String {
+    "0F172A".into()
+}
+fn default_sidebar_text() -> String {
+    "E2E8F0".into()
+}
+fn default_sidebar_active() -> String {
+    "1E40AF".into()
+}
+fn default_text_primary() -> String {
+    "0F172A".into()
+}
+fn default_text_secondary() -> String {
+    "64748B".into()
+}
+fn default_text_on_primary() -> String {
+    "FFFFFF".into()
+}
+fn default_border() -> String {
+    "E2E8F0".into()
+}
+fn default_border_focus() -> String {
+    "2563EB".into()
+}
+fn default_success() -> String {
+    "22C55E".into()
+}
+fn default_warning() -> String {
+    "F59E0B".into()
+}
+fn default_error() -> String {
+    "EF4444".into()
+}
+fn default_info() -> String {
+    "3B82F6".into()
+}
+fn default_font_family() -> String {
+    "Inter, system-ui, sans-serif".into()
+}
+fn default_font_mono() -> String {
+    "JetBrains Mono, monospace".into()
+}
+fn default_radius() -> String {
+    "8px".into()
+}
+fn default_radius_lg() -> String {
+    "12px".into()
+}
+fn default_radius_full() -> String {
+    "9999px".into()
+}
 
 /// Gera o CSS com variáveis CSS baseado no tema do workspace.
 pub fn generate_theme_css(theme: &BrandTheme) -> String {
@@ -198,12 +244,15 @@ pub fn hex_to_rgb(hex: &str) -> String {
 /// Escurece uma cor hex por uma porcentagem (0-100).
 pub fn darken_color(hex: &str, percent: u8) -> String {
     let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 { return "000000".into(); }
+    if hex.len() != 6 {
+        return "000000".into();
+    }
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
     let factor = (100 - percent) as f32 / 100.0;
-    format!("{:02x}{:02x}{:02x}",
+    format!(
+        "{:02x}{:02x}{:02x}",
         (r as f32 * factor) as u8,
         (g as f32 * factor) as u8,
         (b as f32 * factor) as u8,
@@ -213,16 +262,25 @@ pub fn darken_color(hex: &str, percent: u8) -> String {
 /// Clareia uma cor hex (mistura com branco).
 pub fn lighten_color(hex: &str, percent: u8) -> String {
     let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 { return "FFFFFF".into(); }
+    if hex.len() != 6 {
+        return "FFFFFF".into();
+    }
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
     let factor = percent as f32 / 100.0;
-    format!("{:02x}{:02x}{:02x}",
+    format!(
+        "{:02x}{:02x}{:02x}",
         (r as f32 + (255.0 - r as f32) * factor) as u8,
         (g as f32 + (255.0 - g as f32) * factor) as u8,
         (b as f32 + (255.0 - b as f32) * factor) as u8,
     )
+}
+
+/// Gera CSS a partir de um serde_json::Value (usado pelas rotas HTTP).
+pub fn generate_css(theme: &serde_json::Value) -> String {
+    let t: BrandTheme = serde_json::from_value(theme.clone()).unwrap_or_default();
+    generate_theme_css(&t)
 }
 
 #[cfg(test)]
