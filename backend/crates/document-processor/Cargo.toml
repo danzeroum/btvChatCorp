@@ -8,28 +8,17 @@ name = "rag-worker"
 path = "src/main.rs"
 
 [dependencies]
-# Async runtime
-tokio = { version = "1", features = ["full"] }
-
-# HTTP
-reqwest = { version = "0.12", features = ["json", "multipart"] }
-
-# Database
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono"] }
-
-# Serialização
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# UUID
-uuid = { version = "1", features = ["v4"] }
-
-# Data/hora
-chrono = { version = "0.4", features = ["serde"] }
-
-# Logs
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+uuid       = { workspace = true }
+chrono     = { workspace = true }
+sqlx       = { workspace = true }
+reqwest    = { workspace = true, features = ["json", "multipart"] }
+anyhow     = { workspace = true }
+tracing    = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy    = { workspace = true }
 
 # Extração de PDF
 pdf-extract = "0.7"
@@ -37,15 +26,8 @@ pdf-extract = "0.7"
 # Extração de DOCX
 docx-rs = "0.4"
 
-# Variáveis de ambiente
-dotenvy = "0.15"
-
-# Erros
-anyhow = "1"
-
 # Regex (chunking semântico)
 regex = "1"
 
 [dev-dependencies]
-# Arquivos temporários nos testes de extractor
 tempfile = "3"
