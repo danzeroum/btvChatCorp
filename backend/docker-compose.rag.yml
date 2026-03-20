@@ -1,0 +1,89 @@
+# Docker Compose para o stack RAG completo
+# Uso: docker compose -f docker-compose.rag.yml up
+
+version: "3.9"
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Qdrant — banco vetorial
+  # --------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    container_name: btv_qdrant
+    ports:
+      - "6333:6333"   # HTTP API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Serviço de Embedding — Nomic Embed V2 (Python/FastAPI)
+  # --------------------------------------------------------------------------
+  embedding:
+    build:
+      context: ./services/embedding
+      dockerfile: Dockerfile
+    container_name: btv_embedding
+    ports:
+      - "8001:8001"
+    environment:
+      EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      EMBED_BATCH_SIZE: "32"
+      EMBED_MAX_LENGTH: "512"
+      PORT: "8001"
+    volumes:
+      - embedding_cache:/root/.cache/huggingface
+    # Para usar GPU (requer nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # RAG Worker — Rust (document-processor)
+  # --------------------------------------------------------------------------
+  rag-worker:
+    build:
+      context: ..           # raiz do monorepo
+      dockerfile: backend/crates/document-processor/Dockerfile
+    container_name: btv_rag_worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      QDRANT_URL: http://qdrant:6333
+      EMBEDDING_URL: http://embedding:8001
+      STORAGE_PATH: /data/uploads
+      POLL_INTERVAL_SECS: "10"
+      WORKER_CONCURRENCY: "4"
+      MAX_RETRIES: "3"
+      RUST_LOG: info
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  embedding_cache:
+  uploads:
