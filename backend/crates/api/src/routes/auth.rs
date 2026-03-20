@@ -99,6 +99,11 @@ async fn register(
         _ => AppError::from(e),
     })?;
 
+    // Provisiona branding padrao + progresso de onboarding para o novo workspace
+    onboarding::provisioner::provision_workspace(&state.db, workspace_id, &slug)
+        .await
+        .ok(); // nao bloqueia o registro em caso de falha
+
     let token = make_jwt(&state.jwt_secret, user_id, workspace_id, "owner")?;
     Ok((
         StatusCode::CREATED,
