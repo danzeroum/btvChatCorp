@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BrandingService } from '../services/branding.service';
 import { WorkspaceBranding, BrandTheme, DEFAULT_THEME } from '../models/branding.model';
+import { ThemePreviewComponent } from './theme-preview.component';
 
 @Component({
   selector: 'app-branding-config',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ThemePreviewComponent],
   template: `
     <div class="branding-config">
       <div class="page-header">
@@ -232,7 +233,6 @@ export class BrandingConfigComponent implements OnInit {
     if (current) {
       this.draft = structuredClone(current);
     } else {
-      // Fallback com defaults
       this.draft = {
         id: '', workspaceId: '', companyName: '', platformName: 'Minha Empresa AI',
         subdomain: '', emailFromName: '', chatWelcomeMessage: 'Olá! Como posso ajudar?',
