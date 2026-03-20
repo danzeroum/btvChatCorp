@@ -22,9 +22,9 @@ use crate::models::chat::{Chat, CreateChatDto, FeedbackDto, Message, SendMessage
 use crate::models::document::Document;
 use crate::models::project::{CreateProjectDto, Project, UpdateProjectDto};
 use crate::routes::auth::{AuthResponse, LoginDto, RegisterDto};
-use crate::routes::branding::{BrandingConfigResponse};
+use crate::routes::branding::BrandingConfigResponse;
 use crate::routes::documents::{LinkDto, UploadForm};
-use crate::routes::onboarding::{AdvanceStepDto, ChecklistResponse, InviteDto, AcceptInviteDto};
+use crate::routes::onboarding::{AcceptInviteDto, AdvanceStepDto, ChecklistResponse, InviteDto};
 use crate::routes::training::{
     QueueQuery, StartBatchDto, TrainingBatch, TrainingDocument, TrainingInteraction,
 };
@@ -112,7 +112,7 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
     // Rotas publicas (sem JWT)
     Router::new()
         .merge(auth::routes())
-        .merge(branding::routes())        // theme.css e config.json sao publicos
+        .merge(branding::routes()) // theme.css e config.json sao publicos
         .merge(onboarding::public_routes()) // accept_invite e publico
         .merge(protected)
         .merge(docs_router())

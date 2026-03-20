@@ -53,28 +53,24 @@ pub async fn get_theme_css(
 ) -> Result<Response, AppError> {
     let subdomain = q.subdomain.unwrap_or_else(|| "default".into());
 
-    let row: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT theme FROM workspace_brandings WHERE subdomain = $1",
-    )
-    .bind(&subdomain)
-    .fetch_optional(&state.db)
-    .await?;
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT theme FROM workspace_brandings WHERE subdomain = $1")
+            .bind(&subdomain)
+            .fetch_optional(&state.db)
+            .await?;
 
     let theme = match row {
         Some((t,)) => t,
-        None => {
-            // Tema padrao se nao encontrado
-            serde_json::json!({
-                "primary": "2563EB", "secondary": "7C3AED",
-                "background": "FFFFFF", "surface": "F8FAFC",
-                "sidebarBg": "0F172A", "sidebarText": "E2E8F0",
-                "textPrimary": "0F172A", "textSecondary": "64748B",
-                "textOnPrimary": "FFFFFF", "border": "E2E8F0",
-                "fontFamily": "Inter, system-ui, sans-serif",
-                "borderRadius": "8px", "borderRadiusLg": "12px",
-                "customCss": ""
-            })
-        }
+        None => serde_json::json!({
+            "primary": "2563EB", "secondary": "7C3AED",
+            "background": "FFFFFF", "surface": "F8FAFC",
+            "sidebarBg": "0F172A", "sidebarText": "E2E8F0",
+            "textPrimary": "0F172A", "textSecondary": "64748B",
+            "textOnPrimary": "FFFFFF", "border": "E2E8F0",
+            "fontFamily": "Inter, system-ui, sans-serif",
+            "borderRadius": "8px", "borderRadiusLg": "12px",
+            "customCss": ""
+        }),
     };
 
     let css = branding::css_generator::generate_css(&theme);
@@ -109,8 +105,14 @@ pub async fn get_config(
     let subdomain = q.subdomain.unwrap_or_else(|| "default".into());
 
     let row: Option<(
-        String, String, Option<String>, Option<String>,
-        String, String, String, serde_json::Value,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        String,
+        String,
+        serde_json::Value,
     )> = sqlx::query_as(
         "SELECT platform_name, company_name, logo_url, favicon_url,
                 chat_bot_name, chat_welcome_message, chat_placeholder, feature_flags
@@ -121,13 +123,25 @@ pub async fn get_config(
     .await?;
 
     let resp = match row {
-        Some((platform_name, company_name, logo_url, favicon_url,
-              chat_bot_name, chat_welcome_message, chat_placeholder, feature_flags)) => {
-            BrandingConfigResponse {
-                platform_name, company_name, logo_url, favicon_url,
-                chat_bot_name, chat_welcome_message, chat_placeholder, feature_flags,
-            }
-        }
+        Some((
+            platform_name,
+            company_name,
+            logo_url,
+            favicon_url,
+            chat_bot_name,
+            chat_welcome_message,
+            chat_placeholder,
+            feature_flags,
+        )) => BrandingConfigResponse {
+            platform_name,
+            company_name,
+            logo_url,
+            favicon_url,
+            chat_bot_name,
+            chat_welcome_message,
+            chat_placeholder,
+            feature_flags,
+        },
         None => BrandingConfigResponse {
             platform_name: "AI Platform".into(),
             company_name: "Empresa".into(),
