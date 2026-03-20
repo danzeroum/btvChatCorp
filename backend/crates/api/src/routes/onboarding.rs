@@ -50,8 +50,6 @@ pub struct InviteDto {
 #[derive(Deserialize, ToSchema)]
 pub struct AcceptInviteDto {
     pub token: String,
-    pub name: String,
-    pub password: String,
 }
 
 // --- Handlers ---
@@ -137,22 +135,22 @@ pub async fn create_invite(
     onboarding::invite::create_invite(
         &state.db,
         auth.workspace_id,
-        auth.user_id,
         &dto.email,
         &role,
+        auth.user_id,
     )
     .await?;
     Ok(StatusCode::CREATED)
 }
 
-/// Aceita convite e cria conta de usuario
+/// Aceita convite pelo token
 #[utoipa::path(
     post,
     path = "/api/v1/onboarding/invite/accept",
     tag = "onboarding",
     request_body = AcceptInviteDto,
     responses(
-        (status = 200, description = "Convite aceito, usuario criado"),
+        (status = 200, description = "Convite aceito"),
         (status = 404, description = "Token invalido ou expirado"),
     )
 )]
@@ -160,9 +158,6 @@ pub async fn accept_invite(
     State(state): State<AppState>,
     Json(dto): Json<AcceptInviteDto>,
 ) -> Result<StatusCode, AppError> {
-    let hash = bcrypt::hash(&dto.password, bcrypt::DEFAULT_COST)
-        .map_err(|_| AppError::internal("Erro ao processar senha"))?;
-
-    onboarding::invite::accept_invite(&state.db, &dto.token, &dto.name, &hash).await?;
+    onboarding::invite::accept_invite(&state.db, &dto.token).await?;
     Ok(StatusCode::OK)
 }
