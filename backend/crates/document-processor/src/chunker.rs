@@ -4,9 +4,9 @@ use crate::strategy::ChunkingStrategy;
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub index: usize,
-    pub section: String, // título/seção de contexto
+    pub section: String,
     pub content: String,
-    pub tokens: usize, // estimativa: chars / 4
+    pub tokens: usize,
 }
 
 impl Chunk {
@@ -22,8 +22,11 @@ impl Chunk {
     }
 }
 
-/// Divide o texto conforme a estratégia escolhida.
+/// Divide o texto conforme a estrat\u{e9}gia escolhida.
 pub fn chunk_text(text: &str, strategy: &ChunkingStrategy) -> Vec<Chunk> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
     match strategy {
         ChunkingStrategy::Semantic => chunk_semantic(text, 512),
         ChunkingStrategy::Legal => chunk_semantic(text, 800),
@@ -34,7 +37,7 @@ pub fn chunk_text(text: &str, strategy: &ChunkingStrategy) -> Vec<Chunk> {
     }
 }
 
-// ── Semântico (por seções Markdown / cabeçalhos) ─────────────────────────────
+// ── Sem\u{e2}ntico (por se\u{e7}\u{f5}es Markdown / cabe\u{e7}alhos) ─────────────────────────────
 
 fn chunk_semantic(text: &str, max_tokens: usize) -> Vec<Chunk> {
     let max_chars = max_tokens * 4;
@@ -103,7 +106,7 @@ fn flush_chunk(
     current.clear();
 }
 
-// ── Por sentenças ─────────────────────────────────────────────────────────────
+// ── Por senten\u{e7}as ─────────────────────────────────────────────────────────────
 
 fn chunk_sentences(text: &str, min_tokens: usize, max_tokens: usize) -> Vec<Chunk> {
     let min_chars = min_tokens * 4;
@@ -158,7 +161,8 @@ fn split_sentences(text: &str) -> Vec<String> {
 
 fn chunk_fixed(text: &str, size_tokens: usize, overlap_tokens: usize) -> Vec<Chunk> {
     let size = size_tokens * 4;
-    let overlap = overlap_tokens * 4;
+    // overlap deve ser menor que size para garantir progressão
+    let overlap = (overlap_tokens * 4).min(size.saturating_sub(1));
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
     let mut chunks = Vec::new();
@@ -166,14 +170,16 @@ fn chunk_fixed(text: &str, size_tokens: usize, overlap_tokens: usize) -> Vec<Chu
     let mut idx = 0;
 
     while start < total {
-        let end: usize = (start + size).min(total);
-        // Tenta não cortar no meio de uma palavra
+        let end = (start + size).min(total);
+
+        // Tenta n\u{e3}o cortar no meio de uma palavra (s\u{f3} se houver espa\u{e7}o no intervalo)
         let actual_end = if end < total {
             let mut e = end;
-            while e > start && !chars[e].is_whitespace() {
+            while e > start + 1 && !chars[e].is_whitespace() {
                 e -= 1;
             }
-            if e == start {
+            // Se n\u{e3}o encontrou espa\u{e7}o, usa end original
+            if e <= start {
                 end
             } else {
                 e
@@ -181,20 +187,21 @@ fn chunk_fixed(text: &str, size_tokens: usize, overlap_tokens: usize) -> Vec<Chu
         } else {
             end
         };
+
         let s: String = chars[start..actual_end].iter().collect();
         if !s.trim().is_empty() {
             chunks.push(Chunk::new(idx, "Texto", s.trim()));
             idx += 1;
         }
-        // Avança com overlap
-        start = if actual_end > overlap {
+
+        // Pr\u{f3}ximo start com overlap; garante avan\u{e7}o m\u{ed}nimo de 1
+        let next_start = if actual_end > overlap {
             actual_end - overlap
         } else {
             actual_end
         };
-        if start >= total {
-            break;
-        }
+        // Prote\u{e7}\u{e3}o contra loop infinito: start deve sempre avan\u{e7}ar
+        start = next_start.max(start + 1);
     }
     chunks
 }
