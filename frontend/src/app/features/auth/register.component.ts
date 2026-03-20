@@ -5,9 +5,11 @@ import { Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 
 interface RegisterResponse {
-  id: string;
-  email: string;
+  token: string;
+  user_id: string;
+  workspace_id: string;
   name: string;
+  role: string;
 }
 
 @Component({
@@ -38,6 +40,10 @@ interface RegisterResponse {
             <div class="form-group">
               <label>Email</label>
               <input type="email" [(ngModel)]="email" name="email" placeholder="seu@empresa.com" required />
+            </div>
+            <div class="form-group">
+              <label>Nome do Workspace</label>
+              <input type="text" [(ngModel)]="workspaceName" name="workspaceName" placeholder="Nome da sua empresa" required />
             </div>
             <div class="form-group">
               <label>Senha</label>
@@ -78,12 +84,13 @@ export class RegisterComponent {
   name = '';
   email = '';
   password = '';
+  workspaceName = '';
   submitting = signal(false);
   errorMessage = signal('');
   success = signal(false);
 
   register() {
-    if (!this.name || !this.email || !this.password) return;
+    if (!this.name || !this.email || !this.password || !this.workspaceName) return;
     this.submitting.set(true);
     this.errorMessage.set('');
 
@@ -91,6 +98,7 @@ export class RegisterComponent {
       name: this.name,
       email: this.email,
       password: this.password,
+      workspace_name: this.workspaceName,
     }).subscribe({
       next: () => {
         this.submitting.set(false);
