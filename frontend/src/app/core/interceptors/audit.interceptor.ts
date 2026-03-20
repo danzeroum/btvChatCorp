@@ -7,16 +7,10 @@ import {
   HttpResponse,
 } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
-import { inject } from '@angular/core';
+import { genId } from '../utils/uuid';
 
-/**
- * Loga ações relevantes para compliance/auditoria.
- * Captura requests que modificam dados (POST, PUT, DELETE, PATCH)
- * e envia um evento de auditoria ao backend.
- */
 @Injectable()
 export class AuditInterceptor implements HttpInterceptor {
-  // URLs que devem ser auditadas
   private readonly AUDIT_PATHS = [
     '/api/documents',
     '/api/admin',
@@ -26,7 +20,6 @@ export class AuditInterceptor implements HttpInterceptor {
     '/api/feedback',
   ];
 
-  // Métodos que geram eventos de auditoria
   private readonly AUDIT_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
 
   intercept(
@@ -42,9 +35,8 @@ export class AuditInterceptor implements HttpInterceptor {
     }
 
     const startTime = Date.now();
-    const correlationId = crypto.randomUUID();
+    const correlationId = genId();
 
-    // Adiciona correlation ID para rastrear a request
     request = request.clone({
       setHeaders: { 'X-Correlation-ID': correlationId },
     });
@@ -79,15 +71,10 @@ export class AuditInterceptor implements HttpInterceptor {
   }
 
   private logAuditEvent(event: AuditEvent): void {
-    // Em produção, envia para backend via fire-and-forget
-    // Usa sendBeacon para não bloquear navegação
     if (navigator.sendBeacon) {
-      const blob = new Blob([JSON.stringify(event)], {
-        type: 'application/json',
-      });
+      const blob = new Blob([JSON.stringify(event)], { type: 'application/json' });
       navigator.sendBeacon('/api/audit/log', blob);
     } else {
-      // Fallback: loga no console em dev
       console.debug('[AUDIT]', event);
     }
   }
