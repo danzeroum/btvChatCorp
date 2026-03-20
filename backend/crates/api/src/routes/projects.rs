@@ -27,12 +27,17 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/projects", get(list).post(create))
         .route("/projects/:id", get(get_one).put(update).delete(remove))
-        .route("/projects/:id/instructions", get(list_instructions).post(create_instruction))
-        .route("/projects/:id/instructions/:iid", put(update_instruction).delete(delete_instruction))
+        .route(
+            "/projects/:id/instructions",
+            get(list_instructions).post(create_instruction),
+        )
+        .route(
+            "/projects/:id/instructions/:iid",
+            put(update_instruction).delete(delete_instruction),
+        )
         .route("/projects/:id/stats", get(stats))
 }
 
-/// Lista projetos do workspace
 #[utoipa::path(
     get,
     path = "/api/v1/projects",
@@ -58,7 +63,6 @@ async fn list(
     Ok(Json(rows))
 }
 
-/// Cria novo projeto
 #[utoipa::path(
     post,
     path = "/api/v1/projects",
@@ -94,7 +98,6 @@ async fn create(
     Ok((StatusCode::CREATED, Json(row)))
 }
 
-/// Busca projeto por ID
 #[utoipa::path(
     get,
     path = "/api/v1/projects/{id}",
@@ -111,17 +114,15 @@ async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Project>, AppError> {
-    let row = sqlx::query_as::<_, Project>(
-        "SELECT * FROM projects WHERE id=$1 AND workspace_id=$2",
-    )
-    .bind(id)
-    .bind(auth.workspace_id)
-    .fetch_one(&state.db)
-    .await?;
+    let row =
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id=$1 AND workspace_id=$2")
+            .bind(id)
+            .bind(auth.workspace_id)
+            .fetch_one(&state.db)
+            .await?;
     Ok(Json(row))
 }
 
-/// Atualiza projeto
 #[utoipa::path(
     put,
     path = "/api/v1/projects/{id}",
@@ -164,7 +165,6 @@ async fn update(
     Ok(Json(row))
 }
 
-/// Remove projeto
 #[utoipa::path(
     delete,
     path = "/api/v1/projects/{id}",
@@ -193,7 +193,6 @@ async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Estatisticas do projeto
 #[utoipa::path(
     get,
     path = "/api/v1/projects/{id}/stats",
@@ -218,12 +217,23 @@ async fn stats(
         .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
 
     let total_chats: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM chats WHERE project_id=$1")
-        .bind(id).fetch_one(&state.db).await.unwrap_or((0,));
-    let total_docs: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM project_documents WHERE project_id=$1")
-        .bind(id).fetch_one(&state.db).await.unwrap_or((0,));
+        .bind(id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or((0,));
+    let total_docs: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM project_documents WHERE project_id=$1")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or((0,));
     let total_msgs: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM messages m JOIN chats c ON c.id=m.chat_id WHERE c.project_id=$1",
-    ).bind(id).fetch_one(&state.db).await.unwrap_or((0,));
+    )
+    .bind(id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
 
     Ok(Json(serde_json::json!({
         "project_id":      id,
@@ -248,22 +258,31 @@ async fn list_instructions(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     sqlx::query("SELECT id FROM projects WHERE id=$1 AND workspace_id=$2")
-        .bind(id).bind(auth.workspace_id)
-        .fetch_one(&state.db).await
+        .bind(id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
         .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
 
     let rows: Vec<InstructionRow> = sqlx::query_as(
         "SELECT id,name,description,content,trigger_mode,is_active,created_at
          FROM project_instructions WHERE project_id=$1 ORDER BY created_at",
-    ).bind(id).fetch_all(&state.db).await?;
+    )
+    .bind(id)
+    .fetch_all(&state.db)
+    .await?;
 
-    Ok(Json(rows.into_iter().map(|(id, name, desc, content, trigger, active, created)| {
-        serde_json::json!({
-            "id": id, "name": name, "description": desc,
-            "content": content, "trigger_mode": trigger,
-            "is_active": active, "created_at": created.to_rfc3339(),
-        })
-    }).collect()))
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, name, desc, content, trigger, active, created)| {
+                serde_json::json!({
+                    "id": id, "name": name, "description": desc,
+                    "content": content, "trigger_mode": trigger,
+                    "is_active": active, "created_at": created.to_rfc3339(),
+                })
+            })
+            .collect(),
+    ))
 }
 
 async fn create_instruction(
@@ -276,10 +295,16 @@ async fn create_instruction(
         "INSERT INTO project_instructions (project_id,name,description,content,trigger_mode,is_active,created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7)",
     )
-    .bind(id).bind(&dto.name).bind(&dto.description).bind(&dto.content)
+    .bind(id)
+    .bind(&dto.name)
+    .bind(&dto.description)
+    .bind(&dto.content)
     .bind(dto.trigger_mode.as_deref().unwrap_or("always"))
-    .bind(dto.is_active.unwrap_or(true)).bind(auth.user_id)
-    .execute(&state.db).await.map_err(AppError::from)?;
+    .bind(dto.is_active.unwrap_or(true))
+    .bind(auth.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(AppError::from)?;
     Ok(StatusCode::CREATED)
 }
 
@@ -292,10 +317,15 @@ async fn update_instruction(
     sqlx::query(
         "UPDATE project_instructions SET name=$1,content=$2,description=$3,trigger_mode=$4,is_active=$5,updated_at=NOW() WHERE id=$6",
     )
-    .bind(&dto.name).bind(&dto.content).bind(&dto.description)
+    .bind(&dto.name)
+    .bind(&dto.content)
+    .bind(&dto.description)
     .bind(dto.trigger_mode.as_deref().unwrap_or("always"))
-    .bind(dto.is_active.unwrap_or(true)).bind(iid)
-    .execute(&state.db).await.map_err(AppError::from)?;
+    .bind(dto.is_active.unwrap_or(true))
+    .bind(iid)
+    .execute(&state.db)
+    .await
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -305,6 +335,9 @@ async fn delete_instruction(
     Path((_pid, iid)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     sqlx::query("DELETE FROM project_instructions WHERE id=$1")
-        .bind(iid).execute(&state.db).await.map_err(AppError::from)?;
+        .bind(iid)
+        .execute(&state.db)
+        .await
+        .map_err(AppError::from)?;
     Ok(StatusCode::NO_CONTENT)
 }
