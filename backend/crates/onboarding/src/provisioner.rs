@@ -3,11 +3,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Provisiona um novo workspace: cria branding padrão e progresso de onboarding.
-pub async fn provision_workspace(
-    pool: &PgPool,
-    workspace_id: Uuid,
-    subdomain: &str,
-) -> Result<()> {
+pub async fn provision_workspace(pool: &PgPool, workspace_id: Uuid, subdomain: &str) -> Result<()> {
     // 1. Cria branding padrão (idempotente)
     sqlx::query(
         r#"INSERT INTO workspace_brandings
