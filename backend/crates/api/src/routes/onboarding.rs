@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{errors::AppError, middleware::auth::Claims, state::AppState};
 
-// ─── Rotas protegidas (JWT obrigatorio) ────────────────────────────────────
+// --- Rotas protegidas (JWT obrigatorio) ---
 
 pub fn protected_routes() -> Router<AppState> {
     Router::new()
@@ -20,13 +20,13 @@ pub fn protected_routes() -> Router<AppState> {
         .route("/onboarding/invite", post(create_invite))
 }
 
-// ─── Rotas publicas (sem JWT) ──────────────────────────────────────────────
+// --- Rotas publicas (sem JWT) ---
 
 pub fn public_routes() -> Router<AppState> {
     Router::new().route("/onboarding/invite/accept", post(accept_invite))
 }
 
-// ─── DTOs ─────────────────────────────────────────────────────────────────
+// --- DTOs ---
 
 #[derive(Deserialize, ToSchema)]
 pub struct AdvanceStepDto {
@@ -55,7 +55,7 @@ pub struct AcceptInviteDto {
     pub password: String,
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────
+// --- Handlers ---
 
 /// Avanca o wizard de onboarding para o proximo step
 #[utoipa::path(
@@ -97,7 +97,8 @@ pub async fn get_checklist(
     let workspace_id = Uuid::parse_str(&claims.workspace_id)
         .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
 
-    let result = onboarding::checklist::get_checklist_status(&state.db, workspace_id).await?;
+    let result =
+        onboarding::checklist::get_checklist_status(&state.db, workspace_id).await?;
     Ok(Json(ChecklistResponse {
         items: result.items,
         completed_count: result.completed_count,
@@ -145,11 +146,12 @@ pub async fn create_invite(
 ) -> Result<StatusCode, AppError> {
     let workspace_id = Uuid::parse_str(&claims.workspace_id)
         .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
-    let invited_by = Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::bad_request("user_id invalido"))?;
+    let invited_by =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::bad_request("user_id invalido"))?;
 
     let role = dto.role.unwrap_or_else(|| "user".into());
-    onboarding::invite::create_invite(&state.db, workspace_id, invited_by, &dto.email, &role).await?;
+    onboarding::invite::create_invite(&state.db, workspace_id, invited_by, &dto.email, &role)
+        .await?;
     Ok(StatusCode::CREATED)
 }
 
