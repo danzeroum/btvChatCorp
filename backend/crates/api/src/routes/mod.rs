@@ -85,12 +85,17 @@ pub fn docs_router() -> Router<AppState> {
 }
 
 pub fn v1_routes(state: AppState) -> Router<AppState> {
-    Router::new()
-        .merge(auth::routes())
+    // Rotas protegidas por JWT
+    let protected = Router::new()
         .merge(chats::routes())
         .merge(documents::routes())
         .merge(projects::routes())
         .merge(training::routes())
+        .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
+
+    // Rotas publicas (sem JWT)
+    Router::new()
+        .merge(auth::routes())
+        .merge(protected)
         .merge(docs_router())
-        .route_layer(axum::middleware::from_fn_with_state(state, require_auth))
 }

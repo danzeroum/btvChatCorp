@@ -82,7 +82,8 @@ async fn register(
     let user_id = Uuid::new_v4();
 
     sqlx::query(
-        "INSERT INTO users (id,workspace_id,name,email,password_hash,role_name) VALUES ($1,$2,$3,$4,$5,'owner')",
+        "INSERT INTO users (id, workspace_id, name, email, password_hash, role)
+         VALUES ($1, $2, $3, $4, $5, 'owner')",
     )
     .bind(user_id)
     .bind(workspace_id)
@@ -127,7 +128,9 @@ async fn login(
     Json(dto): Json<LoginDto>,
 ) -> Result<Json<AuthResponse>, AppError> {
     let row: (Uuid, Uuid, String, String, String, String) = sqlx::query_as(
-        "SELECT id,workspace_id,name,email,password_hash,role_name FROM users WHERE email=$1 AND status='active'",
+        "SELECT id, workspace_id, name, email, password_hash, role
+         FROM users
+         WHERE email = $1 AND is_active = true",
     )
     .bind(&dto.email)
     .fetch_one(&state.db)
@@ -140,7 +143,7 @@ async fn login(
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     }
 
-    sqlx::query("UPDATE users SET last_login_at=NOW() WHERE id=$1")
+    sqlx::query("UPDATE users SET last_login_at = NOW() WHERE id = $1")
         .bind(user_id)
         .execute(&state.db)
         .await
