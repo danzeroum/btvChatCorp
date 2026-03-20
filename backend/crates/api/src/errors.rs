@@ -60,3 +60,10 @@ impl From<sqlx::Error> for AppError {
         }
     }
 }
+
+impl From<anyhow::Error> for AppError {
+    fn from(e: anyhow::Error) -> Self {
+        tracing::error!("anyhow error: {:?}", e);
+        Self::internal("Erro interno")
+    }
+}

@@ -1,78 +1,93 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, signal, computed, inject, APP_INITIALIZER } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
-import { WorkspaceBranding, BrandTheme, DEFAULT_THEME } from '../models/branding.model';
+import { firstValueFrom } from 'rxjs';
+import { WorkspaceBranding, BrandTheme } from '../models/branding.model';
+
+export interface BrandingPublicConfig {
+  companyName: string;
+  platformName: string;
+  tagline?: string;
+  logoUrl?: string;
+  logomarkUrl?: string;
+  faviconUrl?: string;
+  chatWelcomeMessage: string;
+  chatPlaceholder: string;
+  chatBotName: string;
+  chatBotAvatar?: string;
+  loginPageTitle?: string;
+  loginPageSubtitle?: string;
+  loginBackgroundUrl?: string;
+  termsUrl?: string;
+  privacyUrl?: string;
+  supportEmail?: string;
+  featureFlags: Record<string, boolean>;
+}
 
 @Injectable({ providedIn: 'root' })
 export class BrandingService {
-  private http = inject(HttpClient);
+  private readonly http = inject(HttpClient);
+  private readonly _branding = signal<BrandingPublicConfig | null>(null);
 
-  branding = signal<WorkspaceBranding | null>(null);
+  readonly currentBranding = this._branding.asReadonly();
 
-  /** Carrega branding do workspace atual e injeta CSS vars no DOM */
-  load(workspaceId: string): Observable<WorkspaceBranding> {
-    return this.http.get<WorkspaceBranding>(`/api/workspaces/${workspaceId}/branding`).pipe(
-      tap((b) => {
-        this.branding.set(b);
-        this.applyCssVars(b.theme);
-        this.applyFavicon(b.faviconUrl);
-        this.applyPageTitle(b.platformName);
-        if (b.theme.customCss) this.injectCustomCss(b.theme.customCss);
-      })
-    );
-  }
+  readonly companyName  = computed(() => this._branding()?.companyName  ?? 'AI Platform');
+  readonly platformName = computed(() => this._branding()?.platformName ?? 'AI Platform');
+  readonly logoUrl      = computed(() => this._branding()?.logoUrl      ?? 'assets/default-logo.svg');
+  readonly chatBotName  = computed(() => this._branding()?.chatBotName  ?? 'Assistente');
+  readonly chatWelcome  = computed(() => this._branding()?.chatWelcomeMessage ?? 'Olá! Como posso ajudar?');
 
-  /** Aplica preview em tempo real sem salvar */
-  previewTheme(theme: Partial<BrandTheme>): void {
-    const current = this.branding()?.theme ?? DEFAULT_THEME;
-    this.applyCssVars({ ...current, ...theme });
-  }
-
-  /** Salva branding no backend */
-  save(workspaceId: string, branding: Partial<WorkspaceBranding>): Observable<WorkspaceBranding> {
-    return this.http.patch<WorkspaceBranding>(
-      `/api/workspaces/${workspaceId}/branding`,
-      branding
-    ).pipe(tap((b) => this.branding.set(b)));
-  }
-
-  /** Gera CSS vars a partir do tema e injeta no :root */
-  private applyCssVars(theme: BrandTheme): void {
-    const root = document.documentElement;
-    const vars: Record<string, string> = {
-      '--color-primary':          `#${theme.primary}`,
-      '--color-primary-hover':    theme.primaryHover  ? `#${theme.primaryHover}`  : this.darken(theme.primary, 10),
-      '--color-primary-light':    theme.primaryLight  ? `#${theme.primaryLight}`  : this.lighten(theme.primary, 40),
-      '--color-secondary':        `#${theme.secondary}`,
-      '--color-bg':               `#${theme.background}`,
-      '--color-surface':          `#${theme.surface}`,
-      '--color-surface-hover':    theme.surfaceHover  ? `#${theme.surfaceHover}`  : this.lighten(theme.surface, 5),
-      '--color-sidebar-bg':       `#${theme.sidebarBg}`,
-      '--color-sidebar-text':     `#${theme.sidebarText}`,
-      '--color-sidebar-active':   `#${theme.sidebarActiveItem}`,
-      '--color-text-primary':     `#${theme.textPrimary}`,
-      '--color-text-secondary':   `#${theme.textSecondary}`,
-      '--color-text-on-primary':  `#${theme.textOnPrimary}`,
-      '--color-border':           `#${theme.border}`,
-      '--color-border-focus':     theme.borderFocus   ? `#${theme.borderFocus}`   : `#${theme.primary}`,
-      '--color-success':          `#${theme.success}`,
-      '--color-warning':          `#${theme.warning}`,
-      '--color-error':            `#${theme.error}`,
-      '--color-info':             `#${theme.info}`,
-      '--font-family':            theme.fontFamily,
-      '--font-family-mono':       theme.fontFamilyMono,
-      '--border-radius':          theme.borderRadius,
-      '--border-radius-lg':       theme.borderRadiusLg,
-      '--border-radius-full':     theme.borderRadiusFull,
-    };
-    for (const [key, value] of Object.entries(vars)) {
-      root.style.setProperty(key, value);
+  /** Chamado no APP_INITIALIZER — carrega config antes do primeiro render. */
+  async initialize(): Promise<void> {
+    try {
+      const config = await firstValueFrom(
+        this.http.get<BrandingPublicConfig>('/branding/config.json')
+      );
+      this._branding.set(config);
+      this.loadThemeCss();
+      if (config.faviconUrl) this.updateFavicon(config.faviconUrl);
+      document.title = config.platformName ?? 'AI Platform';
+    } catch (e) {
+      console.warn('[BrandingService] Could not load branding, using defaults', e);
     }
   }
 
-  private applyFavicon(url?: string): void {
-    if (!url) return;
-    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+  /** Injeta ou atualiza o link do CSS de tema no <head>. */
+  private loadThemeCss(): void {
+    const existing = document.getElementById('theme-css') as HTMLLinkElement | null;
+    if (existing) {
+      existing.href = `/branding/theme.css?t=${Date.now()}`;
+    } else {
+      const link = document.createElement('link');
+      link.id   = 'theme-css';
+      link.rel  = 'stylesheet';
+      link.href = '/branding/theme.css';
+      document.head.appendChild(link);
+    }
+  }
+
+  /** Aplica preview de tema em tempo real via CSS vars inline. */
+  applyPreviewTheme(theme: Partial<BrandTheme>): void {
+    const root = document.documentElement;
+    if (theme.primary) {
+      root.style.setProperty('--color-primary', `#${theme.primary}`);
+      root.style.setProperty('--color-primary-hover', `#${darkenColor(theme.primary, 10)}`);
+      root.style.setProperty('--color-primary-light', `#${lightenColor(theme.primary, 90)}`);
+    }
+    if (theme.secondary)       root.style.setProperty('--color-secondary',   `#${theme.secondary}`);
+    if (theme.sidebarBg)       root.style.setProperty('--color-sidebar-bg',  `#${theme.sidebarBg}`);
+    if (theme.sidebarText)     root.style.setProperty('--color-sidebar-text',`#${theme.sidebarText}`);
+    if (theme.fontFamily)      root.style.setProperty('--font-family', theme.fontFamily);
+    if (theme.borderRadius)    root.style.setProperty('--radius', theme.borderRadius);
+  }
+
+  /** Remove estilos inline e recarrega o CSS salvo. */
+  resetPreview(): void {
+    document.documentElement.removeAttribute('style');
+    this.loadThemeCss();
+  }
+
+  private updateFavicon(url: string): void {
+    let link = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
     if (!link) {
       link = document.createElement('link');
       link.rel = 'icon';
@@ -80,36 +95,30 @@ export class BrandingService {
     }
     link.href = url;
   }
+}
 
-  private applyPageTitle(platformName: string): void {
-    document.title = platformName;
-  }
+// ---- helpers de cor (puro TS, sem deps) ----
+function darkenColor(hex: string, pct: number): string {
+  hex = hex.replace('#', '');
+  if (hex.length !== 6) return '000000';
+  const f = (1 - pct / 100);
+  const r = Math.round(parseInt(hex.slice(0, 2), 16) * f);
+  const g = Math.round(parseInt(hex.slice(2, 4), 16) * f);
+  const b = Math.round(parseInt(hex.slice(4, 6), 16) * f);
+  return [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
 
-  private injectCustomCss(css: string): void {
-    const id = 'btv-custom-css';
-    let el = document.getElementById(id) as HTMLStyleElement | null;
-    if (!el) {
-      el = document.createElement('style');
-      el.id = id;
-      document.head.appendChild(el);
-    }
-    el.textContent = css;
-  }
+function lightenColor(hex: string, pct: number): string {
+  hex = hex.replace('#', '');
+  if (hex.length !== 6) return 'FFFFFF';
+  const f = pct / 100;
+  const r = Math.round(parseInt(hex.slice(0, 2), 16) + (255 - parseInt(hex.slice(0, 2), 16)) * f);
+  const g = Math.round(parseInt(hex.slice(2, 4), 16) + (255 - parseInt(hex.slice(2, 4), 16)) * f);
+  const b = Math.round(parseInt(hex.slice(4, 6), 16) + (255 - parseInt(hex.slice(4, 6), 16)) * f);
+  return [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
 
-  /** Utilitário: escurece hex em `amount` pontos (0–255) */
-  private darken(hex: string, amount: number): string {
-    return this.adjustHex(hex, -amount);
-  }
-
-  private lighten(hex: string, amount: number): string {
-    return this.adjustHex(hex, amount);
-  }
-
-  private adjustHex(hex: string, amount: number): string {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = Math.min(255, Math.max(0, (num >> 16) + amount));
-    const g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + amount));
-    const b = Math.min(255, Math.max(0, (num & 0xff) + amount));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-  }
+// Factory para APP_INITIALIZER
+export function initializeBranding(svc: BrandingService) {
+  return () => svc.initialize();
 }

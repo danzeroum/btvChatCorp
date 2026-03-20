@@ -1,99 +1,91 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import {
+  Component, OnInit, inject, signal, computed,
+} from '@angular/core';
 import { Router } from '@angular/router';
+import { CommonModule } from '@angular/common';
 import { OnboardingService } from './services/onboarding.service';
-import { OnboardingState } from './models/onboarding-state.model';
+
+/** Número total de steps do wizard. */
+const TOTAL_STEPS = 7;
 
 @Component({
   selector: 'app-onboarding-wizard',
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="onboarding-wizard">
-      <!-- Steps indicator -->
-      <div class="steps-bar">
-        @for (step of steps; track step.id; let i = $index) {
-          <div class="step"
-            [class.active]="currentStep() === i"
-            [class.completed]="currentStep() > i">
-            <span class="step-number">{{ currentStep() > i ? '\u2713' : i + 1 }}</span>
-            <span class="step-label">{{ step.label }}</span>
-          </div>
-        }
-      </div>
-
-      <!-- Progress bar -->
+    <div class="wizard-shell">
+      <!-- Barra de progresso -->
       <div class="wizard-progress">
-        <div class="progress-fill"
-          [style.width.%]="((currentStep() + 1) / steps.length) * 100">
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="progressPercent()"></div>
         </div>
+        <span class="step-label">Passo {{ currentStep() }} de {{ totalSteps }}</span>
       </div>
 
-      <!-- Step content (lazy por ngSwitch) -->
-      <div class="step-content">
-        <ng-content></ng-content>
+      <!-- Conteúdo do step (roteado pelo router-outlet filho) -->
+      <div class="wizard-body">
+        <router-outlet></router-outlet>
       </div>
 
-      <!-- Navigation -->
+      <!-- Navegação -->
       <div class="wizard-nav">
-        @if (currentStep() > 0) {
-          <button class="btn-back" (click)="back()">&#8592; Voltar</button>
-        }
-        <span class="step-counter">{{ currentStep() + 1 }} / {{ steps.length }}</span>
         <button
-          class="btn-next"
+          class="btn-secondary"
+          (click)="back()"
+          [disabled]="currentStep() === 1">
+          Voltar
+        </button>
+        <button
+          class="btn-primary"
           (click)="next()"
-          [disabled]="saving()">
-          {{ currentStep() === steps.length - 1 ? (saving() ? 'Finalizando...' : '\uD83C\uDF89 Concluir Setup') : 'Pr\xF3ximo \u2192' }}
+          [disabled]="currentStep() === totalSteps">
+          {{ currentStep() === totalSteps ? 'Concluir' : 'Próximo' }}
         </button>
       </div>
     </div>
-  `
+  `,
 })
 export class OnboardingWizardComponent implements OnInit {
-  private onboardingService = inject(OnboardingService);
-  private router = inject(Router);
+  private readonly router = inject(Router);
+  readonly onboarding = inject(OnboardingService);
 
-  currentStep = signal(0);
-  saving = signal(false);
+  readonly totalSteps = TOTAL_STEPS;
+  readonly currentStep = computed(() => this.onboarding.state()?.currentStep ?? 1);
+  readonly progressPercent = computed(() =>
+    ((this.currentStep() - 1) / this.totalSteps) * 100
+  );
 
-  steps = [
-    { id: 'workspace', label: 'Workspace' },
-    { id: 'branding',  label: 'Identidade' },
-    { id: 'auth',      label: 'Acesso' },
-    { id: 'project',   label: 'Projeto' },
-    { id: 'documents', label: 'Documentos' },
-    { id: 'test',      label: 'Testar IA' },
-    { id: 'team',      label: 'Equipe' },
-  ];
-
-  state!: OnboardingState;
-
-  ngOnInit(): void {
-    this.state = this.onboardingService.getState();
-    this.currentStep.set(this.state.currentStep);
+  async ngOnInit() {
+    const workspaceId = localStorage.getItem('workspace_id') ?? '';
+    await this.onboarding.load(workspaceId);
+    this.navigateToStep(this.currentStep());
   }
 
-  next(): void {
-    if (this.currentStep() < this.steps.length - 1) {
-      this.onboardingService.completeStep(this.currentStep());
-      this.currentStep.update((s) => s + 1);
-    } else {
-      this.finish();
+  next() {
+    const next = this.currentStep() + 1;
+    if (next > this.totalSteps) {
+      this.onboarding.complete();
+      this.router.navigate(['/']);
+      return;
     }
+    this.navigateToStep(next);
   }
 
-  back(): void {
-    if (this.currentStep() > 0) {
-      this.currentStep.update((s) => s - 1);
-    }
+  back() {
+    const prev = this.currentStep() - 1;
+    if (prev >= 1) this.navigateToStep(prev);
   }
 
-  private finish(): void {
-    this.saving.set(true);
-    this.onboardingService.complete().subscribe({
-      next: () => this.router.navigate(['/dashboard']),
-      error: () => this.saving.set(false),
-    });
+  private navigateToStep(step: number) {
+    const routes: Record<number, string> = {
+      1: 'workspace',
+      2: 'branding',
+      3: 'auth',
+      4: 'first-project',
+      5: 'documents',
+      6: 'test-chat',
+      7: 'invite-team',
+    };
+    this.router.navigate(['/onboarding', routes[step]]);
   }
 }
