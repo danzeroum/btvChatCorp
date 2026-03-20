@@ -1,8 +1,10 @@
-import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewChecked, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewChecked, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { timeout } from 'rxjs/operators';
+import { firstValueFrom } from 'rxjs';
 
 interface ChatSummary {
   id: string;
@@ -161,6 +163,9 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
 
   private http = inject(HttpClient);
 
+  // Timeout de 3 minutos para chamadas ao LLM
+  private readonly LLM_TIMEOUT_MS = 180_000;
+
   messages     = signal<Message[]>([]);
   recentChats  = signal<ChatSummary[]>([]);
   activeChatId = signal<string | null>(null);
@@ -223,9 +228,9 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     let chatId = this.activeChatId();
     if (!chatId) {
       try {
-        const newChat = await this.http
-          .post<{ id: string; title: string }>('/api/v1/chats', { title: text.slice(0, 60) })
-          .toPromise();
+        const newChat = await firstValueFrom(
+          this.http.post<{ id: string; title: string }>('/api/v1/chats', { title: text.slice(0, 60) })
+        );
         chatId = newChat!.id;
         this.activeChatId.set(chatId);
         this.currentTitle.set(newChat!.title || text.slice(0, 40));
@@ -241,27 +246,32 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
       }
     }
 
-    this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text }).subscribe({
-      next: (assistantMsg: Message) => {
-        this.messages.update((m: Message[]) => [...m, assistantMsg]);
-        this.sending.set(false);
-        this.scrollNeeded = true;
-        this.recentChats.update((list: ChatSummary[]) =>
-          list.map((c: ChatSummary) => c.id === chatId
-            ? { ...c, updated_at: new Date().toISOString() }
-            : c
-          )
-        );
-      },
-      error: () => {
-        this.messages.update((m: Message[]) => [...m, {
-          id: crypto.randomUUID(), role: 'assistant' as const,
-          content: 'Erro ao obter resposta. Tente novamente.',
-          created_at: new Date().toISOString(),
-        }]);
-        this.sending.set(false);
-      },
-    });
+    this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text })
+      .pipe(timeout(this.LLM_TIMEOUT_MS))
+      .subscribe({
+        next: (assistantMsg: Message) => {
+          this.messages.update((m: Message[]) => [...m, assistantMsg]);
+          this.sending.set(false);
+          this.scrollNeeded = true;
+          this.recentChats.update((list: ChatSummary[]) =>
+            list.map((c: ChatSummary) => c.id === chatId
+              ? { ...c, updated_at: new Date().toISOString() }
+              : c
+            )
+          );
+        },
+        error: (err) => {
+          const msg = err?.name === 'TimeoutError'
+            ? 'O modelo demorou muito para responder. Tente uma pergunta mais curta.'
+            : 'Erro ao obter resposta. Tente novamente.';
+          this.messages.update((m: Message[]) => [...m, {
+            id: crypto.randomUUID(), role: 'assistant' as const,
+            content: msg,
+            created_at: new Date().toISOString(),
+          }]);
+          this.sending.set(false);
+        },
+      });
   }
 
   sendFeedback(msg: Message, value: 1 | -1) {
