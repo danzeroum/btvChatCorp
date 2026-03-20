@@ -1,6 +1,8 @@
 pub mod auth;
+pub mod branding;
 pub mod chats;
 pub mod documents;
+pub mod onboarding;
 pub mod projects;
 pub mod training;
 
@@ -20,7 +22,9 @@ use crate::models::chat::{Chat, CreateChatDto, FeedbackDto, Message, SendMessage
 use crate::models::document::Document;
 use crate::models::project::{CreateProjectDto, Project, UpdateProjectDto};
 use crate::routes::auth::{AuthResponse, LoginDto, RegisterDto};
+use crate::routes::branding::{BrandingConfigResponse};
 use crate::routes::documents::{LinkDto, UploadForm};
+use crate::routes::onboarding::{AdvanceStepDto, ChecklistResponse, InviteDto, AcceptInviteDto};
 use crate::routes::training::{
     QueueQuery, StartBatchDto, TrainingBatch, TrainingDocument, TrainingInteraction,
 };
@@ -31,6 +35,8 @@ use crate::state::AppState;
     paths(
         auth::register,
         auth::login,
+        branding::get_theme_css,
+        branding::get_config,
         chats::list,
         chats::create,
         chats::get_one,
@@ -59,21 +65,30 @@ use crate::state::AppState;
         training::get_batch,
         training::poll_batch_status,
         training::list_documents,
+        onboarding::advance_step,
+        onboarding::get_checklist,
+        onboarding::dismiss_checklist,
+        onboarding::create_invite,
+        onboarding::accept_invite,
     ),
     components(
         schemas(
             RegisterDto, LoginDto, AuthResponse,
+            BrandingConfigResponse,
             Chat, CreateChatDto, SendMessageDto, FeedbackDto, Message,
             Document, LinkDto, UploadForm,
             Project, CreateProjectDto, UpdateProjectDto,
             TrainingInteraction, TrainingBatch, TrainingDocument,
             QueueQuery, StartBatchDto,
+            AdvanceStepDto, ChecklistResponse, InviteDto, AcceptInviteDto,
         )
     ),
     tags(
         (name = "auth", description = "Autenticacao"),
+        (name = "branding", description = "Tema e white-label"),
         (name = "chats", description = "Chats e mensagens"),
         (name = "documents", description = "Documentos e RAG"),
+        (name = "onboarding", description = "Wizard e checklist de onboarding"),
         (name = "projects", description = "Projetos"),
         (name = "training", description = "Fine-tuning e curadoria"),
     )
@@ -91,11 +106,14 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(documents::routes())
         .merge(projects::routes())
         .merge(training::routes())
+        .merge(onboarding::protected_routes())
         .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
 
     // Rotas publicas (sem JWT)
     Router::new()
         .merge(auth::routes())
+        .merge(branding::routes())        // theme.css e config.json sao publicos
+        .merge(onboarding::public_routes()) // accept_invite e publico
         .merge(protected)
         .merge(docs_router())
 }
