@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         .await?;
 
     let embedder = Arc::new(Embedder::new(&cfg.embedding_url));
-    let indexer = Arc::new(Indexer::new(db.clone(), &cfg.qdrant_url).await?);
+    let indexer = Arc::new(Indexer::new(&cfg.qdrant_url));
     let sem = Arc::new(Semaphore::new(cfg.worker_concurrency));
     let cfg = Arc::new(cfg);
 
