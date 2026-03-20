@@ -72,8 +72,7 @@ pub async fn advance_step(
     Extension(auth): Extension<AuthUser>,
     Json(dto): Json<AdvanceStepDto>,
 ) -> Result<StatusCode, AppError> {
-    onboarding::provisioner::advance_step(&state.db, auth.workspace_id, dto.step, dto.data)
-        .await?;
+    onboarding::provisioner::advance_step(&state.db, auth.workspace_id, dto.step, dto.data).await?;
     Ok(StatusCode::OK)
 }
 
@@ -91,8 +90,7 @@ pub async fn get_checklist(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<ChecklistResponse>, AppError> {
-    let result =
-        onboarding::checklist::get_checklist_status(&state.db, auth.workspace_id).await?;
+    let result = onboarding::checklist::get_checklist_status(&state.db, auth.workspace_id).await?;
     Ok(Json(ChecklistResponse {
         items: result.items,
         completed_count: result.completed_count,
