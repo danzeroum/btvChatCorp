@@ -1,14 +1,13 @@
 use axum::{
-    extract::State,
+    extract::{Extension, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use uuid::Uuid;
 
-use crate::{errors::AppError, middleware::auth::Claims, state::AppState};
+use crate::{errors::AppError, middleware::auth::AuthUser, state::AppState};
 
 // --- Rotas protegidas (JWT obrigatorio) ---
 
@@ -70,13 +69,11 @@ pub struct AcceptInviteDto {
 )]
 pub async fn advance_step(
     State(state): State<AppState>,
-    claims: Claims,
+    Extension(auth): Extension<AuthUser>,
     Json(dto): Json<AdvanceStepDto>,
 ) -> Result<StatusCode, AppError> {
-    let workspace_id = Uuid::parse_str(&claims.workspace_id)
-        .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
-
-    onboarding::provisioner::advance_step(&state.db, workspace_id, dto.step, dto.data).await?;
+    onboarding::provisioner::advance_step(&state.db, auth.workspace_id, dto.step, dto.data)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -92,12 +89,10 @@ pub async fn advance_step(
 )]
 pub async fn get_checklist(
     State(state): State<AppState>,
-    claims: Claims,
+    Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<ChecklistResponse>, AppError> {
-    let workspace_id = Uuid::parse_str(&claims.workspace_id)
-        .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
-
-    let result = onboarding::checklist::get_checklist_status(&state.db, workspace_id).await?;
+    let result =
+        onboarding::checklist::get_checklist_status(&state.db, auth.workspace_id).await?;
     Ok(Json(ChecklistResponse {
         items: result.items,
         completed_count: result.completed_count,
@@ -118,12 +113,9 @@ pub async fn get_checklist(
 )]
 pub async fn dismiss_checklist(
     State(state): State<AppState>,
-    claims: Claims,
+    Extension(auth): Extension<AuthUser>,
 ) -> Result<StatusCode, AppError> {
-    let workspace_id = Uuid::parse_str(&claims.workspace_id)
-        .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
-
-    onboarding::checklist::dismiss_checklist(&state.db, workspace_id).await?;
+    onboarding::checklist::dismiss_checklist(&state.db, auth.workspace_id).await?;
     Ok(StatusCode::OK)
 }
 
@@ -140,17 +132,18 @@ pub async fn dismiss_checklist(
 )]
 pub async fn create_invite(
     State(state): State<AppState>,
-    claims: Claims,
+    Extension(auth): Extension<AuthUser>,
     Json(dto): Json<InviteDto>,
 ) -> Result<StatusCode, AppError> {
-    let workspace_id = Uuid::parse_str(&claims.workspace_id)
-        .map_err(|_| AppError::bad_request("workspace_id invalido"))?;
-    let invited_by =
-        Uuid::parse_str(&claims.sub).map_err(|_| AppError::bad_request("user_id invalido"))?;
-
     let role = dto.role.unwrap_or_else(|| "user".into());
-    onboarding::invite::create_invite(&state.db, workspace_id, invited_by, &dto.email, &role)
-        .await?;
+    onboarding::invite::create_invite(
+        &state.db,
+        auth.workspace_id,
+        auth.user_id,
+        &dto.email,
+        &role,
+    )
+    .await?;
     Ok(StatusCode::CREATED)
 }
 
