@@ -54,22 +54,46 @@ fn extract_docx(path: &str) -> Result<String> {
     let docx =
         docx_rs::read_docx(&bytes).map_err(|e| anyhow::anyhow!("docx parse error: {:?}", e))?;
 
+    // Usa a API JSON do docx-rs para navegar a \u{e1}rvore de forma vers\u{e3}o-est\u{e1}vel
+    let json: serde_json::Value = serde_json::from_str(&docx.json())
+        .map_err(|e| anyhow::anyhow!("docx json error: {:?}", e))?;
+
     let mut text = String::new();
-    for child in &docx.document.body.children {
-        if let docx_rs::BodyChild::Paragraph(p) = child {
-            for child in &p.children {
-                if let docx_rs::ParagraphChild::Run(run) = child {
-                    for child in &run.children {
-                        if let docx_rs::RunChild::Text(t) = child {
-                            text.push_str(&t.value);
-                        }
-                    }
-                }
-            }
-            text.push('\n');
-        }
-    }
+    collect_text(&json["document"]["children"], &mut text);
     Ok(text.trim().to_string())
+}
+
+/// Percorre recursivamente os n\u{f3}s JSON do docx-rs coletando texto.
+fn collect_text(node: &serde_json::Value, out: &mut String) {
+    match node {
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_text(item, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            // N\u{f3} de texto: { "type": "text", "data": { "text": "..." } }
+            if map.get("type").and_then(|v| v.as_str()) == Some("text") {
+                if let Some(t) = map
+                    .get("data")
+                    .and_then(|d| d.get("text"))
+                    .and_then(|v| v.as_str())
+                {
+                    out.push_str(t);
+                }
+                return;
+            }
+            // Adiciona quebra de linha ap\u{f3}s par\u{e1}grafos
+            let is_paragraph = map.get("type").and_then(|v| v.as_str()) == Some("paragraph");
+            if let Some(children) = map.get("data").and_then(|d| d.get("children")) {
+                collect_text(children, out);
+            }
+            if is_paragraph {
+                out.push('\n');
+            }
+        }
+        _ => {}
+    }
 }
 
 async fn extract_html(path: &str) -> Result<String> {
