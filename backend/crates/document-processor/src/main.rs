@@ -1,9 +1,9 @@
-mod config;
-mod extractor;
-mod strategy;
 mod chunker;
+mod config;
 mod embedder;
+mod extractor;
 mod indexer;
+mod strategy;
 #[cfg(test)]
 mod tests;
 
@@ -16,12 +16,12 @@ use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use config::Config;
-use extractor::extract_text;
-use strategy::detect_strategy;
 use chunker::chunk_text;
+use config::Config;
 use embedder::Embedder;
+use extractor::extract_text;
 use indexer::Indexer;
+use strategy::detect_strategy;
 
 #[derive(Debug, sqlx::FromRow)]
 struct PendingDoc {
@@ -44,8 +44,10 @@ async fn main() -> Result<()> {
         .init();
 
     let cfg = Config::from_env()?;
-    info!("RAG Worker iniciando — concurrency={} poll={}s",
-        cfg.worker_concurrency, cfg.poll_interval_secs);
+    info!(
+        "RAG Worker iniciando \u{2014} concurrency={} poll={}s",
+        cfg.worker_concurrency, cfg.poll_interval_secs
+    );
 
     let db = PgPoolOptions::new()
         .max_connections(cfg.worker_concurrency as u32 + 2)
@@ -53,9 +55,9 @@ async fn main() -> Result<()> {
         .await?;
 
     let embedder = Arc::new(Embedder::new(&cfg.embedding_url));
-    let indexer  = Arc::new(Indexer::new(db.clone(), &cfg.qdrant_url).await?);
-    let sem      = Arc::new(Semaphore::new(cfg.worker_concurrency));
-    let cfg      = Arc::new(cfg);
+    let indexer = Arc::new(Indexer::new(db.clone(), &cfg.qdrant_url).await?);
+    let sem = Arc::new(Semaphore::new(cfg.worker_concurrency));
+    let cfg = Arc::new(cfg);
 
     info!("Conectado ao banco. Iniciando loop de poll...");
 
@@ -69,11 +71,11 @@ async fn main() -> Result<()> {
                 let mut handles = Vec::new();
 
                 for doc in docs {
-                    let permit   = sem.clone().acquire_owned().await?;
-                    let db2      = db.clone();
-                    let emb      = embedder.clone();
-                    let idx      = indexer.clone();
-                    let cfg2     = cfg.clone();
+                    let permit = sem.clone().acquire_owned().await?;
+                    let db2 = db.clone();
+                    let emb = embedder.clone();
+                    let idx = indexer.clone();
+                    let cfg2 = cfg.clone();
 
                     let handle = tokio::spawn(async move {
                         let _permit = permit;
@@ -177,42 +179,45 @@ async fn run_pipeline(
     indexer: &Indexer,
     cfg: &Config,
 ) -> Result<usize> {
-    let full_path = format!("{}/{}", cfg.storage_path, doc.storage_path
-        .split(['/', '\\']).last().unwrap_or(&doc.original_filename));
+    let full_path = format!(
+        "{}/{}",
+        cfg.storage_path,
+        doc.storage_path
+            .split(['/', '\\'])
+            .last()
+            .unwrap_or(&doc.original_filename)
+    );
     let text = extract_text(&full_path, &doc.mime_type).await?;
 
     if text.trim().is_empty() {
-        return Err(anyhow::anyhow!("Documento sem texto extraível"));
+        return Err(anyhow::anyhow!("Documento sem texto extra\u{ed}vel"));
     }
 
     let strategy = detect_strategy(&text, &doc.original_filename, None);
-    info!(doc_id = %doc.id, ?strategy, "Estratégia de chunking selecionada");
+    info!(doc_id = %doc.id, ?strategy, "Estrat\u{e9}gia de chunking selecionada");
 
     let chunks = chunk_text(&text, &strategy);
-    let total  = chunks.len();
+    let total = chunks.len();
     info!(doc_id = %doc.id, chunks = total, "Chunks gerados");
 
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
     let embeddings = embedder.embed_batch(&texts).await?;
 
-    indexer.index_document(
-        doc.id,
-        doc.workspace_id,
-        &doc.original_filename,
-        chunks,
-        embeddings,
-        db,
-    ).await?;
+    indexer
+        .index_document(
+            doc.id,
+            doc.workspace_id,
+            &doc.original_filename,
+            chunks,
+            embeddings,
+            db,
+        )
+        .await?;
 
     Ok(total)
 }
 
-async fn set_status(
-    db: &sqlx::PgPool,
-    id: Uuid,
-    status: &str,
-    error: Option<&str>,
-) -> Result<()> {
+async fn set_status(db: &sqlx::PgPool, id: Uuid, status: &str, error: Option<&str>) -> Result<()> {
     sqlx::query(
         "UPDATE documents SET processing_status=$1, error_message=$2, updated_at=NOW() WHERE id=$3",
     )

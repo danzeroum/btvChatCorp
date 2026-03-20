@@ -10,18 +10,17 @@ pub enum ChunkingStrategy {
     Table,
 }
 
-/// Detecta a melhor estratégia de chunking para um documento.
+/// Detecta a melhor estrat\u{e9}gia de chunking para um documento.
 ///
-/// Prioridade: setor explícito > heurísticas de conteúdo > heurísticas de nome > fallback
+/// Prioridade: setor expl\u{ed}cito > heur\u{ed}sticas de conte\u{fa}do > heur\u{ed}sticas de nome > fallback
 ///
-/// * `text`     — texto extraído do documento
-/// * `filename` — nome original do arquivo
-/// * `sector`   — setor do workspace (ex: `Some("juridico")`)
+/// * `text`     \u{2014} texto extra\u{ed}do do documento
+/// * `filename` \u{2014} nome original do arquivo
+/// * `sector`   \u{2014} setor do workspace (ex: `Some("juridico")`)
 pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> ChunkingStrategy {
     let lower = text.to_lowercase();
     let filename = filename.to_lowercase();
 
-    // Setor explícito tem prioridade
     if let Some(s) = sector {
         match s {
             "juridico" | "legal" => return ChunkingStrategy::Legal,
@@ -30,7 +29,6 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
         }
     }
 
-    // Detecção por palavras-chave no conteúdo
     let legal_keywords = [
         "cl\u{e1}usula",
         "contrato",
@@ -68,7 +66,6 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
         .filter(|&&ind| text.contains(ind))
         .count();
 
-    // Heurísticas de nome de arquivo
     let legal_names = ["contrato", "acordo", "lei", "decreto", "portaria", "inpi"];
     let legal_name_hit = legal_names.iter().any(|&n| filename.contains(n));
 
@@ -82,12 +79,8 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
         return ChunkingStrategy::Table;
     }
 
-    // Heurísticas baseadas na estrutura do texto
     let line_count = text.lines().count();
-    let header_count = text
-        .lines()
-        .filter(|l| l.trim().starts_with('#'))
-        .count();
+    let header_count = text.lines().filter(|l| l.trim().starts_with('#')).count();
     let avg_line_len = if line_count > 0 {
         text.len() / line_count
     } else {

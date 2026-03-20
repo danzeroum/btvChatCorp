@@ -63,8 +63,7 @@ mod strategy_tests {
 
     #[test]
     fn sector_override_medical() {
-        let text =
-            "Cl\u{e1}usula 1\u{aa} contrato artigo lei decreto portaria resolucao inciso.";
+        let text = "Cl\u{e1}usula 1\u{aa} contrato artigo lei decreto portaria resolucao inciso.";
         let strategy = detect_strategy(text, "doc.pdf", Some("saude"));
         assert!(matches!(strategy, ChunkingStrategy::Medical));
     }
@@ -92,8 +91,7 @@ mod chunker_tests {
 
     #[test]
     fn semantic_preserves_section_titles() {
-        let text =
-            "# Resultados\nDados do experimento.\n\n## An\u{e1}lise\nConclu\u{f5}es finais.";
+        let text = "# Resultados\nDados do experimento.\n\n## An\u{e1}lise\nConclu\u{f5}es finais.";
         let chunks = chunk_text(text, &ChunkingStrategy::Semantic);
         let sections: Vec<&str> = chunks.iter().map(|c| c.section.as_str()).collect();
         assert!(
@@ -108,9 +106,18 @@ mod chunker_tests {
     #[test]
     fn fixed_size_respects_overlap() {
         let text = "abcdefghij".repeat(100);
-        let chunks =
-            chunk_text(&text, &ChunkingStrategy::FixedSize { size: 50, overlap: 10 });
-        assert!(chunks.len() > 1, "Esperado m\u{fa}ltiplos chunks, got {}", chunks.len());
+        let chunks = chunk_text(
+            &text,
+            &ChunkingStrategy::FixedSize {
+                size: 50,
+                overlap: 10,
+            },
+        );
+        assert!(
+            chunks.len() > 1,
+            "Esperado m\u{fa}ltiplos chunks, got {}",
+            chunks.len()
+        );
         for (i, chunk) in chunks.iter().enumerate() {
             assert_eq!(chunk.index, i);
         }
@@ -157,8 +164,13 @@ mod chunker_tests {
     #[test]
     fn tokens_estimation_is_reasonable() {
         let content = "a".repeat(400);
-        let chunks =
-            chunk_text(&content, &ChunkingStrategy::FixedSize { size: 200, overlap: 0 });
+        let chunks = chunk_text(
+            &content,
+            &ChunkingStrategy::FixedSize {
+                size: 200,
+                overlap: 0,
+            },
+        );
         for chunk in &chunks {
             let expected = chunk.content.len() / 4;
             assert!(
@@ -217,7 +229,11 @@ mod extractor_tests {
         let text = crate::extractor::extract_text(f.path().to_str().unwrap(), "text/html")
             .await
             .unwrap();
-        assert!(!text.contains('<'), "Tags HTML n\u{e3}o removidas: {}", text);
+        assert!(
+            !text.contains('<'),
+            "Tags HTML n\u{e3}o removidas: {}",
+            text
+        );
         assert!(text.contains("T\u{ed}tulo"));
         assert!(
             text.contains('&'),
@@ -229,8 +245,7 @@ mod extractor_tests {
     #[tokio::test]
     async fn empty_file_returns_error() {
         let f = NamedTempFile::new().unwrap();
-        let result =
-            crate::extractor::extract_text(f.path().to_str().unwrap(), "text/plain").await;
+        let result = crate::extractor::extract_text(f.path().to_str().unwrap(), "text/plain").await;
         assert!(result.is_err(), "Esperado erro para arquivo vazio");
     }
 

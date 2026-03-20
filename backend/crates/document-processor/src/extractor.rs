@@ -12,23 +12,24 @@ pub async fn extract_text(path: &str, mime_type: &str) -> Result<String> {
         _ => tokio::fs::read_to_string(path).await?,
     };
     if text.trim().is_empty() {
-        anyhow::bail!("Arquivo vazio ou sem texto extraível: {}", path);
+        anyhow::bail!("Arquivo vazio ou sem texto extra\u{ed}vel: {}", path);
     }
     Ok(text)
 }
 
 fn extract_pdf(path: &str) -> Result<String> {
-    use std::io::Read;
     let bytes = std::fs::read(path)?;
-    // Tenta extração nativa de PDF
     if let Ok(text) = pdf_extract::extract_text_from_mem(&bytes) {
         let trimmed = text.trim().to_string();
         if !trimmed.is_empty() {
             return Ok(trimmed);
         }
     }
-    // Fallback: varre bytes em busca de texto legível (strings ASCII longas)
-    warn!("PDF sem texto nativo em {}, usando fallback byte-scan", path);
+    // Fallback: varre bytes em busca de texto leg\u{ed}vel (strings ASCII longas)
+    warn!(
+        "PDF sem texto nativo em {}, usando fallback byte-scan",
+        path
+    );
     let mut result = String::new();
     let mut run = String::new();
     for &b in &bytes {
@@ -43,7 +44,7 @@ fn extract_pdf(path: &str) -> Result<String> {
         }
     }
     if result.trim().is_empty() {
-        anyhow::bail!("PDF sem texto extraível: {}", path);
+        anyhow::bail!("PDF sem texto extra\u{ed}vel: {}", path);
     }
     Ok(result.trim().to_string())
 }
