@@ -20,6 +20,14 @@ interface Message {
   feedback?: 1 | -1;
 }
 
+// Gera UUID sem depender de crypto.randomUUID (incompativel com HTTP)
+function genId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 @Component({
   selector: 'app-chat',
   standalone: true,
@@ -162,8 +170,6 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   @ViewChild('msgArea') private msgArea!: ElementRef<HTMLDivElement>;
 
   private http = inject(HttpClient);
-
-  // Timeout de 3 minutos para chamadas ao LLM
   private readonly LLM_TIMEOUT_MS = 180_000;
 
   messages     = signal<Message[]>([]);
@@ -178,10 +184,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   ngOnInit() { this.loadRecentChats(); }
 
   ngAfterViewChecked() {
-    if (this.scrollNeeded) {
-      this.scrollToBottom();
-      this.scrollNeeded = false;
-    }
+    if (this.scrollNeeded) { this.scrollToBottom(); this.scrollNeeded = false; }
   }
 
   loadRecentChats() {
@@ -218,9 +221,8 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.inputText = '';
     this.sending.set(true);
 
-    const tempUserId = crypto.randomUUID();
     this.messages.update((m: Message[]) => [...m, {
-      id: tempUserId, role: 'user' as const, content: text,
+      id: genId(), role: 'user' as const, content: text,
       created_at: new Date().toISOString(),
     }]);
     this.scrollNeeded = true;
@@ -238,7 +240,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
       } catch {
         this.sending.set(false);
         this.messages.update((m: Message[]) => [...m, {
-          id: crypto.randomUUID(), role: 'assistant' as const,
+          id: genId(), role: 'assistant' as const,
           content: 'Erro ao criar conversa. Tente novamente.',
           created_at: new Date().toISOString(),
         }]);
@@ -255,8 +257,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
           this.scrollNeeded = true;
           this.recentChats.update((list: ChatSummary[]) =>
             list.map((c: ChatSummary) => c.id === chatId
-              ? { ...c, updated_at: new Date().toISOString() }
-              : c
+              ? { ...c, updated_at: new Date().toISOString() } : c
             )
           );
         },
@@ -265,8 +266,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
             ? 'O modelo demorou muito para responder. Tente uma pergunta mais curta.'
             : 'Erro ao obter resposta. Tente novamente.';
           this.messages.update((m: Message[]) => [...m, {
-            id: crypto.randomUUID(), role: 'assistant' as const,
-            content: msg,
+            id: genId(), role: 'assistant' as const, content: msg,
             created_at: new Date().toISOString(),
           }]);
           this.sending.set(false);
