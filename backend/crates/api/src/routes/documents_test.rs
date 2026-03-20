@@ -8,7 +8,9 @@ mod documents_tests {
     use serde_json::Value;
     use tower::util::ServiceExt;
 
-    use crate::test_helpers::{make_app, make_auth_header, make_auth_header_for_workspace};
+    use crate::test_helpers::{
+        make_app, make_auth_header, make_auth_header_for_workspace_seeded,
+    };
 
     fn multipart_body(filename: &str, content: &[u8], mime: &str) -> (String, Vec<u8>) {
         let boundary = "----TestBoundary123";
@@ -78,6 +80,20 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_list_documents_scoped_to_workspace() {
+        let db_url = std::env::var("DATABASE_URL").unwrap();
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let auth_ws10 = make_auth_header_for_workspace_seeded(
+            &pool,
+            "00000000-0000-0000-0000-000000000010",
+        )
+        .await;
+        let auth_ws20 = make_auth_header_for_workspace_seeded(
+            &pool,
+            "00000000-0000-0000-0000-000000000020",
+        )
+        .await;
+
         let app: Router = make_app().await;
 
         let (ct, body) = multipart_body("doc-a.txt", b"workspace a content", "text/plain");
@@ -87,10 +103,7 @@ mod documents_tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/v1/documents")
-                    .header(
-                        "Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000010"),
-                    )
+                    .header("Authorization", auth_ws10)
                     .header("Content-Type", ct)
                     .body(Body::from(body))
                     .unwrap(),
@@ -103,10 +116,7 @@ mod documents_tests {
                 Request::builder()
                     .method("GET")
                     .uri("/api/v1/documents")
-                    .header(
-                        "Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000020"),
-                    )
+                    .header("Authorization", auth_ws20)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -166,6 +176,20 @@ mod documents_tests {
 
     #[tokio::test]
     async fn test_delete_cross_workspace_returns_404() {
+        let db_url = std::env::var("DATABASE_URL").unwrap();
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+        let auth_ws30 = make_auth_header_for_workspace_seeded(
+            &pool,
+            "00000000-0000-0000-0000-000000000030",
+        )
+        .await;
+        let auth_ws40 = make_auth_header_for_workspace_seeded(
+            &pool,
+            "00000000-0000-0000-0000-000000000040",
+        )
+        .await;
+
         let app: Router = make_app().await;
 
         let (ct, body) = multipart_body("privado.txt", b"secreto", "text/plain");
@@ -175,10 +199,7 @@ mod documents_tests {
                 Request::builder()
                     .method("POST")
                     .uri("/api/v1/documents")
-                    .header(
-                        "Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000030"),
-                    )
+                    .header("Authorization", auth_ws30)
                     .header("Content-Type", ct)
                     .body(Body::from(body))
                     .unwrap(),
@@ -197,10 +218,7 @@ mod documents_tests {
                 Request::builder()
                     .method("DELETE")
                     .uri(format!("/api/v1/documents/{}", doc_id))
-                    .header(
-                        "Authorization",
-                        make_auth_header_for_workspace("00000000-0000-0000-0000-000000000040"),
-                    )
+                    .header("Authorization", auth_ws40)
                     .body(Body::empty())
                     .unwrap(),
             )
