@@ -5,9 +5,11 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use axum_extra::TypedHeader;
+use headers::Host;
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{FromRow, PgPool};
 
 use crate::{css_generator::BrandTheme, generate_theme_css, resolve_workspace_from_domain};
 
@@ -43,9 +45,30 @@ pub struct BrandingPublicConfig {
     pub feature_flags: Value,
 }
 
+#[derive(FromRow)]
+struct BrandingRow {
+    company_name: String,
+    platform_name: String,
+    tagline: Option<String>,
+    logo_url: Option<String>,
+    logomark_url: Option<String>,
+    favicon_url: Option<String>,
+    chat_welcome_message: String,
+    chat_placeholder: String,
+    chat_bot_name: String,
+    chat_bot_avatar: Option<String>,
+    login_page_title: Option<String>,
+    login_page_subtitle: Option<String>,
+    login_background_url: Option<String>,
+    terms_url: Option<String>,
+    privacy_url: Option<String>,
+    support_email: Option<String>,
+    feature_flags: Value,
+}
+
 async fn serve_theme_css(
     State(state): State<BrandingState>,
-    axum::TypedHeader(host): axum::TypedHeader<axum::headers::Host>,
+    TypedHeader(host): TypedHeader<Host>,
 ) -> Result<Response, StatusCode> {
     let host_str = host.hostname();
     let workspace_id = resolve_workspace_from_domain(host_str, &state.db)
@@ -80,35 +103,14 @@ async fn serve_theme_css(
 
 async fn serve_branding_config(
     State(state): State<BrandingState>,
-    axum::TypedHeader(host): axum::TypedHeader<axum::headers::Host>,
+    TypedHeader(host): TypedHeader<Host>,
 ) -> Result<Json<BrandingPublicConfig>, StatusCode> {
     let host_str = host.hostname();
     let workspace_id = resolve_workspace_from_domain(host_str, &state.db)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let row = sqlx::query_as::<
-        _,
-        (
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            String,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Value,
-        ),
-    >(
+    let row: BrandingRow = sqlx::query_as(
         r#"SELECT company_name, platform_name, tagline, logo_url, logomark_url, favicon_url,
                   chat_welcome_message, chat_placeholder, chat_bot_name, chat_bot_avatar,
                   login_page_title, login_page_subtitle, login_background_url,
@@ -126,22 +128,22 @@ async fn serve_branding_config(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(BrandingPublicConfig {
-        company_name: row.0,
-        platform_name: row.1,
-        tagline: row.2,
-        logo_url: row.3,
-        logomark_url: row.4,
-        favicon_url: row.5,
-        chat_welcome_message: row.6,
-        chat_placeholder: row.7,
-        chat_bot_name: row.8,
-        chat_bot_avatar: row.9,
-        login_page_title: row.10,
-        login_page_subtitle: row.11,
-        login_background_url: row.12,
-        terms_url: row.13,
-        privacy_url: row.14,
-        support_email: row.15,
-        feature_flags: row.16,
+        company_name: row.company_name,
+        platform_name: row.platform_name,
+        tagline: row.tagline,
+        logo_url: row.logo_url,
+        logomark_url: row.logomark_url,
+        favicon_url: row.favicon_url,
+        chat_welcome_message: row.chat_welcome_message,
+        chat_placeholder: row.chat_placeholder,
+        chat_bot_name: row.chat_bot_name,
+        chat_bot_avatar: row.chat_bot_avatar,
+        login_page_title: row.login_page_title,
+        login_page_subtitle: row.login_page_subtitle,
+        login_background_url: row.login_background_url,
+        terms_url: row.terms_url,
+        privacy_url: row.privacy_url,
+        support_email: row.support_email,
+        feature_flags: row.feature_flags,
     }))
 }
