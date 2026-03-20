@@ -11,8 +11,9 @@ pub struct ChecklistStatus {
     pub chat_tested: bool,
     pub team_invited: bool,
     pub dismissed: bool,
-    pub completed_count: u8,
-    pub total: u8,
+    pub completed_count: i32,
+    pub total: i32,
+    pub items: serde_json::Value,
 }
 
 /// Calcula o status do checklist de onboarding para um workspace.
@@ -27,31 +28,28 @@ pub async fn get_checklist_status(pool: &PgPool, workspace_id: Uuid) -> Result<C
     .unwrap_or(false);
 
     // Primeiro projeto
-    let first_project_done: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM projects WHERE workspace_id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_one(pool)
-    .await?;
+    let first_project_done: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM projects WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .fetch_one(pool)
+            .await?;
 
     // 5+ documentos
-    let docs_uploaded: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) >= 5 FROM documents WHERE workspace_id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_one(pool)
-    .await?;
+    let docs_uploaded: bool =
+        sqlx::query_scalar("SELECT COUNT(*) >= 5 FROM documents WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .fetch_one(pool)
+            .await?;
 
     // Chat testado (pelo menos 1 mensagem)
-    let chat_tested: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM messages WHERE workspace_id = $1",
-    )
-    .bind(workspace_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or(false);
+    let chat_tested: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM messages WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false);
 
-    // Equipe convidada (>= 1 convite aceito ou >= 2 usuários)
+    // Equipe convidada (>= 2 usuarios ativos)
     let team_invited: bool = sqlx::query_scalar(
         "SELECT COUNT(*) >= 2 FROM users WHERE workspace_id = $1 AND is_active = true",
     )
@@ -68,14 +66,23 @@ pub async fn get_checklist_status(pool: &PgPool, workspace_id: Uuid) -> Result<C
     .await?
     .unwrap_or(false);
 
-    let items = [
+    let flags = [
         branding_done,
         first_project_done,
         docs_uploaded,
         chat_tested,
         team_invited,
     ];
-    let completed_count = items.iter().filter(|&&v| v).count() as u8;
+    let completed_count = flags.iter().filter(|&&v| v).count() as i32;
+    let total = flags.len() as i32;
+
+    let items = serde_json::json!([
+        { "id": "branding",       "completed": branding_done },
+        { "id": "first_project",  "completed": first_project_done },
+        { "id": "docs_uploaded",  "completed": docs_uploaded },
+        { "id": "chat_tested",    "completed": chat_tested },
+        { "id": "team_invited",   "completed": team_invited },
+    ]);
 
     Ok(ChecklistStatus {
         branding_done,
@@ -85,7 +92,8 @@ pub async fn get_checklist_status(pool: &PgPool, workspace_id: Uuid) -> Result<C
         team_invited,
         dismissed,
         completed_count,
-        total: items.len() as u8,
+        total,
+        items,
     })
 }
 
