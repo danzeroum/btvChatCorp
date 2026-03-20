@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { DataFilterService } from '../../core/services/data-filter.service';
+import { genId } from '../../core/utils/uuid';
 
 interface ProcessingFile {
   id: string;
@@ -87,7 +88,7 @@ export class UploadPipelineComponent {
       const classification = piiCount > 0 ? 'CONFIDENTIAL' : 'INTERNAL';
 
       this.fileQueue.push({
-        id: crypto.randomUUID(),
+        id: genId(),
         name: file.name,
         rawFile: file,
         extractedText: text,
@@ -120,7 +121,6 @@ export class UploadPipelineComponent {
     if (file.type === 'text/plain') {
       return file.text();
     }
-    // PDFs e outros formatos são processados pelo backend
     return `[Conteúdo de ${file.name} - processado no servidor]`;
   }
 }
