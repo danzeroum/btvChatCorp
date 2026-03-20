@@ -45,4 +45,10 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () =>
       import('./ai-config/model-manager.component').then(m => m.ModelManagerComponent),
   },
+  {
+    path: 'branding',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./white-label/branding-admin-page.component').then(m => m.BrandingAdminPageComponent),
+  },
 ];
