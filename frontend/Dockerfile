@@ -22,6 +22,12 @@ RUN echo 'server { \
     root /usr/share/nginx/html; \
     index index.html; \
     location / { try_files $uri $uri/ /index.html; } \
+    location /api/ { \
+        proxy_pass http://api:3000/api/; \
+        proxy_read_timeout 180s; \
+        proxy_send_timeout 180s; \
+        proxy_connect_timeout 10s; \
+    } \
     gzip on; gzip_types text/plain application/json application/javascript text/css; \
 }' > /etc/nginx/conf.d/default.conf
 
