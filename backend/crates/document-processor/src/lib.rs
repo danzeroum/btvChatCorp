@@ -6,3 +6,6 @@ pub mod models;
 pub mod strategy;
 
 pub use models::*;
+
+#[cfg(test)]
+mod tests;
