@@ -1,2 +1,0 @@
--- REMOVIDO — depende de tabelas base que ainda não existiam.
--- Será recriado após migration 001 e 002 estarem estáveis.

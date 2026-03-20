@@ -1,157 +1,141 @@
-use qdrant_client::{
-    Qdrant,
-    qdrant::{
-        CreateCollectionBuilder, Distance, FieldType, PointStruct,
-        UpsertPointsBuilder, VectorParamsBuilder,
-    },
-};
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
+use serde_json::json;
+use tracing::info;
 use uuid::Uuid;
 
-use crate::{errors::IndexError, Chunk};
+use crate::chunker::Chunk;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IndexResult {
-    pub chunks_indexed: usize,
-    pub collection: String,
-    pub workspace_id: String,
+/// Respons\u{e1}vel por persistir chunks no PostgreSQL e vetores no Qdrant.
+pub struct Indexer {
+    qdrant_url: String,
+    client: reqwest::Client,
 }
 
-pub struct DocumentIndexer {
-    pub qdrant: Qdrant,
-}
-
-impl DocumentIndexer {
-    pub fn new(qdrant_url: &str) -> Result<Self, IndexError> {
-        let qdrant = Qdrant::from_url(qdrant_url)
-            .build()
-            .map_err(|e| IndexError::Qdrant(e.to_string()))?;
-        Ok(Self { qdrant })
+impl Indexer {
+    pub fn new(qdrant_url: &str) -> Self {
+        Self {
+            qdrant_url: qdrant_url.to_string(),
+            client: reqwest::Client::new(),
+        }
     }
 
-    /// Indexa todos os chunks de um documento no Qdrant
+    /// Pipeline de index\u{e3}o:
+    /// 1. Persiste chunks no PostgreSQL
+    /// 2. Garante que a collection Qdrant existe
+    /// 3. Faz upsert dos vetores no Qdrant
     pub async fn index_document(
         &self,
-        chunks: &[Chunk],
+        doc_id: Uuid,
         workspace_id: Uuid,
-    ) -> Result<IndexResult, IndexError> {
-        let collection = format!("workspace_{}", workspace_id);
+        filename: &str,
+        chunks: Vec<Chunk>,
+        embeddings: Vec<Vec<f32>>,
+        db: &sqlx::PgPool,
+    ) -> Result<()> {
+        let collection = format!("workspace_{}", workspace_id.simple());
 
-        // 1. Garante que a collection existe com as configurações corretas
+        // 1. Persiste no PostgreSQL
+        for (chunk, _embedding) in chunks.iter().zip(embeddings.iter()) {
+            let point_id = Uuid::new_v4().to_string();
+            sqlx::query(
+                r#"
+                INSERT INTO document_chunks
+                    (document_id, workspace_id, chunk_index, section_title,
+                     content, token_count, embedding_status, qdrant_point_id, indexed_at)
+                VALUES ($1, $2, $3, $4, $5, $6, 'indexed', $7, NOW())
+                ON CONFLICT (document_id, chunk_index)
+                DO UPDATE SET
+                    content          = EXCLUDED.content,
+                    token_count      = EXCLUDED.token_count,
+                    embedding_status = 'indexed',
+                    qdrant_point_id  = EXCLUDED.qdrant_point_id,
+                    indexed_at       = NOW()
+                "#,
+            )
+            .bind(doc_id)
+            .bind(workspace_id)
+            .bind(chunk.index as i32)
+            .bind(&chunk.section)
+            .bind(&chunk.content)
+            .bind(chunk.tokens as i32)
+            .bind(&point_id)
+            .execute(db)
+            .await?;
+        }
+
+        // 2. Garante collection no Qdrant
         self.ensure_collection(&collection).await?;
 
-        // 2. Monta PointStructs para o Qdrant
-        let points: Vec<PointStruct> = chunks
+        // 3. Upsert vetores
+        let points: Vec<serde_json::Value> = chunks
             .iter()
-            .filter_map(|chunk| {
-                let embedding = chunk.embedding.clone()?;
-
-                // Payload com todos os metadados necessários para filtragem e recuperação
-                let payload = serde_json::json!({
-                    "document_id": chunk.document_id.to_string(),
-                    "workspace_id": chunk.workspace_id.to_string(),
-                    "content": chunk.content,
-                    "chunk_index": chunk.chunk_index,
-                    "total_chunks": chunk.total_chunks,
-                    "section_title": chunk.section_title,
-                    "chunk_type": format!("{:?}", chunk.chunk_type),
-                    "token_count": chunk.token_count,
-                    "previous_chunk_id": chunk.previous_chunk_id.map(|id| id.to_string()),
-                    "next_chunk_id": chunk.next_chunk_id.map(|id| id.to_string()),
-                });
-
-                Some(PointStruct::new(
-                    chunk.id.to_string(),
-                    embedding,
-                    payload
-                        .as_object()
-                        .cloned()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|(k, v)| (k, qdrant_client::qdrant::Value::from(v.to_string())))
-                        .collect::<std::collections::HashMap<_, _>>(),
-                ))
+            .zip(embeddings.iter())
+            .map(|(chunk, emb)| {
+                json!({
+                    "id":      Uuid::new_v4().to_string(),
+                    "vector":  emb,
+                    "payload": {
+                        "doc_id":       doc_id.to_string(),
+                        "workspace_id": workspace_id.to_string(),
+                        "filename":     filename,
+                        "section":      &chunk.section,
+                        "chunk_index":  chunk.index,
+                        "content":      &chunk.content,
+                    }
+                })
             })
             .collect();
 
-        // 3. Upsert em batches de 100
-        for batch in points.chunks(100) {
-            self.qdrant
-                .upsert_points(
-                    UpsertPointsBuilder::new(&collection, batch.to_vec()).wait(true),
-                )
-                .await
-                .map_err(|e| IndexError::Qdrant(e.to_string()))?;
-        }
-
-        Ok(IndexResult {
-            chunks_indexed: chunks.len(),
-            collection,
-            workspace_id: workspace_id.to_string(),
-        })
-    }
-
-    /// Garante que a collection existe com config correta (768 dim, Cosine)
-    async fn ensure_collection(&self, name: &str) -> Result<(), IndexError> {
-        let exists = self
-            .qdrant
-            .collection_exists(name)
-            .await
-            .map_err(|e| IndexError::Qdrant(e.to_string()))?;
-
-        if !exists {
-            self.qdrant
-                .create_collection(
-                    CreateCollectionBuilder::new(name)
-                        .vectors_config(
-                            VectorParamsBuilder::new(
-                                768,        // Nomic Embed V2: 768 dimensões
-                                Distance::Cosine,
-                            )
-                        )
-                )
-                .await
-                .map_err(|e| IndexError::Qdrant(e.to_string()))?;
-
-            // Índices para filtros frequentes
-            for field in ["document_id", "chunk_type", "workspace_id"] {
-                self.qdrant
-                    .create_field_index(
-                        name, field, FieldType::Keyword, None, None,
-                    )
-                    .await
-                    .map_err(|e| IndexError::Qdrant(e.to_string()))?;
-            }
-
-            tracing::info!(collection = name, "Qdrant collection created");
-        }
-
+        self.upsert_points(&collection, points).await?;
+        info!(
+            "Indexados {} chunks do documento {} na collection {}",
+            chunks.len(),
+            doc_id,
+            collection
+        );
         Ok(())
     }
 
-    /// Remove todos os chunks de um documento da collection
-    pub async fn delete_document_chunks(
-        &self,
-        workspace_id: Uuid,
-        document_id: Uuid,
-    ) -> Result<(), IndexError> {
-        let collection = format!("workspace_{}", workspace_id);
+    async fn ensure_collection(&self, collection: &str) -> Result<()> {
+        let check_url = format!("{}/collections/{}", self.qdrant_url, collection);
+        let resp = self.client.get(&check_url).send().await?;
+        if resp.status().is_success() {
+            return Ok(());
+        }
+        let create_url = format!("{}/collections/{}", self.qdrant_url, collection);
+        self.client
+            .put(&create_url)
+            .json(&json!({
+                "vectors": {
+                    "size":     768,
+                    "distance": "Cosine"
+                }
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
 
-        self.qdrant
-            .delete_points(
-                &collection,
-                None,
-                &qdrant_client::qdrant::Filter::must(vec![
-                    qdrant_client::qdrant::Condition::matches(
-                        "document_id",
-                        document_id.to_string(),
-                    ),
-                ]),
-                None,
-            )
-            .await
-            .map_err(|e| IndexError::Qdrant(e.to_string()))?;
+        info!(
+            "Collection '{}' criada no Qdrant (dim=768, Cosine)",
+            collection
+        );
+        Ok(())
+    }
 
+    async fn upsert_points(&self, collection: &str, points: Vec<serde_json::Value>) -> Result<()> {
+        if points.is_empty() {
+            return Ok(());
+        }
+
+        let url = format!("{}/collections/{}/points", self.qdrant_url, collection);
+        let body = json!({ "points": points });
+
+        self.client
+            .put(&url)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 }

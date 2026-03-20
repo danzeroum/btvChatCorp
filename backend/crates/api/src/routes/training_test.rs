@@ -1,20 +1,16 @@
 #[cfg(test)]
 mod training_tests {
     use axum::{
-        body::{Body, to_bytes},
+        body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
     use serde_json::Value;
     use tower::ServiceExt;
 
-    use crate::test_helpers::helpers::{
-        make_app, make_auth_header,
-        DEFAULT_WORKSPACE_ID,
-    };
+    use crate::test_helpers::helpers::{make_app, make_auth_header, DEFAULT_WORKSPACE_ID};
 
-    // ── helpers internos ──────────────────────────────────────────────────────
+    // -- helpers internos
 
-    /// Insere uma training_interaction aprovada para usar nos testes
     async fn seed_interaction(pool: &sqlx::PgPool, workspace_id: &str) -> String {
         let row: (uuid::Uuid,) = sqlx::query_as(
             r#"
@@ -33,7 +29,6 @@ mod training_tests {
         row.0.to_string()
     }
 
-    /// Insere uma interaction com status 'pending' para testes de curadoria
     async fn seed_pending_interaction(pool: &sqlx::PgPool, workspace_id: &str) -> String {
         let row: (uuid::Uuid,) = sqlx::query_as(
             r#"
@@ -52,11 +47,11 @@ mod training_tests {
         row.0.to_string()
     }
 
-    // ── testes ────────────────────────────────────────────────────────────────
+    // -- testes
 
     #[tokio::test]
     async fn test_list_queue_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
         let res = app
@@ -79,13 +74,12 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_approve_interaction_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
-        // Conecta direto ao banco para seed
         let db_url = std::env::var("DATABASE_URL").unwrap();
-        let pool   = sqlx::PgPool::connect(&db_url).await.unwrap();
-        let id     = seed_pending_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let id = seed_pending_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
 
         let res = app
             .oneshot(
@@ -104,12 +98,12 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_reject_interaction_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
         let db_url = std::env::var("DATABASE_URL").unwrap();
-        let pool   = sqlx::PgPool::connect(&db_url).await.unwrap();
-        let id     = seed_pending_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let id = seed_pending_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
 
         let res = app
             .oneshot(
@@ -128,7 +122,7 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_list_batches_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
         let res = app
@@ -151,12 +145,11 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_start_batch_returns_201() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
-        // Garante que existe pelo menos 1 exemplo aprovado
         let db_url = std::env::var("DATABASE_URL").unwrap();
-        let pool   = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         seed_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
 
         let res = app
@@ -179,13 +172,15 @@ mod training_tests {
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let batch: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(batch["status"], "running");
-        assert!(batch["external_job_id"].as_str().unwrap().starts_with("mock-job-"));
+        assert!(batch["external_job_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("mock-job-"));
     }
 
     #[tokio::test]
     async fn test_start_batch_no_examples_returns_400() {
-        let app  = make_app().await;
-        // Usa workspace diferente que nao tem exemplos aprovados
+        let app = make_app().await;
         let auth = crate::test_helpers::helpers::make_auth_header_for_workspace(
             "00000000-0000-0000-0000-000000000099",
         );
@@ -197,9 +192,7 @@ mod training_tests {
                     .uri("/api/v1/training/batches")
                     .header("Authorization", auth)
                     .header("Content-Type", "application/json")
-                    .body(Body::from(
-                        serde_json::json!({}).to_string(),
-                    ))
+                    .body(Body::from(serde_json::json!({}).to_string()))
                     .unwrap(),
             )
             .await
@@ -210,15 +203,13 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_poll_batch_status_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
-        // Garante batch existente
         let db_url = std::env::var("DATABASE_URL").unwrap();
-        let pool   = sqlx::PgPool::connect(&db_url).await.unwrap();
+        let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         seed_interaction(&pool, DEFAULT_WORKSPACE_ID).await;
 
-        // Cria batch via API para ter ID valido
         let app2 = make_app().await;
         let auth2 = make_auth_header("user");
         let create_res = app2
@@ -234,7 +225,7 @@ mod training_tests {
             .await
             .unwrap();
 
-        let bytes  = to_bytes(create_res.into_body(), usize::MAX).await.unwrap();
+        let bytes = to_bytes(create_res.into_body(), usize::MAX).await.unwrap();
         let batch: Value = serde_json::from_slice(&bytes).unwrap();
         let batch_id = batch["id"].as_str().unwrap();
 
@@ -259,7 +250,7 @@ mod training_tests {
 
     #[tokio::test]
     async fn test_list_documents_returns_200() {
-        let app  = make_app().await;
+        let app = make_app().await;
         let auth = make_auth_header("user");
 
         let res = app
