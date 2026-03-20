@@ -2,12 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BrandingConfigComponent } from '../../white-label/components/branding-config.component';
 import { BrandingService } from '../../white-label/services/branding.service';
-import { AuthService } from '../../auth/auth.service';
 
-/**
- * Página admin que hospeda o painel de branding.
- * Carrega a config completa antes de renderizar o form.
- */
 @Component({
   selector: 'app-branding-admin-page',
   standalone: true,
@@ -33,17 +28,12 @@ import { AuthService } from '../../auth/auth.service';
   styles: [`
     .admin-page { padding: 0; }
     .loading-state, .error-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      padding: 80px 24px;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 16px; padding: 80px 24px;
       color: var(--color-text-secondary, #64748b);
     }
     .spinner {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border: 3px solid var(--color-border, #e2e8f0);
       border-top-color: var(--color-primary, #2563eb);
       border-radius: 50%;
@@ -55,20 +45,16 @@ import { AuthService } from '../../auth/auth.service';
 })
 export class BrandingAdminPageComponent implements OnInit {
   private brandingService = inject(BrandingService);
-  private authService = inject(AuthService);
 
   loading = true;
   error: string | null = null;
 
-  ngOnInit(): void {
-    this.load();
-  }
+  ngOnInit(): void { this.load(); }
 
   load(): void {
     this.loading = true;
     this.error = null;
-    const workspaceId = this.authService.currentUser()?.workspaceId ?? '';
-    this.brandingService.loadAdminBranding(workspaceId).subscribe({
+    this.brandingService.loadAdminBranding().subscribe({
       next: () => { this.loading = false; },
       error: () => {
         this.loading = false;
