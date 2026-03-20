@@ -8,9 +8,7 @@ mod documents_tests {
     use serde_json::Value;
     use tower::util::ServiceExt;
 
-    use crate::test_helpers::{
-        make_app, make_auth_header, make_auth_header_for_workspace_seeded,
-    };
+    use crate::test_helpers::{make_app, make_auth_header, make_auth_header_for_workspace_seeded};
 
     fn multipart_body(filename: &str, content: &[u8], mime: &str) -> (String, Vec<u8>) {
         let boundary = "----TestBoundary123";
@@ -83,16 +81,12 @@ mod documents_tests {
         let db_url = std::env::var("DATABASE_URL").unwrap();
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
 
-        let auth_ws10 = make_auth_header_for_workspace_seeded(
-            &pool,
-            "00000000-0000-0000-0000-000000000010",
-        )
-        .await;
-        let auth_ws20 = make_auth_header_for_workspace_seeded(
-            &pool,
-            "00000000-0000-0000-0000-000000000020",
-        )
-        .await;
+        let auth_ws10 =
+            make_auth_header_for_workspace_seeded(&pool, "00000000-0000-0000-0000-000000000010")
+                .await;
+        let auth_ws20 =
+            make_auth_header_for_workspace_seeded(&pool, "00000000-0000-0000-0000-000000000020")
+                .await;
 
         let app: Router = make_app().await;
 
@@ -179,16 +173,12 @@ mod documents_tests {
         let db_url = std::env::var("DATABASE_URL").unwrap();
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
 
-        let auth_ws30 = make_auth_header_for_workspace_seeded(
-            &pool,
-            "00000000-0000-0000-0000-000000000030",
-        )
-        .await;
-        let auth_ws40 = make_auth_header_for_workspace_seeded(
-            &pool,
-            "00000000-0000-0000-0000-000000000040",
-        )
-        .await;
+        let auth_ws30 =
+            make_auth_header_for_workspace_seeded(&pool, "00000000-0000-0000-0000-000000000030")
+                .await;
+        let auth_ws40 =
+            make_auth_header_for_workspace_seeded(&pool, "00000000-0000-0000-0000-000000000040")
+                .await;
 
         let app: Router = make_app().await;
 
