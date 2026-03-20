@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "crates/api",
+    "crates/branding",
     "crates/document-processor",
+    "crates/onboarding",
 ]
 resolver = "2"
 
@@ -26,3 +28,4 @@ dotenvy            = "0.15"
 sha2               = "0.10"
 utoipa             = { version = "4",     features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui  = { version = "7",     features = ["axum"] }
+rand               = "0.8"
