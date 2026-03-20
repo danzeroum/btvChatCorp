@@ -27,11 +27,11 @@ pub mod helpers {
     }
 
     /// Garante que o workspace e o user padr\u{e3}o dos testes existem no banco.
-    /// Usa ON CONFLICT DO NOTHING para ser idempotente entre testes paralelos.
+    /// Idempotente: ON CONFLICT DO NOTHING.
     async fn seed_defaults(pool: &sqlx::PgPool) {
         sqlx::query(
-            "INSERT INTO workspaces (id, name, plan)
-             VALUES ($1, 'Test Workspace', 'free')
+            "INSERT INTO workspaces (id, name, slug)
+             VALUES ($1, 'Test Workspace', 'test-workspace-ci')
              ON CONFLICT (id) DO NOTHING",
         )
         .bind(DEFAULT_WORKSPACE_ID.parse::<Uuid>().unwrap())
