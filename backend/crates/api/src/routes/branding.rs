@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 use utoipa::ToSchema;
 
 use crate::{errors::AppError, state::AppState};
@@ -32,6 +33,18 @@ pub struct BrandingConfigResponse {
     pub chat_welcome_message: String,
     pub chat_placeholder: String,
     pub feature_flags: serde_json::Value,
+}
+
+#[derive(FromRow)]
+struct BrandingConfigRow {
+    platform_name: String,
+    company_name: String,
+    logo_url: Option<String>,
+    favicon_url: Option<String>,
+    chat_bot_name: String,
+    chat_welcome_message: String,
+    chat_placeholder: String,
+    feature_flags: serde_json::Value,
 }
 
 /// Retorna CSS com variaveis de tema para o workspace
@@ -104,16 +117,7 @@ pub async fn get_config(
 ) -> Result<Json<BrandingConfigResponse>, AppError> {
     let subdomain = q.subdomain.unwrap_or_else(|| "default".into());
 
-    let row: Option<(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        String,
-        String,
-        String,
-        serde_json::Value,
-    )> = sqlx::query_as(
+    let row: Option<BrandingConfigRow> = sqlx::query_as(
         "SELECT platform_name, company_name, logo_url, favicon_url,
                 chat_bot_name, chat_welcome_message, chat_placeholder, feature_flags
          FROM workspace_brandings WHERE subdomain = $1",
@@ -123,24 +127,15 @@ pub async fn get_config(
     .await?;
 
     let resp = match row {
-        Some((
-            platform_name,
-            company_name,
-            logo_url,
-            favicon_url,
-            chat_bot_name,
-            chat_welcome_message,
-            chat_placeholder,
-            feature_flags,
-        )) => BrandingConfigResponse {
-            platform_name,
-            company_name,
-            logo_url,
-            favicon_url,
-            chat_bot_name,
-            chat_welcome_message,
-            chat_placeholder,
-            feature_flags,
+        Some(r) => BrandingConfigResponse {
+            platform_name: r.platform_name,
+            company_name: r.company_name,
+            logo_url: r.logo_url,
+            favicon_url: r.favicon_url,
+            chat_bot_name: r.chat_bot_name,
+            chat_welcome_message: r.chat_welcome_message,
+            chat_placeholder: r.chat_placeholder,
+            feature_flags: r.feature_flags,
         },
         None => BrandingConfigResponse {
             platform_name: "AI Platform".into(),
