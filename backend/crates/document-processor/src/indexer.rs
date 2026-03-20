@@ -7,21 +7,22 @@ use crate::chunker::Chunk;
 
 /// Respons\u{e1}vel por persistir chunks no PostgreSQL e vetores no Qdrant.
 pub struct Indexer {
-    db: sqlx::PgPool,
     qdrant_url: String,
     client: reqwest::Client,
 }
 
 impl Indexer {
-    pub fn new(db: sqlx::PgPool, qdrant_url: &str) -> Self {
+    pub fn new(qdrant_url: &str) -> Self {
         Self {
-            db,
             qdrant_url: qdrant_url.to_string(),
             client: reqwest::Client::new(),
         }
     }
 
-    /// Pipeline de index:\u{e3}o:\n    /// 1. Persiste chunks no PostgreSQL\n    /// 2. Garante que a collection Qdrant existe\n    /// 3. Faz upsert dos vetores no Qdrant
+    /// Pipeline de index\u{e3}o:
+    /// 1. Persiste chunks no PostgreSQL
+    /// 2. Garante que a collection Qdrant existe
+    /// 3. Faz upsert dos vetores no Qdrant
     pub async fn index_document(
         &self,
         doc_id: Uuid,
@@ -77,9 +78,9 @@ impl Indexer {
                         "doc_id":       doc_id.to_string(),
                         "workspace_id": workspace_id.to_string(),
                         "filename":     filename,
-                        "section":      chunk.section,
+                        "section":      &chunk.section,
                         "chunk_index":  chunk.index,
-                        "content":      chunk.content,
+                        "content":      &chunk.content,
                     }
                 })
             })
