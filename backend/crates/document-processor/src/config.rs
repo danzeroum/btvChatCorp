@@ -15,12 +15,10 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
             database_url: env::var("DATABASE_URL")?,
-            qdrant_url: env::var("QDRANT_URL")
-                .unwrap_or_else(|_| "http://localhost:6333".into()),
+            qdrant_url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".into()),
             embedding_url: env::var("EMBEDDING_URL")
                 .unwrap_or_else(|_| "http://localhost:8001".into()),
-            storage_path: env::var("STORAGE_PATH")
-                .unwrap_or_else(|_| "./uploads".into()),
+            storage_path: env::var("STORAGE_PATH").unwrap_or_else(|_| "./uploads".into()),
             poll_interval_secs: env::var("POLL_INTERVAL_SECS")
                 .unwrap_or_else(|_| "10".into())
                 .parse()
