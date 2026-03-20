@@ -51,7 +51,8 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
         "laudo",
         "exame",
     ];
-    let table_indicators = ["\u{9}\u{9}", "| ---", "+-", "\t\t\t"];
+    // Indicadores de tabela: basta 1 match claro (ex: linha de separador markdown)
+    let table_indicators = ["| ---", "+-", "\t\t\t", "\t\t"];
 
     let legal_score: usize = legal_keywords
         .iter()
@@ -75,7 +76,8 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
     if medical_score >= 3 {
         return ChunkingStrategy::Medical;
     }
-    if table_score >= 2 {
+    // 1 indicador de tabela j\u{e1} \u{e9} suficiente para confirmar estrutura tabular
+    if table_score >= 1 {
         return ChunkingStrategy::Table;
     }
 
@@ -87,9 +89,25 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
         0
     };
 
-    if header_count >= 3 {
+    // 2 headers j\u{e1} indicam documento com se\u{e7}\u{f5}es estruturadas
+    if header_count >= 2 {
         return ChunkingStrategy::Semantic;
     }
+
+    // Detecta texto com muitas senten\u{e7}as curtas por densidade de pontos finais
+    // (funciona mesmo quando todo o texto est\u{e1} em uma \u{fa}nica linha)
+    let sentence_count = text.chars().filter(|&c| c == '.').count();
+    let char_count = text.chars().count();
+    let avg_sentence_len = if sentence_count > 0 {
+        char_count / sentence_count
+    } else {
+        usize::MAX
+    };
+
+    if sentence_count >= 10 && avg_sentence_len < 120 {
+        return ChunkingStrategy::Sentence;
+    }
+
     if avg_line_len < 80 && line_count > 20 {
         return ChunkingStrategy::Sentence;
     }
