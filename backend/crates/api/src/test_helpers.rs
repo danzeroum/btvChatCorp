@@ -36,7 +36,10 @@ pub mod helpers {
              ON CONFLICT (id) DO NOTHING",
         )
         .bind(id)
-        .bind(format!("Workspace {}", &workspace_id[workspace_id.len() - 4..]))
+        .bind(format!(
+            "Workspace {}",
+            &workspace_id[workspace_id.len() - 4..]
+        ))
         .bind(slug)
         .execute(pool)
         .await
@@ -135,7 +138,7 @@ pub mod helpers {
         jwt_for_ids(&user_id, workspace_id, "user")
     }
 
-    /// Versao sem seed — usa apenas para workspaces que ja existem (ex: DEFAULT_WORKSPACE_ID).
+    /// Versao sem seed - usa apenas para workspaces que ja existem (ex: DEFAULT_WORKSPACE_ID).
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
         let user_suffix = workspace_id
             .chars()
