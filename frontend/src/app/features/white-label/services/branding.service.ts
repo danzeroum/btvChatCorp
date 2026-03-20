@@ -27,7 +27,7 @@ export interface BrandingPublicConfig {
 export class BrandingService {
   private readonly http = inject(HttpClient);
 
-  // Config publica (usada no APP_INITIALIZER)
+  // Config publica (APP_INITIALIZER)
   private readonly _publicConfig = signal<BrandingPublicConfig | null>(null);
   readonly currentBranding = this._publicConfig.asReadonly();
   readonly companyName  = computed(() => this._publicConfig()?.companyName  ?? 'AI Platform');
@@ -36,7 +36,7 @@ export class BrandingService {
   readonly chatBotName  = computed(() => this._publicConfig()?.chatBotName  ?? 'Assistente');
   readonly chatWelcome  = computed(() => this._publicConfig()?.chatWelcomeMessage ?? 'Olá! Como posso ajudar?');
 
-  // Config admin completa (usada no painel)
+  // Config admin completa (painel)
   private readonly _adminBranding = signal<WorkspaceBranding | null>(null);
   readonly branding = this._adminBranding.asReadonly();
 
@@ -57,20 +57,19 @@ export class BrandingService {
   }
 
   // --- Admin API ---
+  // Endpoints: GET /api/v1/admin/branding  |  PUT /api/v1/admin/branding
 
-  /** Carrega config completa de branding para o painel admin. */
-  loadAdminBranding(workspaceId: string): Observable<WorkspaceBranding> {
-    return this.http.get<WorkspaceBranding>(`/api/v1/admin/branding/${workspaceId}`).pipe(
+  loadAdminBranding(): Observable<WorkspaceBranding> {
+    return this.http.get<WorkspaceBranding>('/api/v1/admin/branding').pipe(
       tap(b => this._adminBranding.set(b))
     );
   }
 
-  /** Salva alterações de branding. */
-  save(workspaceId: string, data: WorkspaceBranding): Observable<WorkspaceBranding> {
-    return this.http.put<WorkspaceBranding>(`/api/v1/admin/branding/${workspaceId}`, data).pipe(
+  save(_workspaceId: string, data: WorkspaceBranding): Observable<WorkspaceBranding> {
+    return this.http.put<WorkspaceBranding>('/api/v1/admin/branding', data).pipe(
       tap(b => {
         this._adminBranding.set(b);
-        this.loadThemeCss(); // recarrega CSS apos salvar
+        this.loadThemeCss();
       })
     );
   }
@@ -94,12 +93,11 @@ export class BrandingService {
     if (theme.customCss)    this.injectCustomCss(theme.customCss);
   }
 
-  /** Alias mantido para compatibilidade com código existente. */
+  /** Alias para compatibilidade. */
   applyPreviewTheme(theme: Partial<BrandTheme>): void {
     this.previewTheme(theme);
   }
 
-  /** Remove estilos inline e recarrega o CSS salvo. */
   resetPreview(): void {
     document.documentElement.removeAttribute('style');
     const custom = document.getElementById('custom-css-preview');
@@ -143,7 +141,6 @@ export class BrandingService {
   }
 }
 
-// ---- helpers de cor ----
 function darkenColor(hex: string, pct: number): string {
   hex = hex.replace('#', '');
   if (hex.length !== 6) return '000000';
