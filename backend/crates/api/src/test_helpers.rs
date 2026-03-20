@@ -26,6 +26,31 @@ pub mod helpers {
         pub exp: usize,
     }
 
+    /// Garante que o workspace e o user padr\u{e3}o dos testes existem no banco.
+    /// Usa ON CONFLICT DO NOTHING para ser idempotente entre testes paralelos.
+    async fn seed_defaults(pool: &sqlx::PgPool) {
+        sqlx::query(
+            "INSERT INTO workspaces (id, name, plan)
+             VALUES ($1, 'Test Workspace', 'free')
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(DEFAULT_WORKSPACE_ID.parse::<Uuid>().unwrap())
+        .execute(pool)
+        .await
+        .expect("Falha ao seed workspace de teste");
+
+        sqlx::query(
+            "INSERT INTO users (id, workspace_id, name, email, password_hash, role)
+             VALUES ($1, $2, 'Test User', 'test@ci.local', 'x', 'admin')
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(DEFAULT_USER_ID.parse::<Uuid>().unwrap())
+        .bind(DEFAULT_WORKSPACE_ID.parse::<Uuid>().unwrap())
+        .execute(pool)
+        .await
+        .expect("Falha ao seed user de teste");
+    }
+
     pub async fn make_app() -> Router {
         let db_url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL deve estar definida para os testes de integracao");
@@ -33,6 +58,8 @@ pub mod helpers {
         let pool = sqlx::PgPool::connect(&db_url)
             .await
             .expect("Falha ao conectar ao banco de teste");
+
+        seed_defaults(&pool).await;
 
         let state = AppState {
             db: pool,
