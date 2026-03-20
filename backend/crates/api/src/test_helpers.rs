@@ -26,18 +26,52 @@ pub mod helpers {
         pub exp: usize,
     }
 
-    /// Garante que o workspace e o user padr\u{e3}o dos testes existem no banco.
-    /// Idempotente: ON CONFLICT DO NOTHING.
-    async fn seed_defaults(pool: &sqlx::PgPool) {
+    /// Insere um workspace com o id fornecido, idempotente.
+    pub async fn seed_workspace(pool: &sqlx::PgPool, workspace_id: &str) {
+        let id = workspace_id.parse::<Uuid>().unwrap();
+        let slug = format!("ws-{}", &workspace_id[workspace_id.len() - 12..]);
         sqlx::query(
             "INSERT INTO workspaces (id, name, slug)
-             VALUES ($1, 'Test Workspace', 'test-workspace-ci')
+             VALUES ($1, $2, $3)
              ON CONFLICT (id) DO NOTHING",
         )
-        .bind(DEFAULT_WORKSPACE_ID.parse::<Uuid>().unwrap())
+        .bind(id)
+        .bind(format!("Workspace {}", &workspace_id[workspace_id.len() - 4..]))
+        .bind(slug)
         .execute(pool)
         .await
-        .expect("Falha ao seed workspace de teste");
+        .expect("Falha ao seed workspace");
+    }
+
+    /// Insere um user derivado do workspace_id fornecido, idempotente.
+    pub async fn seed_user_for_workspace(pool: &sqlx::PgPool, workspace_id: &str) {
+        let ws_id = workspace_id.parse::<Uuid>().unwrap();
+        let user_suffix = workspace_id
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>();
+        let user_id_str = format!(
+            "00000000-0000-0000-0000-{:0>12}",
+            &user_suffix[user_suffix.len().saturating_sub(12)..]
+        );
+        let user_id = user_id_str.parse::<Uuid>().unwrap();
+        let email = format!("test-{}@ci.local", &workspace_id[workspace_id.len() - 4..]);
+        sqlx::query(
+            "INSERT INTO users (id, workspace_id, name, email, password_hash, role)
+             VALUES ($1, $2, 'Test User', $3, 'x', 'admin')
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(ws_id)
+        .bind(email)
+        .execute(pool)
+        .await
+        .expect("Falha ao seed user");
+    }
+
+    /// Seed do workspace e user padroes usados pela maioria dos testes.
+    async fn seed_defaults(pool: &sqlx::PgPool) {
+        seed_workspace(pool, DEFAULT_WORKSPACE_ID).await;
 
         sqlx::query(
             "INSERT INTO users (id, workspace_id, name, email, password_hash, role)
@@ -48,7 +82,7 @@ pub mod helpers {
         .bind(DEFAULT_WORKSPACE_ID.parse::<Uuid>().unwrap())
         .execute(pool)
         .await
-        .expect("Falha ao seed user de teste");
+        .expect("Falha ao seed user padrao");
     }
 
     pub async fn make_app() -> Router {
@@ -83,6 +117,25 @@ pub mod helpers {
         jwt_for_ids(DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID, role)
     }
 
+    /// Gera header JWT para um workspace ad-hoc E garante que ele existe no banco.
+    pub async fn make_auth_header_for_workspace_seeded(
+        pool: &sqlx::PgPool,
+        workspace_id: &str,
+    ) -> String {
+        seed_workspace(pool, workspace_id).await;
+        seed_user_for_workspace(pool, workspace_id).await;
+        let user_suffix = workspace_id
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>();
+        let user_id = format!(
+            "00000000-0000-0000-0000-{:0>12}",
+            &user_suffix[user_suffix.len().saturating_sub(12)..]
+        );
+        jwt_for_ids(&user_id, workspace_id, "user")
+    }
+
+    /// Versao sem seed — usa apenas para workspaces que ja existem (ex: DEFAULT_WORKSPACE_ID).
     pub fn make_auth_header_for_workspace(workspace_id: &str) -> String {
         let user_suffix = workspace_id
             .chars()
