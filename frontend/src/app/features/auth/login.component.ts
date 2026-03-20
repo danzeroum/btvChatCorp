@@ -1,18 +1,21 @@
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 
 interface LoginResponse {
-  access_token: string;
-  token_type: string;
+  token: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  role: string;
 }
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="login-page">
       <div class="login-card">
@@ -116,21 +119,20 @@ export class LoginComponent {
     this.submitting.set(true);
     this.errorMessage.set('');
 
-    // Formato form-urlencoded exigido pelo OAuth2PasswordRequestForm do Axum
-    const body = new URLSearchParams();
-    body.set('username', this.email);
-    body.set('password', this.password);
-
-    this.http.post<LoginResponse>('/api/v1/auth/login', body.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    this.http.post<LoginResponse>('/api/v1/auth/login', {
+      email: this.email,
+      password: this.password,
     }).subscribe({
       next: (res) => {
-        localStorage.setItem('jwt_token', res.access_token);
-        this.router.navigate(['/projects']);
+        localStorage.setItem('jwt_token', res.token);
+        localStorage.setItem('workspace_id', res.workspace_id);
+        localStorage.setItem('user_name', res.name);
+        localStorage.setItem('user_role', res.role);
+        this.router.navigate(['/chat']);
       },
       error: (err) => {
         this.submitting.set(false);
-        const msg = err.error?.message || err.error?.detail || 'Email ou senha incorretos.';
+        const msg = err.error?.error?.message || err.error?.message || err.error?.detail || 'Email ou senha incorretos.';
         this.errorMessage.set(msg);
       }
     });
