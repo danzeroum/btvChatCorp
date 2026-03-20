@@ -201,7 +201,7 @@ async fn run_pipeline(
     info!(doc_id = %doc.id, chunks = total, "Chunks gerados");
 
     let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-    let embeddings = embedder.embed_batch(&texts).await?;
+    let embeddings = embedder.embed_batch(texts).await?;
 
     indexer
         .index_document(
