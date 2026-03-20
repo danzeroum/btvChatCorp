@@ -90,12 +90,7 @@ pub const PROJECT_TEMPLATES: &[ProjectTemplate] = &[
             SEMPRE inclua: 'Esta informação é apenas referencial. Consulte o departamento \
             jurídico para orientação formal.' Cite artigos de lei com precisão. \
             Classifique riscos como CRÍTICO / ALTO / MÉDIO / BAIXO.",
-        suggested_classifications: &[
-            "Legislação",
-            "Norma Interna",
-            "Parecer Jurídico",
-            "LGPD",
-        ],
+        suggested_classifications: &["Legislação", "Norma Interna", "Parecer Jurídico", "LGPD"],
         sample_questions: &[
             "Quais os requisitos da LGPD para tratamento de dados sensíveis?",
             "Gere um checklist de compliance para o novo fornecedor.",
@@ -114,12 +109,7 @@ pub const PROJECT_TEMPLATES: &[ProjectTemplate] = &[
             Para comandos, sempre mostre em bloco de código. \
             SEMPRE alerte sobre comandos destrutivos. \
             Classifique severidade P1/P2/P3/P4.",
-        suggested_classifications: &[
-            "Runbook",
-            "Documentação Técnica",
-            "SOP",
-            "Post-mortem",
-        ],
+        suggested_classifications: &["Runbook", "Documentação Técnica", "SOP", "Post-mortem"],
         sample_questions: &[
             "O servidor de produção está com CPU em 100%, o que verificar?",
             "Como fazer rollback do deploy no Kubernetes?",
