@@ -1,5 +1,0 @@
-# Este diretório está OBSOLETO.
-# As migrations ativas estão em backend/migrations/
-# Este diretório será removido na Sprint 5 após confirmação de que
-# nenhum ambiente de produção ainda o referencia.
-# Ver ADR-011: consolidação de schemas.
