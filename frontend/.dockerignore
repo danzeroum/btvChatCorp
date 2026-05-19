@@ -1,0 +1,26 @@
+# ============================================================
+# BTV Chat Corp — frontend/.dockerignore
+# Impede que arquivos sensíveis entrem no contexto de build Docker
+# ============================================================
+
+# Credenciais — nunca no contexto de build
+.env
+.env.*
+secrets/
+*.pem
+*.key
+
+# Histórico Git
+.git/
+.gitignore
+
+# Dependências (reinstaladas pelo npm ci dentro do container)
+node_modules/
+
+# Artefatos de build anteriores
+dist/
+.angular/
+
+# Documentacao
+docs/
+*.md
