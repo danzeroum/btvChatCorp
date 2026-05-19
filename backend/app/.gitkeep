@@ -1,6 +1,0 @@
-# Este diretório contém stubs Python REMOVIDOS (# REMOVIDO em cada arquivo).
-# A remoção física dos arquivos requer git filter-repo localmente
-# para não quebrar o histórico de outros contribuidores.
-# Instrução: executar `git rm -r --cached backend/app/` localmente
-# e fazer push após confirmar que nenhum Dockerfile referencia este path.
-# Ver Sprint 0 S3 e ADR-011.
