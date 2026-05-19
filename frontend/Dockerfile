@@ -18,7 +18,7 @@ FROM nginx:1.25-alpine
 COPY --from=builder /app/dist/btv-chat-corp/browser /usr/share/nginx/html
 
 RUN echo 'server { \
-    listen 80; \
+    listen 4200; \
     root /usr/share/nginx/html; \
     index index.html; \
     location / { try_files $uri $uri/ /index.html; } \
@@ -31,4 +31,5 @@ RUN echo 'server { \
     gzip on; gzip_types text/plain application/json application/javascript text/css; \
 }' > /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+# D3: porta corrigida para 4200 (Angular dev default)
+EXPOSE 4200

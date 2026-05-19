@@ -1,19 +1,28 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
 use chrono::Utc;
-use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{errors::AppError, middleware::auth::Claims, state::AppState};
 
+// ------------------------------------------------------------------
+// Router
+// ------------------------------------------------------------------
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/auth/register", post(register))
-        .route("/auth/login", post(login))
+        .route("/auth/login",    post(login))
+        .route("/auth/refresh",  post(refresh))
+        .route("/auth/me",       get(me))
 }
 
-/// Payload de registro de novo workspace + usuario owner
+// ------------------------------------------------------------------
+// DTOs
+// ------------------------------------------------------------------
+
 #[derive(Deserialize, ToSchema)]
 pub struct RegisterDto {
     pub workspace_name: String,
@@ -22,22 +31,54 @@ pub struct RegisterDto {
     pub password: String,
 }
 
-/// Payload de login
 #[derive(Deserialize, ToSchema)]
 pub struct LoginDto {
     pub email: String,
     pub password: String,
 }
 
-/// Resposta de autenticacao com JWT
+#[derive(Deserialize, ToSchema)]
+pub struct RefreshDto {
+    pub refresh_token: String,
+}
+
+/// Resposta de autenticacao: inclui access_token (1h) e refresh_token (30d)
 #[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
-    pub token: String,
-    pub user_id: Uuid,
-    pub workspace_id: Uuid,
-    pub name: String,
-    pub role: String,
+    pub access_token:  String,
+    pub refresh_token: String,
+    /// Segundos ate a expiracao do access_token
+    pub expires_in:    u64,
+    pub user_id:       Uuid,
+    pub workspace_id:  Uuid,
+    pub name:          String,
+    pub role:          String,
 }
+
+/// Dados publicos do usuario autenticado
+#[derive(Serialize, ToSchema)]
+pub struct MeResponse {
+    pub user_id:      Uuid,
+    pub workspace_id: Uuid,
+    pub name:         String,
+    pub email:        String,
+    pub role:         String,
+}
+
+// Claims separadas para o refresh token
+#[derive(Debug, Serialize, Deserialize)]
+struct RefreshClaims {
+    sub:          String,
+    workspace_id: String,
+    role:         String,
+    /// "refresh" — distingue do access token
+    kind:         String,
+    exp:          usize,
+}
+
+// ------------------------------------------------------------------
+// Handlers
+// ------------------------------------------------------------------
 
 /// Registra novo workspace e usuario owner
 #[utoipa::path(
@@ -99,16 +140,18 @@ async fn register(
         _ => AppError::from(e),
     })?;
 
-    // Provisiona branding padrao + progresso de onboarding para o novo workspace
     onboarding::provisioner::provision_workspace(&state.db, workspace_id, &slug)
         .await
-        .ok(); // nao bloqueia o registro em caso de falha
+        .ok();
 
-    let token = make_jwt(&state.jwt_secret, user_id, workspace_id, "owner")?;
+    let access_token  = make_access_jwt(&state.jwt_secret,   user_id, workspace_id, "owner")?;
+    let refresh_token = make_refresh_jwt(&state.jwt_secret,  user_id, workspace_id, "owner")?;
     Ok((
         StatusCode::CREATED,
         Json(AuthResponse {
-            token,
+            access_token,
+            refresh_token,
+            expires_in: 3600,
             user_id,
             workspace_id,
             name: dto.name,
@@ -117,14 +160,14 @@ async fn register(
     ))
 }
 
-/// Autentica usuario e retorna JWT
+/// Autentica usuario e retorna par de tokens
 #[utoipa::path(
     post,
     path = "/api/v1/auth/login",
     tag = "Auth",
     request_body = LoginDto,
     responses(
-        (status = 200, description = "Login realizado", body = AuthResponse),
+        (status = 200, description = "Login realizado",        body = AuthResponse),
         (status = 401, description = "Email ou senha invalidos"),
     )
 )]
@@ -154,9 +197,12 @@ async fn login(
         .await
         .ok();
 
-    let token = make_jwt(&state.jwt_secret, user_id, workspace_id, &role)?;
+    let access_token  = make_access_jwt(&state.jwt_secret,  user_id, workspace_id, &role)?;
+    let refresh_token = make_refresh_jwt(&state.jwt_secret, user_id, workspace_id, &role)?;
     Ok(Json(AuthResponse {
-        token,
+        access_token,
+        refresh_token,
+        expires_in: 3600,
         user_id,
         workspace_id,
         name,
@@ -164,7 +210,133 @@ async fn login(
     }))
 }
 
-fn make_jwt(
+/// Emite novo access_token a partir de um refresh_token valido
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "Auth",
+    request_body = RefreshDto,
+    responses(
+        (status = 200, description = "Novo par de tokens emitido", body = AuthResponse),
+        (status = 401, description = "Refresh token invalido ou expirado"),
+    )
+)]
+async fn refresh(
+    State(state): State<AppState>,
+    Json(dto): Json<RefreshDto>,
+) -> Result<Json<AuthResponse>, AppError> {
+    let token_data = decode::<RefreshClaims>(
+        &dto.refresh_token,
+        &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|_| AppError::unauthorized("Refresh token invalido ou expirado"))?;
+
+    let claims = token_data.claims;
+    if claims.kind != "refresh" {
+        return Err(AppError::unauthorized("Token nao e' do tipo refresh"));
+    }
+
+    let user_id      = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::unauthorized("Token invalido"))?;
+    let workspace_id = Uuid::parse_str(&claims.workspace_id)
+        .map_err(|_| AppError::unauthorized("Token invalido"))?;
+
+    // Verifica que o usuario ainda esta ativo
+    let row: (String, String, bool) = sqlx::query_as(
+        "SELECT name, role, is_active FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::unauthorized("Usuario nao encontrado"))?;
+
+    let (name, role, is_active) = row;
+    if !is_active {
+        return Err(AppError::unauthorized("Conta desativada"));
+    }
+
+    let access_token  = make_access_jwt(&state.jwt_secret,  user_id, workspace_id, &role)?;
+    let refresh_token = make_refresh_jwt(&state.jwt_secret, user_id, workspace_id, &role)?;
+    Ok(Json(AuthResponse {
+        access_token,
+        refresh_token,
+        expires_in: 3600,
+        user_id,
+        workspace_id,
+        name,
+        role,
+    }))
+}
+
+/// Retorna dados do usuario autenticado
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/me",
+    tag = "Auth",
+    security(
+        ("BearerAuth" = [])
+    ),
+    responses(
+        (status = 200, description = "Dados do usuario",  body = MeResponse),
+        (status = 401, description = "Nao autenticado"),
+    )
+)]
+async fn me(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
+) -> Result<Json<MeResponse>, AppError> {
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::unauthorized("Token invalido"))?;
+
+    let row: (String, String, String) = sqlx::query_as(
+        "SELECT name, email, role FROM users WHERE id = $1 AND is_active = true",
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::not_found("Usuario nao encontrado"))?;
+
+    let (name, email, role) = row;
+    let workspace_id = Uuid::parse_str(&claims.workspace_id)
+        .map_err(|_| AppError::unauthorized("Token invalido"))?;
+
+    Ok(Json(MeResponse {
+        user_id,
+        workspace_id,
+        name,
+        email,
+        role,
+    }))
+}
+
+// ------------------------------------------------------------------
+// Helpers JWT
+// ------------------------------------------------------------------
+
+/// Access token: expira em 1 hora
+fn make_access_jwt(
+    secret: &str,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    role: &str,
+) -> Result<String, AppError> {
+    let exp = (Utc::now() + chrono::Duration::hours(1)).timestamp() as usize;
+    encode(
+        &Header::default(),
+        &Claims {
+            sub:          user_id.to_string(),
+            workspace_id: workspace_id.to_string(),
+            role:         role.into(),
+            exp,
+        },
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|_| AppError::internal("Erro ao gerar access token"))
+}
+
+/// Refresh token: expira em 30 dias, claim `kind = "refresh"`
+fn make_refresh_jwt(
     secret: &str,
     user_id: Uuid,
     workspace_id: Uuid,
@@ -173,13 +345,14 @@ fn make_jwt(
     let exp = (Utc::now() + chrono::Duration::days(30)).timestamp() as usize;
     encode(
         &Header::default(),
-        &Claims {
-            sub: user_id.to_string(),
+        &RefreshClaims {
+            sub:          user_id.to_string(),
             workspace_id: workspace_id.to_string(),
-            role: role.into(),
+            role:         role.into(),
+            kind:         "refresh".into(),
             exp,
         },
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .map_err(|_| AppError::internal("Erro ao gerar token"))
+    .map_err(|_| AppError::internal("Erro ao gerar refresh token"))
 }
