@@ -10,11 +10,16 @@ mod errors;
 mod extractors;
 mod middleware;
 mod models;
-mod rag;
+#[cfg(test)]
 mod rag_test;
 mod routes;
+mod services;
 mod state;
+#[cfg(test)]
 mod test_helpers;
+
+// rag.rs e' usado pelos handlers de chat/search
+mod rag;
 
 use state::AppState;
 
