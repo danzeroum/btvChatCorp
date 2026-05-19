@@ -2,71 +2,55 @@
 # BTV Chat Corp — .gitignore
 # ============================================================
 
-# ---- CREDENCIAIS E SEGREDOS (NUNCA versionar) ----
+# Segredos — NUNCA commitar
 .env
 .env.local
+.env.*.local
 .env.production
 .env.staging
-.env.*.local
-secrets/
 *.pem
 *.key
-*.p12
-*.pfx
 *.crt
-*.cer
-nginx/ssl/
-ssl/
-certs/
+*.p12
+nginx/ssl/**
+!nginx/ssl/.gitkeep
 
-# ---- Rust / Cargo ----
+# Rust
 target/
+Cargo.lock
 **/*.rs.bk
-.cargo/
 
-# ---- Python ----
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-.pytest_cache/
-.venv/
-venv/
-.env/
-*.egg-info/
-dist/
-build/
-.mypy_cache/
-.ruff_cache/
-
-# ---- Node.js / Angular ----
+# Node / Angular
 node_modules/
 dist/
 .angular/
-.npm/
-*.tgz
+*.js.map
 
-# ---- Docker ----
+# Python (stubs removidos, mas por garantia)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+
+# Docker
 docker-compose.override.yml
 
-# ---- Banco de dados (dumps locais) ----
-*.sql.gz
-*.dump
-
-# ---- IDEs e editores ----
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
+
+# OS
 .DS_Store
 Thumbs.db
 
-# ---- Cobertura de testes ----
-coverage/
-lcov.info
-tarpaulin-report.html
-
-# ---- Logs ----
+# Logs
 *.log
 logs/
+
+# Uploads locais
+uploads/

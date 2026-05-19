@@ -1,11 +1,19 @@
 [workspace]
 members = [
     "crates/api",
+    "crates/api-public",
     "crates/branding",
     "crates/document-processor",
     "crates/onboarding",
+    "crates/rag-searcher",
 ]
 resolver = "2"
+
+# Crates presentes mas NÃO incluídos no workspace por requererem
+# refatoração antes de compilar (ver ADR-011):
+#   crates/ai-orchestrator  — depende de interfaces não estabilizadas
+#   crates/webhooks         — aguardando definição de contratos de evento
+# Serão adicionados na Sprint 5.
 
 [workspace.dependencies]
 axum               = { version = "0.7" }
@@ -26,6 +34,9 @@ tower              = { version = "0.4",   features = ["util"] }
 tower-http         = { version = "0.5",   features = ["cors", "trace", "compression-gzip"] }
 dotenvy            = "0.15"
 sha2               = "0.10"
+hex                = "0.4"
+hmac               = "0.12"
+governor           = "0.6"
 utoipa             = { version = "4",     features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui  = { version = "7",     features = ["axum"] }
 rand               = "0.8"
