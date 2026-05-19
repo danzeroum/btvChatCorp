@@ -1,0 +1,31 @@
+# ============================================================
+# BTV Chat Corp — backend/.dockerignore
+# Impede que arquivos sensíveis entrem no contexto de build Docker
+# ============================================================
+
+# Credenciais — nunca no contexto de build
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.p12
+
+# Histórico Git (pode conter segredos de commits anteriores)
+.git/
+.gitignore
+
+# Artefatos de build Rust
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Documentacao e testes (nao necessarios na imagem)
+docs/
+tests/
+*.md
