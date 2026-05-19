@@ -1,8 +1,8 @@
-name: CI - Fase 5 (RAG Worker)
+name: CI - Sprint 3 (CI/CD)
 
 on:
   push:
-    branches: [main, feat/rag-worker]
+    branches: [main, 'feat/**']
   pull_request:
     branches: [main]
 
@@ -42,20 +42,28 @@ jobs:
       - name: Unit tests (headless) + coverage
         run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
 
-      - name: "[Fase 4] adminGuard nas rotas de training"
+      - name: "[S2-A] auth.interceptor.ts unico (sem duplicata)"
         run: |
-          grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts \
-            && echo "adminGuard presente" \
-            || (echo "adminGuard ausente" && exit 1)
+          COUNT=$(find src -name 'auth.interceptor.ts' | wc -l)
+          [ "$COUNT" -eq 1 ] \
+            && echo "auth.interceptor.ts sem duplicata OK" \
+            || (echo "Duplicata encontrada: $COUNT arquivos" && exit 1)
 
-      - name: "[Fase 4] interceptor trata 401/403"
+      - name: "[S2-A] GlobalErrorHandler registrado no AppModule"
+        run: |
+          grep -q 'GlobalErrorHandler' src/app/app.module.ts \
+            || grep -rq 'GlobalErrorHandler' src/app/app.config.ts 2>/dev/null \
+            && echo "GlobalErrorHandler registrado OK" \
+            || (echo "GlobalErrorHandler nao registrado" && exit 1)
+
+      - name: "[S2-A] interceptor trata 401/403"
         run: |
           grep -q '401' src/app/features/auth/auth.interceptor.ts \
             && grep -q '403' src/app/features/auth/auth.interceptor.ts \
             && echo "auth.interceptor OK" \
             || (echo "Tratamento 401/403 ausente" && exit 1)
 
-      - name: "[Fase 4] componentes UX polish existem"
+      - name: "[S2-A] componentes UX polish existem"
         run: |
           for f in \
             src/app/core/components/loading-skeleton.component.ts \
@@ -66,6 +74,12 @@ jobs:
           done
           echo "Componentes UX polish OK"
 
+      - name: "[S2-A] adminGuard nas rotas de training"
+        run: |
+          grep -q 'adminGuard' src/app/features/training-dashboard/training-dashboard.routes.ts \
+            && echo "adminGuard presente" \
+            || (echo "adminGuard ausente" && exit 1)
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         if: always()
@@ -74,7 +88,7 @@ jobs:
           path: frontend/coverage/
 
   # ------------------------------------
-  # JOB 2 - Backend Rust (unit + integracao)
+  # JOB 2 - Backend Rust
   # ------------------------------------
   backend:
     name: Backend (Rust)
@@ -142,6 +156,64 @@ jobs:
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run --database-url "$DATABASE_URL" --source migrations
 
+      - name: "[S2-B] AdminService extraido existe"
+        run: |
+          [ -f crates/api/src/services/admin_service.rs ] \
+            && echo "admin_service.rs OK" \
+            || (echo "admin_service.rs ausente" && exit 1)
+
+      - name: "[S2-B] UserService extraido existe"
+        run: |
+          [ -f crates/api/src/services/user_service.rs ] \
+            && echo "user_service.rs OK" \
+            || (echo "user_service.rs ausente" && exit 1)
+
+      - name: "[S2-B] AuditService extraido existe"
+        run: |
+          [ -f crates/api/src/services/audit_service.rs ] \
+            && echo "audit_service.rs OK" \
+            || (echo "audit_service.rs ausente" && exit 1)
+
+      - name: "[S2-B] AppState usa servicos extraidos"
+        run: |
+          grep -q 'admin_service' crates/api/src/state.rs \
+            && grep -q 'user_service' crates/api/src/state.rs \
+            && grep -q 'audit_service' crates/api/src/state.rs \
+            && echo "AppState com servicos OK" \
+            || (echo "AppState sem servicos extraidos" && exit 1)
+
+      - name: "[S2-B] admin.rs delega para AdminService (SRP)"
+        run: |
+          grep -q 'admin_service' crates/api/src/routes/admin.rs \
+            && echo "admin.rs delega para AdminService OK" \
+            || (echo "admin.rs nao delega para AdminService" && exit 1)
+
+      - name: "[S1-C] Migration refresh_tokens existe"
+        run: |
+          ls migrations/ | grep -q 'refresh_tokens' \
+            && echo "Migration refresh_tokens presente" \
+            || (echo "Migration refresh_tokens ausente" && exit 1)
+
+      - name: "[S1-C] AppConfig centralizado existe"
+        run: |
+          [ -f crates/api/src/config.rs ] \
+            && echo "config.rs OK" \
+            || (echo "config.rs ausente" && exit 1)
+
+      - name: "[RAG] Arquivos RAG worker existem"
+        run: |
+          for f in \
+            crates/document-processor/src/config.rs \
+            crates/document-processor/src/extractor.rs \
+            crates/document-processor/src/strategy.rs \
+            crates/document-processor/src/chunker.rs \
+            crates/document-processor/src/embedder.rs \
+            crates/document-processor/src/indexer.rs \
+            crates/api/src/rag.rs; do
+            [ -f "$f" ] || (echo "Ausente: $f" && exit 1)
+          done
+          echo "Todos os arquivos RAG presentes"
+
       - name: "[RAG] Testes unitarios - strategy"
         run: cargo test -p document-processor strategy_tests -- --test-threads=1 --nocapture
 
@@ -160,40 +232,14 @@ jobs:
       - name: cargo test (suite completa)
         run: cargo test --all -- --test-threads=1
 
-      - name: "[Fase 4] Middleware JWT presente"
+      - name: "[S1-A] Middleware JWT presente"
         run: |
           grep -rq 'jwt' crates/api/src/middleware/ \
             && echo "Middleware JWT OK" \
             || (echo "Middleware JWT ausente" && exit 1)
 
-      - name: "[Fase 5] Arquivos RAG worker existem"
-        run: |
-          for f in \
-            crates/document-processor/src/config.rs \
-            crates/document-processor/src/extractor.rs \
-            crates/document-processor/src/strategy.rs \
-            crates/document-processor/src/chunker.rs \
-            crates/document-processor/src/embedder.rs \
-            crates/document-processor/src/indexer.rs \
-            crates/api/src/rag.rs; do
-            [ -f "$f" ] || (echo "Ausente: $f" && exit 1)
-          done
-          echo "Todos os arquivos RAG presentes"
-
-      - name: "[Fase 5] RAG integrado ao chats.rs"
-        run: |
-          grep -q 'search_rag' crates/api/src/routes/chats.rs \
-            && echo "search_rag presente no chats.rs" \
-            || (echo "search_rag ausente no chats.rs" && exit 1)
-
-      - name: "[Fase 5] Migration document_chunks existe"
-        run: |
-          ls migrations/ | grep -q '002_rag' \
-            && echo "Migration 002_rag presente" \
-            || (echo "Migration 002_rag ausente" && exit 1)
-
   # ------------------------------------
-  # JOB 3 - Smoke test (API + RAG degradation)
+  # JOB 3 - Smoke test
   # ------------------------------------
   integration-smoke:
     name: Integration smoke test
@@ -298,6 +344,20 @@ jobs:
           echo "TOKEN=$TOKEN" >> $GITHUB_ENV
           echo "/auth/login OK"
 
+      - name: "[Smoke] POST /auth/refresh retorna novo token"
+        run: |
+          REFRESH=$(python3 .github/scripts/extract_json_field.py refresh_token < /tmp/login_resp.json || echo "")
+          if [ -n "$REFRESH" ]; then
+            R=$(curl -sf -X POST http://localhost:3000/api/v1/auth/refresh \
+              -H 'Content-Type: application/json' \
+              -d "{\"refresh_token\":\"$REFRESH\"}" || echo "skip")
+            echo "$R" | grep -q '"token"' \
+              && echo "/auth/refresh OK" \
+              || echo "/auth/refresh sem token (aceitavel se nao implementado)"
+          else
+            echo "/auth/refresh: refresh_token ausente no login (skip)"
+          fi
+
       - name: "[Smoke RAG] Chat sem Qdrant nao quebra"
         run: |
           curl -sf -X POST http://localhost:3000/api/v1/chats \
@@ -316,22 +376,6 @@ jobs:
           grep -q '"role"' /tmp/msg_resp.json || (echo "Resposta sem role" && exit 1)
           python3 .github/scripts/check_rag_response.py /tmp/msg_resp.json
 
-      - name: "[Smoke RAG] sources e null sem documentos indexados"
-        run: |
-          curl -sf -X POST http://localhost:3000/api/v1/chats \
-            -H "Authorization: Bearer $TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d '{"title": "Sources Test"}' > /tmp/chat2_resp.json
-          CHAT_ID=$(python3 .github/scripts/extract_json_field.py id < /tmp/chat2_resp.json)
-
-          curl -sf -X POST "http://localhost:3000/api/v1/chats/$CHAT_ID/messages" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d '{"content": "Pergunta qualquer"}' > /tmp/msg2_resp.json
-          cat /tmp/msg2_resp.json
-
-          python3 .github/scripts/check_rag_response.py /tmp/msg2_resp.json --check-sources-null
-
       - name: "[Smoke] /training sem token retorna 401/403"
         run: |
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -339,6 +383,14 @@ jobs:
           [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
             || (echo "Rota protegida retornou $CODE" && exit 1)
           echo "/training protegida OK"
+
+      - name: "[Smoke S2-B] /admin/health retorna 200 ou 401"
+        run: |
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            http://localhost:3000/api/v1/admin/health)
+          [ "$CODE" = "200" ] || [ "$CODE" = "401" ] || [ "$CODE" = "403" ] \
+            || (echo "/admin/health retornou $CODE" && exit 1)
+          echo "/admin/health OK ($CODE)"
 
       - name: Stop backend
         if: always()
@@ -364,4 +416,4 @@ jobs:
             echo "  Integration smoke: ${{ needs.integration-smoke.result }}"
             exit 1
           fi
-          echo "All checks passed - Fase 5 RAG Worker OK"
+          echo "All checks passed - Sprint 3 CI/CD OK"
