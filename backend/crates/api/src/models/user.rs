@@ -2,14 +2,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Projeto/base de conhecimento de um workspace.
+/// Usuario de um workspace.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Project {
+pub struct User {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub name: String,
-    pub description: Option<String>,
+    pub email: String,
+    #[serde(skip_serializing)]
+    pub password_hash: String,
+    pub role: String,
     pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
