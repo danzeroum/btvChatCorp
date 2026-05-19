@@ -1,0 +1,17 @@
+# Este arquivo mantém o diretório nginx/ssl/ no repositório
+# sem versionar certificados reais.
+#
+# COMO PROVISIONAR CERTIFICADOS:
+#   Opcao 1 (Let's Encrypt):
+#     certbot certonly --nginx -d seudominio.com
+#     cp /etc/letsencrypt/live/seudominio.com/privkey.pem nginx/ssl/
+#     cp /etc/letsencrypt/live/seudominio.com/fullchain.pem nginx/ssl/
+#
+#   Opcao 2 (desenvolvimento local):
+#     mkcert -install
+#     mkcert localhost 127.0.0.1
+#
+#   Opcao 3 (secret manager):
+#     Integrar com HashiCorp Vault ou AWS Secrets Manager
+#
+# NUNCA commite arquivos .pem, .key, .crt neste diretorio.

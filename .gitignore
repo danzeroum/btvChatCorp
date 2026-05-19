@@ -1,0 +1,72 @@
+# ============================================================
+# BTV Chat Corp — .gitignore
+# ============================================================
+
+# ---- CREDENCIAIS E SEGREDOS (NUNCA versionar) ----
+.env
+.env.local
+.env.production
+.env.staging
+.env.*.local
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+nginx/ssl/
+ssl/
+certs/
+
+# ---- Rust / Cargo ----
+target/
+**/*.rs.bk
+.cargo/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+.env/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node.js / Angular ----
+node_modules/
+dist/
+.angular/
+.npm/
+*.tgz
+
+# ---- Docker ----
+docker-compose.override.yml
+
+# ---- Banco de dados (dumps locais) ----
+*.sql.gz
+*.dump
+
+# ---- IDEs e editores ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---- Cobertura de testes ----
+coverage/
+lcov.info
+tarpaulin-report.html
+
+# ---- Logs ----
+*.log
+logs/
