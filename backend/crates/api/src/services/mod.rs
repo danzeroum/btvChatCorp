@@ -1,8 +1,14 @@
-//! Camada de servicos do crate `api`.
+//! Camada de serviços do crate `api`.
 //!
-//! Sprint 2 vai popular este modulo com:
-//! - `chat_service`   — orquestrador do fluxo RAG
-//! - `user_service`   — logica de negocio de usuarios
-//! - `usage_service`  — contagem e billing de tokens
-//!
-//! Por ora o modulo existe para garantir que `mod services;` em main.rs compile.
+//! Sprint 2 — Grupo B:
+//! - `admin_service`  — health, metrics, AI config, API keys, webhooks, settings
+//! - `user_service`   — lógica de negócio de usuários, roles e sessions
+//! - `audit_service`  — audit logs, compliance e retention policies
+
+pub mod admin_service;
+pub mod user_service;
+pub mod audit_service;
+
+pub use admin_service::AdminService;
+pub use user_service::UserService;
+pub use audit_service::AuditService;
