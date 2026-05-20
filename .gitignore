@@ -70,3 +70,4 @@ tarpaulin-report.html
 # ---- Logs ----
 *.log
 logs/
+.env
