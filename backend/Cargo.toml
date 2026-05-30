@@ -4,6 +4,7 @@ members = [
     "crates/branding",
     "crates/document-processor",
     "crates/onboarding",
+    "crates/rag-searcher",
 ]
 resolver = "2"
 
