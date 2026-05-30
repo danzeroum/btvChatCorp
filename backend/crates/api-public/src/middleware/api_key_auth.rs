@@ -4,13 +4,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
-
-type HmacSha256 = Hmac<Sha256>;
 
 use crate::models::api_key::{ApiKeyContext, ApiKeyPermission, ProjectScope};
-// Re-exporta do crate api
+// Hash das API keys e AppState reaproveitados do crate `api` (workspace unificado).
+use crate_api::security::{hash_api_key_hmac, hash_api_key_sha256};
 use crate_api::state::AppState;
 
 /// Middleware de autenticação por API Key para a API Pública.
@@ -70,14 +67,20 @@ pub async fn api_key_auth(
 
     // Parse das permissões (armazenadas como JSONB)
     let permissions: Vec<ApiKeyPermission> = serde_json::from_value(
-        record.permissions.unwrap_or(serde_json::Value::Array(vec![]))
-    ).unwrap_or_default();
+        record
+            .permissions
+            .unwrap_or(serde_json::Value::Array(vec![])),
+    )
+    .unwrap_or_default();
 
     let project_scope = match record.project_scope.as_deref() {
         Some("specific") => {
             let ids: Vec<String> = serde_json::from_value(
-                record.allowed_project_ids.unwrap_or(serde_json::Value::Array(vec![]))
-            ).unwrap_or_default();
+                record
+                    .allowed_project_ids
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+            )
+            .unwrap_or_default();
             ProjectScope::Specific(ids)
         }
         _ => ProjectScope::All,
@@ -94,21 +97,4 @@ pub async fn api_key_auth(
 
     request.extensions_mut().insert(ctx);
     Ok(next.run(request).await)
-}
-
-/// HMAC-SHA256 da API key — formato atual (com segredo da aplicação).
-// NOTA: duplicado de `api::security` porque este crate ainda está fora do workspace
-// Cargo (ver C12). Após a unificação do workspace, importar de um util compartilhado.
-pub fn hash_api_key_hmac(key: &str, secret: &str) -> String {
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC aceita chave de qualquer tamanho");
-    mac.update(key.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
-}
-
-/// SHA-256 puro — formato LEGADO, apenas para fallback durante a migração.
-pub fn hash_api_key_sha256(key: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(key.as_bytes());
-    hex::encode(hasher.finalize())
 }
