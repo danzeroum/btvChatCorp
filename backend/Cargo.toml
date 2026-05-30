@@ -4,6 +4,9 @@ members = [
     "crates/branding",
     "crates/document-processor",
     "crates/onboarding",
+    "crates/rag-searcher",
+    "crates/ai-orchestrator",
+    "crates/webhooks",
 ]
 resolver = "2"
 

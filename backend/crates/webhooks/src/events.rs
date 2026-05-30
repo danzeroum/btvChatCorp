@@ -84,10 +84,7 @@ pub struct WebhookPayload {
 }
 
 impl WebhookPayload {
-    pub fn new(
-        event: &WebhookEvent,
-        delivery_attempt: u32,
-    ) -> Self {
+    pub fn new(event: &WebhookEvent, delivery_attempt: u32) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             event_type: event.event_type.to_string(),
