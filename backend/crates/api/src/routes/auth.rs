@@ -1,31 +1,62 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use chrono::Utc;
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+use validator::Validate;
 
-use crate::{errors::AppError, middleware::auth::Claims, state::AppState};
+use crate::{
+    errors::AppError,
+    middleware::auth::{AuthUser, Claims},
+    state::AppState,
+};
 
+/// Rotas públicas de autenticação (sem JWT).
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/refresh", post(refresh))
+}
+
+/// Rotas de autenticação que exigem JWT válido (aplicado pelo middleware no router pai).
+pub fn protected_routes() -> Router<AppState> {
+    Router::new().route("/auth/me", get(me))
 }
 
 /// Payload de registro de novo workspace + usuario owner
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema, Validate)]
 pub struct RegisterDto {
+    #[validate(length(
+        min = 2,
+        max = 80,
+        message = "workspace_name deve ter entre 2 e 80 caracteres"
+    ))]
     pub workspace_name: String,
+    #[validate(length(min = 1, max = 120, message = "name obrigatorio (ate 120 caracteres)"))]
     pub name: String,
+    #[validate(email(message = "email invalido"))]
     pub email: String,
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "senha deve ter entre 8 e 128 caracteres"
+    ))]
     pub password: String,
 }
 
 /// Payload de login
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema, Validate)]
 pub struct LoginDto {
+    #[validate(email(message = "email invalido"))]
     pub email: String,
+    #[validate(length(min = 1, message = "senha obrigatoria"))]
     pub password: String,
 }
 
@@ -55,6 +86,8 @@ async fn register(
     State(state): State<AppState>,
     Json(dto): Json<RegisterDto>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+    dto.validate()?;
+
     let workspace_id = Uuid::new_v4();
     let slug = dto
         .workspace_name
@@ -132,6 +165,8 @@ async fn login(
     State(state): State<AppState>,
     Json(dto): Json<LoginDto>,
 ) -> Result<Json<AuthResponse>, AppError> {
+    dto.validate()?;
+
     let row: (Uuid, Uuid, String, String, String, String) = sqlx::query_as(
         "SELECT id, workspace_id, name, email, password_hash, role
          FROM users
@@ -164,13 +199,125 @@ async fn login(
     }))
 }
 
+/// Dados da sessão autenticada (fonte da verdade no servidor, não no JWT client-side)
+#[derive(Serialize, ToSchema)]
+pub struct MeResponse {
+    pub user_id: Uuid,
+    pub workspace_id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+}
+
+/// Retorna os dados frescos do usuário autenticado. O frontend deve usar esta rota
+/// para autorização (roles/workspace) em vez de decodificar o JWT no cliente.
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/me",
+    tag = "auth",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Dados do usuário autenticado", body = MeResponse),
+        (status = 401, description = "Sessão inválida ou expirada"),
+    )
+)]
+async fn me(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<MeResponse>, AppError> {
+    let row: (Uuid, Uuid, String, String, String) = sqlx::query_as(
+        "SELECT id, workspace_id, name, email, role
+         FROM users
+         WHERE id = $1 AND is_active = true",
+    )
+    .bind(auth.user_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::unauthorized("Sessão inválida"))?;
+
+    let (user_id, workspace_id, name, email, role) = row;
+    Ok(Json(MeResponse {
+        user_id,
+        workspace_id,
+        name,
+        email,
+        role,
+    }))
+}
+
+/// Payload de refresh: troca um token válido (não expirado) por um novo.
+#[derive(Deserialize, ToSchema)]
+pub struct RefreshDto {
+    pub token: String,
+}
+
+/// Renova o JWT a partir de um token ainda válido. Não há refresh token de longa
+/// duração — o access token tem vida curta (`JWT_EXPIRY_HOURS`) e deve ser renovado
+/// enquanto válido. Tokens expirados são rejeitados (401), forçando novo login.
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "auth",
+    request_body = RefreshDto,
+    responses(
+        (status = 200, description = "Token renovado", body = AuthResponse),
+        (status = 401, description = "Token inválido ou expirado"),
+    )
+)]
+async fn refresh(
+    State(state): State<AppState>,
+    Json(dto): Json<RefreshDto>,
+) -> Result<Json<AuthResponse>, AppError> {
+    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+
+    let data = decode::<Claims>(
+        &dto.token,
+        &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
+        &Validation::new(Algorithm::HS256),
+    )
+    .map_err(|_| AppError::unauthorized("Token inválido ou expirado"))?;
+
+    let claims = data.claims;
+    let user_id: Uuid = claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::unauthorized("Token inválido"))?;
+    let workspace_id: Uuid = claims
+        .workspace_id
+        .parse()
+        .map_err(|_| AppError::unauthorized("Token inválido"))?;
+
+    // Confirma que o usuário ainda existe e está ativo, e usa a role fresca do banco.
+    let row: (String, String) =
+        sqlx::query_as("SELECT name, role FROM users WHERE id = $1 AND is_active = true")
+            .bind(user_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|_| AppError::unauthorized("Sessão inválida"))?;
+    let (name, role) = row;
+
+    let token = make_jwt(&state.jwt_secret, user_id, workspace_id, &role)?;
+    Ok(Json(AuthResponse {
+        token,
+        user_id,
+        workspace_id,
+        name,
+        role,
+    }))
+}
+
 fn make_jwt(
     secret: &str,
     user_id: Uuid,
     workspace_id: Uuid,
     role: &str,
 ) -> Result<String, AppError> {
-    let exp = (Utc::now() + chrono::Duration::days(30)).timestamp() as usize;
+    // Expiração curta e configurável (default 1h). Sem mais 30 dias hardcoded.
+    let expiry_hours: i64 = std::env::var("JWT_EXPIRY_HOURS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let exp = (Utc::now() + chrono::Duration::hours(expiry_hours)).timestamp() as usize;
     encode(
         &Header::default(),
         &Claims {
