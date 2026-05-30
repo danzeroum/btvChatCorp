@@ -33,7 +33,13 @@ fn api_v1_routes(state: AppState) -> Router<AppState> {
     let rate_limiter = RateLimiterState::new();
 
     Router::new()
-        // Métricas de uso (único endpoint montado neste PR mínimo; ver routes/mod.rs)
+        // Chat completions (OpenAI-compatível, stateless)
+        .merge(routes::chat::chat_routes())
+        // Busca semântica
+        .merge(routes::search::search_routes())
+        // CRUD de webhooks
+        .merge(routes::webhooks::webhook_routes())
+        // Métricas de uso
         .merge(routes::usage::usage_routes())
         // Middleware stack (aplicado em ordem reversa de execução):
         .layer(axum_middleware::from_fn(request_logger))

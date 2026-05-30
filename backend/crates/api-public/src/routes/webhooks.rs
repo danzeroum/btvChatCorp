@@ -2,25 +2,30 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{delete, get, post, put},
+    routing::{get, post},
     Router,
 };
 use uuid::Uuid;
 
 use crate::models::api_key::ApiKeyContext;
 use crate::models::webhook::{
-    CreateWebhookRequest, UpdateWebhookRequest,
-    WebhookDeliveryResponse, WebhookResponse,
+    CreateWebhookRequest, UpdateWebhookRequest, WebhookDeliveryResponse, WebhookResponse,
 };
 use crate_api::state::AppState;
 
 pub fn webhook_routes() -> Router<AppState> {
     Router::new()
         .route("/webhooks", get(list_webhooks).post(create_webhook))
-        .route("/webhooks/:id", get(get_webhook).put(update_webhook).delete(delete_webhook))
+        .route(
+            "/webhooks/:id",
+            get(get_webhook).put(update_webhook).delete(delete_webhook),
+        )
         .route("/webhooks/:id/test", post(test_webhook))
         .route("/webhooks/:id/deliveries", get(list_deliveries))
-        .route("/webhooks/:id/deliveries/:delivery_id/retry", post(retry_delivery))
+        .route(
+            "/webhooks/:id/deliveries/:delivery_id/retry",
+            post(retry_delivery),
+        )
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -34,7 +39,7 @@ pub async fn list_webhooks(
         SELECT id, name, url, description, events, status,
                consecutive_failures, last_delivery_at,
                last_delivery_status, created_at, updated_at
-        FROM webhook_endpoints
+        FROM webhooks
         WHERE workspace_id = $1
         ORDER BY created_at DESC
         "#,
@@ -51,7 +56,7 @@ pub async fn list_webhooks(
                 name: r.name,
                 url: r.url,
                 description: r.description,
-                events: r.events,
+                events: serde_json::from_value(r.events).unwrap_or_default(),
                 status: r.status,
                 consecutive_failures: r.consecutive_failures,
                 last_delivery_at: r.last_delivery_at.map(|t| t.to_rfc3339()),
@@ -87,32 +92,42 @@ pub async fn create_webhook(
 
     sqlx::query!(
         r#"
-        INSERT INTO webhook_endpoints
+        INSERT INTO webhooks
             (id, workspace_id, name, url, description, secret,
              events, delivery_config, status,
              consecutive_failures, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',0,$9,$9)
         "#,
-        id, ctx.workspace_id, req.name, req.url, req.description,
-        secret, &req.events, delivery_config, now,
+        id,
+        ctx.workspace_id,
+        req.name,
+        req.url,
+        req.description,
+        secret,
+        serde_json::json!(req.events),
+        delivery_config,
+        now,
     )
     .execute(&app.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok((StatusCode::CREATED, Json(WebhookResponse {
-        id,
-        name: req.name,
-        url: req.url,
-        description: req.description,
-        events: req.events,
-        status: "active".into(),
-        consecutive_failures: 0,
-        last_delivery_at: None,
-        last_delivery_status: None,
-        created_at: now.to_rfc3339(),
-        updated_at: now.to_rfc3339(),
-    })))
+    Ok((
+        StatusCode::CREATED,
+        Json(WebhookResponse {
+            id,
+            name: req.name,
+            url: req.url,
+            description: req.description,
+            events: req.events,
+            status: "active".into(),
+            consecutive_failures: 0,
+            last_delivery_at: None,
+            last_delivery_status: None,
+            created_at: now.to_rfc3339(),
+            updated_at: now.to_rfc3339(),
+        }),
+    ))
 }
 
 pub async fn get_webhook(
@@ -125,18 +140,23 @@ pub async fn get_webhook(
         SELECT id, name, url, description, events, status,
                consecutive_failures, last_delivery_at,
                last_delivery_status, created_at, updated_at
-        FROM webhook_endpoints
+        FROM webhooks
         WHERE id = $1 AND workspace_id = $2
         "#,
-        id, ctx.workspace_id,
+        id,
+        ctx.workspace_id,
     )
     .fetch_one(&app.db)
     .await
     .map_err(|_| StatusCode::NOT_FOUND)?;
 
     Ok(Json(WebhookResponse {
-        id: r.id, name: r.name, url: r.url,
-        description: r.description, events: r.events, status: r.status,
+        id: r.id,
+        name: r.name,
+        url: r.url,
+        description: r.description,
+        events: serde_json::from_value(r.events).unwrap_or_default(),
+        status: r.status,
         consecutive_failures: r.consecutive_failures,
         last_delivery_at: r.last_delivery_at.map(|t| t.to_rfc3339()),
         last_delivery_status: r.last_delivery_status,
@@ -153,7 +173,7 @@ pub async fn update_webhook(
 ) -> Result<Json<WebhookResponse>, StatusCode> {
     let r = sqlx::query!(
         r#"
-        UPDATE webhook_endpoints SET
+        UPDATE webhooks SET
             name = COALESCE($3, name),
             url = COALESCE($4, url),
             events = COALESCE($5, events),
@@ -164,9 +184,11 @@ pub async fn update_webhook(
                   consecutive_failures, last_delivery_at,
                   last_delivery_status, created_at, updated_at
         "#,
-        id, ctx.workspace_id,
-        req.name, req.url,
-        req.events.as_deref(),
+        id,
+        ctx.workspace_id,
+        req.name,
+        req.url,
+        req.events.map(|e| serde_json::json!(e)),
         req.status,
     )
     .fetch_one(&app.db)
@@ -174,8 +196,12 @@ pub async fn update_webhook(
     .map_err(|_| StatusCode::NOT_FOUND)?;
 
     Ok(Json(WebhookResponse {
-        id: r.id, name: r.name, url: r.url,
-        description: r.description, events: r.events, status: r.status,
+        id: r.id,
+        name: r.name,
+        url: r.url,
+        description: r.description,
+        events: serde_json::from_value(r.events).unwrap_or_default(),
+        status: r.status,
         consecutive_failures: r.consecutive_failures,
         last_delivery_at: r.last_delivery_at.map(|t| t.to_rfc3339()),
         last_delivery_status: r.last_delivery_status,
@@ -190,14 +216,17 @@ pub async fn delete_webhook(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
     let result = sqlx::query!(
-        "DELETE FROM webhook_endpoints WHERE id = $1 AND workspace_id = $2",
-        id, ctx.workspace_id,
+        "DELETE FROM webhooks WHERE id = $1 AND workspace_id = $2",
+        id,
+        ctx.workspace_id,
     )
     .execute(&app.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if result.rows_affected() == 0 { return Err(StatusCode::NOT_FOUND); }
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -208,8 +237,9 @@ pub async fn test_webhook(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let webhook = sqlx::query!(
-        "SELECT url, secret FROM webhook_endpoints WHERE id = $1 AND workspace_id = $2",
-        id, ctx.workspace_id,
+        "SELECT url, secret FROM webhooks WHERE id = $1 AND workspace_id = $2",
+        id,
+        ctx.workspace_id,
     )
     .fetch_one(&app.db)
     .await
@@ -227,8 +257,7 @@ pub async fn test_webhook(
     let payload_bytes = serde_json::to_vec(&test_payload).unwrap_or_default();
     let signature = webhooks::signer::sign_payload(&webhook.secret, &payload_bytes);
 
-    let resp = app
-        .http
+    let resp = reqwest::Client::new()
         .post(&webhook.url)
         .header("Content-Type", "application/json")
         .header("X-Webhook-Signature", &signature)
@@ -275,12 +304,12 @@ pub async fn list_deliveries(
         rows.into_iter()
             .map(|r| WebhookDeliveryResponse {
                 id: r.id,
-                webhook_id: r.webhook_id,
-                event_type: r.event_type,
+                webhook_id: r.webhook_id.unwrap_or_default(),
+                event_type: r.event_type.unwrap_or_default(),
                 status: r.status,
                 attempt_number: r.attempt_number,
                 http_status: r.http_status,
-                response_time_ms: r.response_time_ms,
+                response_time_ms: r.response_time_ms.map(|v| v as i64),
                 error_message: r.error_message,
                 scheduled_at: r.scheduled_at.to_rfc3339(),
                 delivered_at: r.delivered_at.map(|t| t.to_rfc3339()),
