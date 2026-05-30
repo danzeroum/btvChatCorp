@@ -307,9 +307,11 @@ impl RagSearcher {
     /// Embeda a query com prefixo especial para busca (Nomic V2)
     async fn embed_query(&self, query: &str) -> Result<Vec<f32>, SearchError> {
         let prefixed = format!("search_query: {}", query);
+        let internal_token = std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default();
         let response: EmbedResponse = self
             .http
             .post(format!("{}/embed", self.embedding_url))
+            .header("X-Internal-Token", internal_token)
             .json(&EmbedRequest {
                 texts: vec![prefixed],
             })

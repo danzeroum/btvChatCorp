@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use sha2::{Sha256, Digest};
+use sha2::Sha256;
 use hex;
 use reqwest::Client;
 use sqlx::PgPool;
@@ -524,7 +524,8 @@ impl AdminService {
     ) -> Result<(ApiKeyRow, String)> {
         // Gera chave aleatória segura
         let raw_key = format!("btv_live_{}", generate_random_token(32));
-        let key_hash = hash_api_key(&raw_key);
+        let hmac_secret = std::env::var("API_KEY_HMAC_SECRET").unwrap_or_default();
+        let key_hash = crate::security::hash_api_key_hmac(&raw_key, &hmac_secret);
         let prefix = &raw_key[..12]; // primeiros 12 chars visíveis
         let masked = format!("{}••••••••••••{}", prefix, &raw_key[raw_key.len()-4..]);
 
@@ -882,12 +883,6 @@ impl AdminService {
 
 fn period_to_days(period: &str) -> i32 {
     match period { "7d" => 7, "90d" => 90, _ => 30 }
-}
-
-fn hash_api_key(key: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(key.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 fn generate_random_token(len: usize) -> String {

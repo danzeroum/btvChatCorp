@@ -4,7 +4,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+
+type HmacSha256 = Hmac<Sha256>;
 
 use crate::models::api_key::{ApiKeyContext, ApiKeyPermission, ProjectScope};
 // Re-exporta do crate api
@@ -33,17 +36,20 @@ pub async fn api_key_auth(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Hash SHA-256 para lookup seguro (nunca armazenamos a key em texto)
-    let key_hash = hash_api_key(api_key);
+    // Lookup seguro por hash. Aceita HMAC (atual) e SHA-256 puro (legado) durante
+    // a janela de migração das keys.
+    let hmac_hash = hash_api_key_hmac(api_key, &app.api_key_hmac_secret);
+    let legacy_hash = hash_api_key_sha256(api_key);
 
     let record = sqlx::query!(
         r#"
         SELECT id, workspace_id, name, permissions, project_scope,
                allowed_project_ids, rate_limit, status
         FROM api_keys
-        WHERE key_hash = $1 AND status = 'active'
+        WHERE (key_hash = $1 OR key_hash = $2) AND status = 'active'
         "#,
-        key_hash,
+        hmac_hash,
+        legacy_hash,
     )
     .fetch_optional(&app.db)
     .await
@@ -90,8 +96,18 @@ pub async fn api_key_auth(
     Ok(next.run(request).await)
 }
 
-/// SHA-256 da API key para armazenamento e lookup seguro
-pub fn hash_api_key(key: &str) -> String {
+/// HMAC-SHA256 da API key — formato atual (com segredo da aplicação).
+// NOTA: duplicado de `api::security` porque este crate ainda está fora do workspace
+// Cargo (ver C12). Após a unificação do workspace, importar de um util compartilhado.
+pub fn hash_api_key_hmac(key: &str, secret: &str) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC aceita chave de qualquer tamanho");
+    mac.update(key.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// SHA-256 puro — formato LEGADO, apenas para fallback durante a migração.
+pub fn hash_api_key_sha256(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
     hex::encode(hasher.finalize())

@@ -19,8 +19,10 @@ struct EmbedResponse {
 async fn embed_query(embedding_url: &str, query: &str) -> Result<Vec<f32>> {
     let client = reqwest::Client::new();
     let prefixed = format!("search_query: {}", query);
+    let internal_token = std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default();
     let resp = client
         .post(format!("{}/embed", embedding_url))
+        .header("X-Internal-Token", internal_token)
         .json(&EmbedRequest {
             texts: vec![prefixed],
         })

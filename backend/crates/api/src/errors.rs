@@ -38,6 +38,15 @@ impl AppError {
     pub fn conflict(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, "conflict", msg)
     }
+    pub fn unprocessable(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "validation_error", msg)
+    }
+}
+
+impl From<validator::ValidationErrors> for AppError {
+    fn from(e: validator::ValidationErrors) -> Self {
+        Self::unprocessable(e.to_string())
+    }
 }
 
 impl IntoResponse for AppError {

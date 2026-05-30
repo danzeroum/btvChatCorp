@@ -5,7 +5,6 @@ use axum::{
     response::Response,
     Json,
 };
-use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -97,17 +96,20 @@ pub async fn api_key_auth(
     }
 
     // ── Busca key no banco por hash (nunca armazenamos a key em texto) ──────
-    let key_hash = hash_api_key(api_key);
+    // Aceita HMAC (atual) e SHA-256 puro (legado) durante a janela de migração.
+    let hmac_hash = crate::security::hash_api_key_hmac(api_key, &app.api_key_hmac_secret);
+    let legacy_hash = crate::security::hash_api_key_sha256(api_key);
     let record = sqlx::query_as::<_, ApiKeyRecord>(
         r#"
         SELECT id, workspace_id, name, permissions,
                project_scope, allowed_project_ids,
                rate_limit_rpm, status, expires_at, allowed_ips
         FROM api_keys
-        WHERE key_hash = $1
+        WHERE key_hash = $1 OR key_hash = $2
         "#,
     )
-    .bind(&key_hash)
+    .bind(&hmac_hash)
+    .bind(&legacy_hash)
     .fetch_optional(&app.db)
     .await
     .map_err(|_| error_response(
@@ -184,11 +186,4 @@ pub async fn api_key_auth(
 
     request.extensions_mut().insert(ctx);
     Ok(next.run(request).await)
-}
-
-/// Gera SHA-256 hex da API key (nunca armazenamos em texto)
-pub fn hash_api_key(key: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(key.as_bytes());
-    hex::encode(hasher.finalize())
 }

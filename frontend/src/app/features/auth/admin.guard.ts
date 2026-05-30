@@ -1,51 +1,29 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
+import { map } from 'rxjs';
+import { AuthService } from '../../core/services/auth.service';
 
 /** Roles com acesso ao painel /admin */
 const ADMIN_ROLES = ['admin', 'super_admin'];
 
 /**
- * Lê o JWT em localStorage, verifica validade e role.
- * - Sem token / expirado  → redireciona para /auth/login
- * - Token válido sem role admin → redireciona para /unauthorized
- * - Token válido com role admin → libera acesso
+ * Autorização de admin verificada NO SERVIDOR (GET /auth/me).
+ * - Sem sessão válida           → /auth/login
+ * - Sessão válida sem role admin → /unauthorized
+ * - Sessão válida com role admin → libera acesso
+ *
+ * Importante: a role vem do servidor, nunca do JWT decodificado no cliente —
+ * caso contrário um token forjado com role "super_admin" passaria pelo guard.
  */
 export const adminGuard: CanActivateFn = () => {
   const router = inject(Router);
-  const token  = localStorage.getItem('jwt_token');
+  const auth = inject(AuthService);
 
-  if (!token) {
-    router.navigate(['/auth/login']);
-    return false;
-  }
-
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-
-    // Verifica expiração
-    if (Date.now() >= payload.exp * 1000) {
-      localStorage.removeItem('jwt_token');
-      localStorage.removeItem('refresh_token');
-      router.navigate(['/auth/login']);
-      return false;
-    }
-
-    // Verifica role — suporta string simples ou array
-    const role: string | string[] = payload.role ?? payload.roles ?? '';
-    const hasAccess = Array.isArray(role)
-      ? role.some(r => ADMIN_ROLES.includes(r))
-      : ADMIN_ROLES.includes(role);
-
-    if (!hasAccess) {
-      router.navigate(['/unauthorized']);
-      return false;
-    }
-
-    return true;
-  } catch {
-    // Token malformado
-    localStorage.removeItem('jwt_token');
-    router.navigate(['/auth/login']);
-    return false;
-  }
+  return auth.verifySession().pipe(
+    map((user) => {
+      if (!user) return router.createUrlTree(['/auth/login']);
+      const hasAccess = user.roles.some((r) => ADMIN_ROLES.includes(r));
+      return hasAccess ? true : router.createUrlTree(['/unauthorized']);
+    })
+  );
 };
