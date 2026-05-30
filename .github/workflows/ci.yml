@@ -132,9 +132,6 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Criar diretorio de uploads
         run: mkdir -p $UPLOAD_DIR
 
@@ -142,6 +139,9 @@ jobs:
         run: |
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run --database-url "$DATABASE_URL" --source migrations
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: "[RAG] Testes unitarios - strategy"
         run: cargo test -p document-processor strategy_tests -- --test-threads=1 --nocapture

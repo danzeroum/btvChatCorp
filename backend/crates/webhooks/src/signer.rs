@@ -9,8 +9,8 @@ type HmacSha256 = Hmac<Sha256>;
 /// Formato do header enviado:
 /// `X-Webhook-Signature: sha256=<hex_digest>`
 pub fn sign_payload(secret: &str, payload_bytes: &[u8]) -> String {
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(payload_bytes);
     let result = mac.finalize();
     let bytes = result.into_bytes();
@@ -23,10 +23,7 @@ pub fn verify_signature(secret: &str, payload_bytes: &[u8], signature: &str) -> 
     let expected = sign_payload(secret, payload_bytes);
     // Comparação segura
     expected.len() == signature.len()
-        && expected
-            .bytes()
-            .zip(signature.bytes())
-            .all(|(a, b)| a == b)
+        && expected.bytes().zip(signature.bytes()).all(|(a, b)| a == b)
 }
 
 #[cfg(test)]

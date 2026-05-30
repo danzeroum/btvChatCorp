@@ -45,11 +45,7 @@ pub struct DeliveryRecord {
 
 impl DeliveryRecord {
     /// Cria novo registro de entrega (tentativa inicial)
-    pub fn new_attempt(
-        webhook_id: Uuid,
-        event_type: String,
-        payload: serde_json::Value,
-    ) -> Self {
+    pub fn new_attempt(webhook_id: Uuid, event_type: String, payload: serde_json::Value) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),

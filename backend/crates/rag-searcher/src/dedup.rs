@@ -50,8 +50,8 @@ fn is_too_similar(content: &str, existing: &[RetrievedChunk]) -> bool {
             .filter(|b| existing_bigrams.contains(b))
             .count();
 
-        let overlap = intersection as f64
-            / candidate_bigrams.len().min(existing_bigrams.len()) as f64;
+        let overlap =
+            intersection as f64 / candidate_bigrams.len().min(existing_bigrams.len()) as f64;
 
         if overlap > 0.8 {
             return true;
