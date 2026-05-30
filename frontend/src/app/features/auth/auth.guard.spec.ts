@@ -1,62 +1,55 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { Router } from '@angular/router';
-import { authGuard } from './auth.guard';
+import { provideRouter, Router, UrlTree } from '@angular/router';
 import { ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
+import { Observable, firstValueFrom, of } from 'rxjs';
+import { authGuard } from './auth.guard';
+import { AuthService, AuthUser } from '../../core/services/auth.service';
 
-function makeToken(payload: Record<string, unknown>): string {
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const body   = btoa(JSON.stringify(payload));
-  return `${header}.${body}.fakesig`;
+const USER: AuthUser = {
+  id: 'u1',
+  email: 'a@b.com',
+  name: 'A',
+  roles: ['user'],
+  workspaceId: 'w1',
+};
+
+class MockAuthService {
+  session: AuthUser | null = null;
+  verifySession(): Observable<AuthUser | null> {
+    return of(this.session);
+  }
 }
-
-const futureExp = Math.floor(Date.now() / 1000) + 3600;
-const pastExp   = Math.floor(Date.now() / 1000) - 3600;
 
 describe('authGuard', () => {
   let router: Router;
+  let auth: MockAuthService;
   const dummyRoute = {} as ActivatedRouteSnapshot;
   const dummyState = { url: '/chat' } as RouterStateSnapshot;
 
   beforeEach(() => {
+    auth = new MockAuthService();
     TestBed.configureTestingModule({
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), { provide: AuthService, useValue: auth }],
     });
     router = TestBed.inject(Router);
-    spyOn(router, 'navigate');
-    localStorage.clear();
   });
 
-  it('deve redirecionar para /auth/login quando nao ha token', () => {
-    const result = TestBed.runInInjectionContext(() =>
-      authGuard(dummyRoute, dummyState)
+  function run(): Observable<boolean | UrlTree> {
+    return TestBed.runInInjectionContext(
+      () => authGuard(dummyRoute, dummyState) as Observable<boolean | UrlTree>
     );
-    expect(result).toBeFalse();
-    expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
+  }
+
+  it('redireciona para /auth/login quando o servidor não confirma sessão', async () => {
+    auth.session = null;
+    const result = await firstValueFrom(run());
+    expect(result instanceof UrlTree).toBeTrue();
+    expect((result as UrlTree).toString()).toBe('/auth/login');
   });
 
-  it('deve redirecionar para /auth/login quando token expirado', () => {
-    localStorage.setItem('jwt_token', makeToken({ sub: 'u1', exp: pastExp }));
-    const result = TestBed.runInInjectionContext(() =>
-      authGuard(dummyRoute, dummyState)
-    );
-    expect(result).toBeFalse();
-    expect(router.navigate).toHaveBeenCalledWith(['/auth/login']);
-  });
-
-  it('deve permitir acesso com token valido', () => {
-    localStorage.setItem('jwt_token', makeToken({ sub: 'u1', exp: futureExp }));
-    const result = TestBed.runInInjectionContext(() =>
-      authGuard(dummyRoute, dummyState)
-    );
+  it('permite acesso quando o servidor confirma a sessão', async () => {
+    auth.session = USER;
+    const result = await firstValueFrom(run());
     expect(result).toBeTrue();
-  });
-
-  it('deve limpar localStorage quando token expirado', () => {
-    localStorage.setItem('jwt_token', makeToken({ sub: 'u1', exp: pastExp }));
-    localStorage.setItem('refresh_token', 'somerefresh');
-    TestBed.runInInjectionContext(() => authGuard(dummyRoute, dummyState));
-    expect(localStorage.getItem('jwt_token')).toBeNull();
-    expect(localStorage.getItem('refresh_token')).toBeNull();
   });
 });
