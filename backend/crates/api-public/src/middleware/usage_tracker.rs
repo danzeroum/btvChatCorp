@@ -1,17 +1,10 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 
 use crate::models::api_key::ApiKeyContext;
 
 /// Middleware que contabiliza tokens e requests por API key.
 /// Persiste o uso de forma não-bloqueante para não adicionar latência.
-pub async fn usage_tracker(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn usage_tracker(request: Request, next: Next) -> Response {
     // Captura contexto da API key (injetado pelo api_key_auth middleware)
     let ctx = request.extensions().get::<ApiKeyContext>().cloned();
     let path = request.uri().path().to_string();
