@@ -1,17 +1,9 @@
-use axum::{
-    body::Body,
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 
 /// Middleware que loga cada request da API pública:
 /// método, path, status, latência e API key prefix.
-pub async fn request_logger(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn request_logger(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
     let start = Instant::now();

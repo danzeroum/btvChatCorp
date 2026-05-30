@@ -7,18 +7,8 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod errors;
-mod extractors;
-mod middleware;
-mod models;
-mod rag;
-mod rag_test;
-mod routes;
-mod security;
-mod state;
-mod test_helpers;
-
-use state::AppState;
+use api::routes;
+use api::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
