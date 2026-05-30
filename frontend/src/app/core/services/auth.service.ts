@@ -32,16 +32,13 @@ export class AuthService {
 
   constructor(private http: HttpClient, private router: Router) {}
 
-  login(email: string, password: string): Observable<{ access_token: string }> {
-    const body = new URLSearchParams();
-    body.set('username', email);
-    body.set('password', password);
+  /** Resposta do endpoint POST /api/v1/auth/login (handler Rust/Axum) */
+  login(email: string, password: string): Observable<{ token: string }> {
+    // Backend espera JSON { email, password } e responde { token, ... }.
     return this.http
-      .post<{ access_token: string }>('/api/v1/auth/login', body.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      })
+      .post<{ token: string }>('/api/v1/auth/login', { email, password })
       .pipe(tap((res) => {
-        localStorage.setItem(this.JWT_KEY, res.access_token);
+        localStorage.setItem(this.JWT_KEY, res.token);
         // O usuário (roles/workspace) é populado pelo servidor via verifySession().
       }));
   }
