@@ -1,11 +1,15 @@
 import { Pipe, PipeTransform, SecurityContext } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer } from '@angular/platform-browser';
 import { inject } from '@angular/core';
 
 /**
  * Converte Markdown para HTML sanitizado.
  * Suporta: bold, italic, código inline, blocos de código, listas, headers.
  * Uso: <div [innerHTML]="message.content | markdownRender"></div>
+ *
+ * Segurança: NÃO usa bypassSecurityTrustHtml. O HTML gerado é sanitizado e
+ * retornado como string — o binding [innerHTML] re-sanitiza automaticamente
+ * (defesa em profundidade). URLs de links são restritas a http(s).
  */
 @Pipe({
   name: 'markdownRender',
@@ -15,7 +19,7 @@ import { inject } from '@angular/core';
 export class MarkdownRenderPipe implements PipeTransform {
   private sanitizer = inject(DomSanitizer);
 
-  transform(value: string | null | undefined): SafeHtml {
+  transform(value: string | null | undefined): string {
     if (!value) return '';
 
     let html = value
@@ -37,8 +41,11 @@ export class MarkdownRenderPipe implements PipeTransform {
       .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
       // Listas ordenadas
       .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-      // Links
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      // Links — só permite http(s); bloqueia javascript:/data: e outros esquemas
+      .replace(/\[(.+?)\]\((.+?)\)/g, (_match, text: string, url: string) => {
+        const safeUrl = /^https?:\/\//i.test(url.trim()) ? url.trim() : '#';
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      })
       // Quebras de linha
       .replace(/\n\n/g, '</p><p>')
       .replace(/\n/g, '<br>');
@@ -51,8 +58,7 @@ export class MarkdownRenderPipe implements PipeTransform {
     // Wrap li em ul
     html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
 
-    return this.sanitizer.bypassSecurityTrustHtml(
-      this.sanitizer.sanitize(SecurityContext.HTML, html) ?? ''
-    );
+    // Sem bypass: Angular sanitiza o HTML e o binding [innerHTML] re-sanitiza.
+    return this.sanitizer.sanitize(SecurityContext.HTML, html) ?? '';
   }
 }
