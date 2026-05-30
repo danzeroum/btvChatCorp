@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
@@ -8,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 # Nomic Embed V2 — 768 dimensões, multilingual, SOTA open-source
 MODEL_NAME = "nomic-ai/nomic-embed-text-v2-moe"
+# Revisão fixa (hash de commit) — obrigatória ao usar trust_remote_code para travar
+# o código remoto executado a uma versão auditada (mitiga supply-chain do HuggingFace).
+MODEL_REVISION = os.getenv("EMBEDDING_MODEL_REVISION")
 
 # Prefixos de instrução que o Nomic V2 usa para diferenciar query de documento
 # Isso melhora drasticamente a qualidade do RAG
@@ -24,15 +28,22 @@ class NomicEmbedder:
     """
 
     def __init__(self):
+        if not MODEL_REVISION:
+            raise RuntimeError(
+                "EMBEDDING_MODEL_REVISION obrigatório: fixe um hash de commit auditado do "
+                "HuggingFace antes de carregar um modelo com trust_remote_code."
+            )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"[Embedder] Carregando {MODEL_NAME} em {self.device}")
+        logger.info(f"[Embedder] Carregando {MODEL_NAME}@{MODEL_REVISION} em {self.device}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             MODEL_NAME,
+            revision=MODEL_REVISION,
             trust_remote_code=True,
         )
         self.model = AutoModel.from_pretrained(
             MODEL_NAME,
+            revision=MODEL_REVISION,
             trust_remote_code=True,
         ).to(self.device)
         self.model.eval()
