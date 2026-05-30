@@ -1,8 +1,8 @@
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio_stream::wrappers::ReceiverStream;
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::errors::OrchestratorError;
 
@@ -68,6 +68,8 @@ struct VllmStreamChunk {
 #[derive(Debug, Deserialize)]
 struct VllmStreamChoice {
     delta: VllmDelta,
+    // Presente no payload do vLLM; não consumido no streaming.
+    #[allow(dead_code)]
     finish_reason: Option<String>,
 }
 
@@ -201,18 +203,13 @@ impl LlmClient {
                                     if json.trim() == "[DONE]" {
                                         break;
                                     }
-                                    if let Ok(chunk) =
-                                        serde_json::from_str::<VllmStreamChunk>(json)
+                                    if let Ok(chunk) = serde_json::from_str::<VllmStreamChunk>(json)
                                     {
                                         if let Some(choice) = chunk.choices.into_iter().next() {
-                                            if !choice.delta.content.is_empty() {
-                                                if tx
-                                                    .send(Ok(choice.delta.content))
-                                                    .await
-                                                    .is_err()
-                                                {
-                                                    return; // receiver dropped
-                                                }
+                                            if !choice.delta.content.is_empty()
+                                                && tx.send(Ok(choice.delta.content)).await.is_err()
+                                            {
+                                                return; // receiver dropped
                                             }
                                         }
                                     }

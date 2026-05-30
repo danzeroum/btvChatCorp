@@ -1,9 +1,9 @@
-pub mod errors;
-pub mod searcher;
-pub mod reranker;
 pub mod context_expander;
-pub mod prompt_builder;
 pub mod dedup;
+pub mod errors;
+pub mod prompt_builder;
+pub mod reranker;
+pub mod searcher;
 
-pub use searcher::{RagSearcher, RagResult, RetrievedChunk, SearchFilters};
-pub use prompt_builder::PromptBuilder;
+pub use prompt_builder::{ConversationMessage, PromptBuilder, WorkspaceContext};
+pub use searcher::{RagResult, RagSearcher, RetrievedChunk, SearchConfig, SearchFilters};

@@ -29,8 +29,7 @@ impl RetryPolicy {
             return Duration::from_secs(0);
         }
         let exponent = (attempt - 1) as f64;
-        let delay_secs =
-            self.initial_delay_secs as f64 * self.backoff_multiplier.powf(exponent);
+        let delay_secs = self.initial_delay_secs as f64 * self.backoff_multiplier.powf(exponent);
         let capped = delay_secs.min(self.max_delay_secs as f64) as u64;
         Duration::from_secs(capped)
     }
@@ -43,10 +42,7 @@ impl RetryPolicy {
 
 /// Executa uma função assíncrona com retry automático.
 /// Retorna Ok no primeiro sucesso ou Err após esgotar as tentativas.
-pub async fn with_retry<F, Fut, T, E>(
-    policy: &RetryPolicy,
-    mut f: F,
-) -> Result<T, E>
+pub async fn with_retry<F, Fut, T, E>(policy: &RetryPolicy, mut f: F) -> Result<T, E>
 where
     F: FnMut(u32) -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
@@ -61,7 +57,8 @@ where
                     tracing::error!(
                         attempt = attempt,
                         "Retry policy exhausted after {} attempts: {:?}",
-                        attempt, e
+                        attempt,
+                        e
                     );
                     return Err(e);
                 }
@@ -70,7 +67,8 @@ where
                     attempt = attempt,
                     delay_secs = delay.as_secs(),
                     "Webhook delivery failed, retrying in {}s: {:?}",
-                    delay.as_secs(), e
+                    delay.as_secs(),
+                    e
                 );
                 tokio::time::sleep(delay).await;
                 attempt += 1;

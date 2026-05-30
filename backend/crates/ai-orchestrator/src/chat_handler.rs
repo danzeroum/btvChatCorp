@@ -11,12 +11,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use rag_searcher::{
-    RagSearcher, SearchConfig, SearchFilters,
     prompt_builder::{ConversationMessage, PromptBuilder, WorkspaceContext},
+    RagSearcher, SearchConfig, SearchFilters,
 };
 
 use crate::{
-    errors::OrchestratorError,
     llm_client::{LlmClient, VllmMessage},
     training_repo::{CreateInteraction, Feedback, TrainingRepo},
 };
@@ -71,10 +70,8 @@ pub async fn chat_stream_handler(
     Json(req): Json<ChatRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, anyhow::Error>>>, axum::http::StatusCode> {
     // ── 1. Busca contexto RAG ────────────────────────────────────────────────
-    let search_config = SearchConfig::for_sector(
-        req.sector.as_deref().unwrap_or("generic"),
-        req.top_k,
-    );
+    let search_config =
+        SearchConfig::for_sector(req.sector.as_deref().unwrap_or("generic"), req.top_k);
 
     let filters = req.document_ids.as_ref().map(|ids| SearchFilters {
         document_id: ids.first().cloned(),
@@ -189,8 +186,7 @@ pub async fn chat_stream_handler(
                 message: e.to_string(),
             };
             Ok::<Event, anyhow::Error>(
-                Event::default()
-                    .data(serde_json::to_string(&payload).unwrap_or_default()),
+                Event::default().data(serde_json::to_string(&payload).unwrap_or_default()),
             )
         }
         Ok(token) => {
@@ -203,8 +199,7 @@ pub async fn chat_stream_handler(
 
             let payload = SsePayload::Token { data: token };
             Ok::<Event, anyhow::Error>(
-                Event::default()
-                    .data(serde_json::to_string(&payload).unwrap_or_default()),
+                Event::default().data(serde_json::to_string(&payload).unwrap_or_default()),
             )
         }
     });
@@ -266,10 +261,7 @@ pub async fn submit_feedback_handler(
 
     // Correção manual → alta prioridade de curadoria
     if has_correction {
-        let _ = state
-            .training
-            .flag_high_priority(req.interaction_id)
-            .await;
+        let _ = state.training.flag_high_priority(req.interaction_id).await;
     }
 
     axum::http::StatusCode::OK

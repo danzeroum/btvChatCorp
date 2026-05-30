@@ -1,6 +1,6 @@
 use qdrant_client::{
+    qdrant::{Condition, Filter, SearchPointsBuilder},
     Qdrant,
-    qdrant::{Filter, Condition, SearchPointsBuilder},
 };
 
 use crate::{errors::SearchError, searcher::RetrievedChunk};
@@ -69,20 +69,14 @@ impl ContextExpander {
             .await
             .map_err(|e| SearchError::Qdrant(e.to_string()))?;
 
-        Ok(results
-            .result
-            .into_iter()
-            .next()
-            .and_then(|p| {
-                p.payload
-                    .get("content")
-                    .and_then(|v| {
-                        // Qdrant retorna Value como string
-                        match v.kind.as_ref()? {
-                            qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
-                            _ => None,
-                        }
-                    })
-            }))
+        Ok(results.result.into_iter().next().and_then(|p| {
+            p.payload.get("content").and_then(|v| {
+                // Qdrant retorna Value como string
+                match v.kind.as_ref()? {
+                    qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
+                    _ => None,
+                }
+            })
+        }))
     }
 }

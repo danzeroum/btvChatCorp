@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::searcher::RagResult;
 
 /// Contexto do workspace injetado no system prompt
@@ -11,7 +13,7 @@ pub struct WorkspaceContext {
 }
 
 /// Mensagem de conversa (formato OpenAI)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMessage {
     pub role: String, // "system", "user", "assistant"
     pub content: String,
@@ -62,10 +64,7 @@ impl PromptBuilder {
 
         // ── 1. System prompt do workspace ────────────────────────────────────────
         let context = self.format_rag_context(rag_results);
-        let custom_instructions = workspace_ctx
-            .custom_system_prompt
-            .as_deref()
-            .unwrap_or("");
+        let custom_instructions = workspace_ctx.custom_system_prompt.as_deref().unwrap_or("");
 
         let system_content = format!(
             r#"Você é um assistente especializado para a empresa {company}.

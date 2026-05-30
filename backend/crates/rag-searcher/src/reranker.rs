@@ -29,11 +29,7 @@ impl Reranker {
 
     /// Envia pares (query, doc) para o cross-encoder e retorna scores de relevância.
     /// O serviço Python usa `cross-encoder/ms-marco-MiniLM-L-12-v2`.
-    pub async fn rerank(
-        &self,
-        query: &str,
-        documents: &[&str],
-    ) -> Result<Vec<f32>, SearchError> {
+    pub async fn rerank(&self, query: &str, documents: &[&str]) -> Result<Vec<f32>, SearchError> {
         if documents.is_empty() {
             return Ok(vec![]);
         }
@@ -43,7 +39,10 @@ impl Reranker {
             .http
             .post(format!("{}/rerank", self.reranker_url))
             .header("X-Internal-Token", internal_token)
-            .json(&RerankRequest { query, documents: documents.to_vec() })
+            .json(&RerankRequest {
+                query,
+                documents: documents.to_vec(),
+            })
             .send()
             .await
             .map_err(SearchError::Http)?
