@@ -1,22 +1,17 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
+import { map } from 'rxjs';
+import { AuthService } from '../../core/services/auth.service';
 
+/**
+ * Libera o acesso apenas quando o servidor confirma a sessão (GET /auth/me).
+ * Não confia no JWT decodificado no cliente (assinatura não verificável no browser).
+ */
 export const authGuard: CanActivateFn = () => {
   const router = inject(Router);
-  const token = localStorage.getItem('jwt_token');
+  const auth = inject(AuthService);
 
-  if (token) {
-    // Basic check: token exists and not expired
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const exp = payload.exp * 1000;
-      if (Date.now() < exp) return true;
-    } catch { /* invalid token */ }
-  }
-
-  // Not authenticated
-  localStorage.removeItem('jwt_token');
-  localStorage.removeItem('refresh_token');
-  router.navigate(['/auth/login']);
-  return false;
+  return auth.verifySession().pipe(
+    map((user) => (user ? true : router.createUrlTree(['/auth/login'])))
+  );
 };

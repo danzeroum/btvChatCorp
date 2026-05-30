@@ -1,5 +1,6 @@
 use std::env;
 
+use axum::http::{header, HeaderValue, Method};
 use axum::routing::get;
 use axum::{Json, Router};
 use tower_http::cors::CorsLayer;
@@ -13,6 +14,7 @@ mod models;
 mod rag;
 mod rag_test;
 mod routes;
+mod security;
 mod state;
 mod test_helpers;
 
@@ -44,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
         env::var("OLLAMA_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
     let ollama_model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "mistral:latest".into());
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
+    let api_key_hmac_secret =
+        env::var("API_KEY_HMAC_SECRET").expect("API_KEY_HMAC_SECRET obrigatorio");
     let ollama_auth = match env::var("OLLAMA_AUTH_USER").ok() {
         Some(u) => {
             let p = env::var("OLLAMA_AUTH_PASS").unwrap_or_default();
@@ -69,9 +73,31 @@ async fn main() -> anyhow::Result<()> {
         ollama_model,
         ollama_auth,
         jwt_secret,
+        api_key_hmac_secret,
         qdrant_url,
         embedding_url,
     };
+
+    // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.
+    let allowed_origins: Vec<HeaderValue> = env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:4200".into())
+        .split(',')
+        .filter_map(|s| s.trim().parse::<HeaderValue>().ok())
+        .collect();
+    tracing::info!("CORS allowed origins: {:?}", allowed_origins);
+
+    let cors = CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+        .allow_credentials(true);
 
     let app = Router::new()
         .route(
@@ -79,12 +105,7 @@ async fn main() -> anyhow::Result<()> {
             get(async || Json(serde_json::json!({ "status": "ok" }))),
         )
         .nest("/api/v1", routes::v1_routes(state.clone()))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(tower_http::cors::Any)
-                .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any),
-        )
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
