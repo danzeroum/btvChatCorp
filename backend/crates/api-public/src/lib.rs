@@ -23,7 +23,7 @@ use crate_api::state::AppState;
 
 /// Monta o Router da API Pública com todos os middlewares e rotas versionadas
 pub fn public_api_router(state: AppState) -> Router {
-    let v1 = api_v1_routes();
+    let v1 = api_v1_routes(state.clone());
 
     Router::new()
         // Swagger UI
@@ -33,7 +33,7 @@ pub fn public_api_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-fn api_v1_routes() -> Router<AppState> {
+fn api_v1_routes(state: AppState) -> Router<AppState> {
     Router::new()
         // Chat (compatível com formato OpenAI)
         .merge(routes::chat::chat_routes())
@@ -53,6 +53,6 @@ fn api_v1_routes() -> Router<AppState> {
         .layer(axum_middleware::from_fn(request_logger))
         .layer(axum_middleware::from_fn(usage_tracker))
         .layer(rate_limit_layer())
-        // Autenticação por API key (deve ser o mais externo)
-        // .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_auth))
+        // Autenticação por API key (deve ser o mais externo) — reativada
+        .layer(axum_middleware::from_fn_with_state(state, api_key_auth))
 }

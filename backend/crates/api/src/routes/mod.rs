@@ -21,7 +21,7 @@ use crate::middleware::auth::require_auth;
 use crate::models::chat::{Chat, CreateChatDto, FeedbackDto, Message, SendMessageDto};
 use crate::models::document::Document;
 use crate::models::project::{CreateProjectDto, Project, UpdateProjectDto};
-use crate::routes::auth::{AuthResponse, LoginDto, RegisterDto};
+use crate::routes::auth::{AuthResponse, LoginDto, MeResponse, RefreshDto, RegisterDto};
 use crate::routes::branding::BrandingConfigResponse;
 use crate::routes::documents::{LinkDto, UploadForm};
 use crate::routes::onboarding::{AcceptInviteDto, AdvanceStepDto, ChecklistResponse, InviteDto};
@@ -35,6 +35,8 @@ use crate::state::AppState;
     paths(
         auth::register,
         auth::login,
+        auth::me,
+        auth::refresh,
         branding::get_theme_css,
         branding::get_config,
         chats::list,
@@ -73,7 +75,7 @@ use crate::state::AppState;
     ),
     components(
         schemas(
-            RegisterDto, LoginDto, AuthResponse,
+            RegisterDto, LoginDto, AuthResponse, MeResponse, RefreshDto,
             BrandingConfigResponse,
             Chat, CreateChatDto, SendMessageDto, FeedbackDto, Message,
             Document, LinkDto, UploadForm,
@@ -102,6 +104,7 @@ pub fn docs_router() -> Router<AppState> {
 pub fn v1_routes(state: AppState) -> Router<AppState> {
     // Rotas protegidas por JWT
     let protected = Router::new()
+        .merge(auth::protected_routes())
         .merge(chats::routes())
         .merge(documents::routes())
         .merge(projects::routes())
