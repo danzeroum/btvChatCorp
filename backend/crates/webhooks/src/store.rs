@@ -71,12 +71,12 @@ impl WebhookStore {
 
         sqlx::query!(
             r#"
-            INSERT INTO webhook_deliveries (id, webhook_id, status, status_code, attempt)
+            INSERT INTO webhook_deliveries (id, webhook_id, status, http_status, attempt_number)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (id) DO UPDATE
-                SET status      = EXCLUDED.status,
-                    status_code = EXCLUDED.status_code,
-                    attempt     = EXCLUDED.attempt
+                SET status         = EXCLUDED.status,
+                    http_status    = EXCLUDED.http_status,
+                    attempt_number = EXCLUDED.attempt_number
             "#,
             id,
             webhook_id,
