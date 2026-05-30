@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -21,9 +20,9 @@ pub struct CreateInteraction {
 
 #[derive(Debug)]
 pub struct Feedback {
-    pub rating: Option<String>,         // "positive" | "negative"
-    pub correction: Option<String>,     // texto corrigido pelo usuário
-    pub categories: Option<String>,     // "factual_error,incomplete"
+    pub rating: Option<String>,     // "positive" | "negative"
+    pub correction: Option<String>, // texto corrigido pelo usuário
+    pub categories: Option<String>, // "factual_error,incomplete"
     pub user_id: Uuid,
 }
 
@@ -141,10 +140,7 @@ impl TrainingRepo {
     }
 
     /// Marca interação como alta prioridade de curadoria (tem correção manual)
-    pub async fn flag_high_priority(
-        &self,
-        interaction_id: Uuid,
-    ) -> Result<(), OrchestratorError> {
+    pub async fn flag_high_priority(&self, interaction_id: Uuid) -> Result<(), OrchestratorError> {
         sqlx::query!(
             r#"
             UPDATE training_interactions
@@ -194,7 +190,7 @@ impl TrainingRepo {
         &self,
         interaction_id: Uuid,
         curator_id: Uuid,
-        status: &str,   // "approved" | "rejected"
+        status: &str, // "approved" | "rejected"
         notes: Option<&str>,
         final_answer: Option<&str>,
     ) -> Result<(), OrchestratorError> {

@@ -1,18 +1,15 @@
 use std::time::Instant;
 
 use qdrant_client::{
+    qdrant::{Condition, Filter, SearchPointsBuilder},
     Qdrant,
-    qdrant::{Filter, Condition, SearchPointsBuilder},
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    context_expander::ContextExpander,
-    dedup::deduplicate,
-    errors::SearchError,
-    reranker::Reranker,
+    context_expander::ContextExpander, dedup::deduplicate, errors::SearchError, reranker::Reranker,
 };
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────────────
@@ -255,7 +252,7 @@ impl RagSearcher {
 
             let mut reranked: Vec<RetrievedChunk> = candidates
                 .into_iter()
-                .zip(scores.into_iter())
+                .zip(scores)
                 .map(|(mut chunk, score)| {
                     chunk.rerank_score = score;
                     chunk
