@@ -2,7 +2,6 @@ use qdrant_client::{
     Qdrant,
     qdrant::{Filter, Condition, SearchPointsBuilder},
 };
-use serde_json::Value;
 
 use crate::{errors::SearchError, searcher::RetrievedChunk};
 

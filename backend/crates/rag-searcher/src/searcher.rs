@@ -255,7 +255,7 @@ impl RagSearcher {
 
             let mut reranked: Vec<RetrievedChunk> = candidates
                 .into_iter()
-                .zip(scores.into_iter())
+                .zip(scores)
                 .map(|(mut chunk, score)| {
                     chunk.rerank_score = score;
                     chunk

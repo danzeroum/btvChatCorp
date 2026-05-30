@@ -43,7 +43,7 @@ impl Reranker {
             .http
             .post(format!("{}/rerank", self.reranker_url))
             .header("X-Internal-Token", internal_token)
-            .json(&RerankRequest { query, documents })
+            .json(&RerankRequest { query, documents: documents.to_vec() })
             .send()
             .await
             .map_err(SearchError::Http)?
