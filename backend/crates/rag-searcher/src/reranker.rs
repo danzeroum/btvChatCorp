@@ -38,9 +38,11 @@ impl Reranker {
             return Ok(vec![]);
         }
 
+        let internal_token = std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default();
         let response: RerankResponse = self
             .http
             .post(format!("{}/rerank", self.reranker_url))
+            .header("X-Internal-Token", internal_token)
             .json(&RerankRequest { query, documents })
             .send()
             .await

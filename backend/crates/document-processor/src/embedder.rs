@@ -28,9 +28,11 @@ impl Embedder {
                 .iter()
                 .map(|t| format!("search_document: {}", t))
                 .collect();
+            let internal_token = std::env::var("INTERNAL_SERVICE_TOKEN").unwrap_or_default();
             let resp: EmbedResponse = self
                 .client
                 .post(format!("{}/embed", self.embedding_url))
+                .header("X-Internal-Token", internal_token)
                 .json(&serde_json::json!({ "texts": prefixed }))
                 .send()
                 .await?
