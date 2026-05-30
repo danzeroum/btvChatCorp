@@ -32,7 +32,9 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = match self.error.code.as_str() {
-            "missing_api_key" | "invalid_auth_format" | "invalid_key_format" => StatusCode::UNAUTHORIZED,
+            "missing_api_key" | "invalid_auth_format" | "invalid_key_format" => {
+                StatusCode::UNAUTHORIZED
+            }
             "insufficient_permissions" => StatusCode::FORBIDDEN,
             "not_found" => StatusCode::NOT_FOUND,
             "rate_limit_exceeded" => StatusCode::TOO_MANY_REQUESTS,

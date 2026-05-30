@@ -101,6 +101,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "api-public"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "axum",
+ "chrono",
+ "hex",
+ "hmac",
+ "mime_guess",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "tracing",
+ "utoipa",
+ "utoipa-swagger-ui",
+ "uuid",
+ "webhooks",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
