@@ -83,11 +83,7 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
 
     let line_count = text.lines().count();
     let header_count = text.lines().filter(|l| l.trim().starts_with('#')).count();
-    let avg_line_len = if line_count > 0 {
-        text.len() / line_count
-    } else {
-        0
-    };
+    let avg_line_len = text.len().checked_div(line_count).unwrap_or(0);
 
     // 2 headers j\u{e1} indicam documento com se\u{e7}\u{f5}es estruturadas
     if header_count >= 2 {
@@ -98,11 +94,7 @@ pub fn detect_strategy(text: &str, filename: &str, sector: Option<&str>) -> Chun
     // (funciona mesmo quando todo o texto est\u{e1} em uma \u{fa}nica linha)
     let sentence_count = text.chars().filter(|&c| c == '.').count();
     let char_count = text.chars().count();
-    let avg_sentence_len = if sentence_count > 0 {
-        char_count / sentence_count
-    } else {
-        usize::MAX
-    };
+    let avg_sentence_len = char_count.checked_div(sentence_count).unwrap_or(usize::MAX);
 
     if sentence_count >= 10 && avg_sentence_len < 120 {
         return ChunkingStrategy::Sentence;

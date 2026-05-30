@@ -101,6 +101,7 @@ jobs:
     env:
       DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
       JWT_SECRET: test_secret_for_ci_only
+      API_KEY_HMAC_SECRET: test_hmac_secret_for_ci_only
       UPLOAD_DIR: /tmp/btv-uploads
       OLLAMA_URL: http://localhost:11434
       OLLAMA_MODEL: llama3.1:8b
@@ -217,6 +218,8 @@ jobs:
     env:
       DATABASE_URL: postgres://btv:btv@localhost:5432/btvsmoke
       JWT_SECRET: test_secret_for_ci_only
+      API_KEY_HMAC_SECRET: test_hmac_secret_for_ci_only
+      INTERNAL_SERVICE_TOKEN: test_internal_token_for_ci_only
       UPLOAD_DIR: /tmp/btv-uploads
       OLLAMA_URL: http://localhost:11434
       OLLAMA_MODEL: llama3.1:8b
