@@ -91,8 +91,8 @@ export class ProjectListComponent implements OnInit {
   constructor(private http: HttpClient) {}
 
   ngOnInit() {
-    this.http.get<{ projects: Project[] }>('/api/v1/projects/').subscribe({
-      next: res => { this.projects.set(res.projects); this.loading.set(false); },
+    this.http.get<Project[]>('/api/v1/projects/').subscribe({
+      next: res => { this.projects.set(res); this.loading.set(false); },
       error: () => { this.loading.set(false); }
     });
   }
