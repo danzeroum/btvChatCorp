@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE training_interactions\n            SET user_rating      = $1,\n                user_correction  = $2,\n                feedback_categories = $3\n            WHERE id = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67c1ec4bf57020068c8123ae5ee66f8326c6af82528284d9f7be3aa083e0d4c3"
+}

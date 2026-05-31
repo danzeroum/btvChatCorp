@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhooks SET consecutive_failures = consecutive_failures + 1 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50103568f474a35d3b113dbea879e34c325b04fdd5119013d068c2528c39b067"
+}
