@@ -18,6 +18,12 @@ pub struct Claims {
     pub workspace_id: String,
     pub role: String,
     pub exp: usize,
+    /// Issuer — presente em tokens novos; omitido em legados (serde default)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub iss: String,
+    /// Audience — presente em tokens novos; omitido em legados (serde default)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aud: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,10 +46,13 @@ pub async fn require_auth(
         .and_then(|v: &str| v.strip_prefix("Bearer "))
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
+    // Validacao de iss/aud sera enforced em versao futura apos rotacao de tokens
+    let validation = Validation::new(Algorithm::HS256);
+
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
+        &validation,
     )
     .map_err(|_| StatusCode::UNAUTHORIZED)?;
 

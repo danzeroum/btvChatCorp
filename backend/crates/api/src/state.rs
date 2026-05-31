@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::time::Instant;
+use dashmap::DashMap;
 use sqlx::PgPool;
 
 use crate::services::admin_service::AdminService;
@@ -20,4 +22,7 @@ pub struct AppState {
     pub embedding_url: String,
     /// Serviço admin (métricas, usuários, configurações)
     pub admin_service: Arc<AdminService>,
+    /// Rastreia tentativas de login por IP para proteção de brute-force.
+    /// Valor: (contagem_de_falhas, timestamp_da_primeira_falha)
+    pub login_attempts: Arc<DashMap<String, (u32, Instant)>>,
 }

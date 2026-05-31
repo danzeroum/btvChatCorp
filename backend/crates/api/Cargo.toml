@@ -32,6 +32,7 @@ validator          = { workspace = true }
 utoipa             = { workspace = true }
 utoipa-swagger-ui  = { workspace = true }
 rand               = { workspace = true }
+dashmap            = { workspace = true }
 branding           = { path = "../branding" }
 onboarding         = { path = "../onboarding" }
 

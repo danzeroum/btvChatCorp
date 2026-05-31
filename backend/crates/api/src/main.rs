@@ -15,6 +15,7 @@ use std::sync::Arc;
 use api::routes;
 use api::services::admin_service::AdminService;
 use api::state::AppState;
+use dashmap::DashMap;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -80,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         qdrant_url,
         embedding_url,
         admin_service,
+        login_attempts: Arc::new(DashMap::new()),
     };
 
     // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.
