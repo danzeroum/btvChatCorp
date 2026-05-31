@@ -801,22 +801,32 @@ impl AdminService {
     }
 
     pub async fn manual_purge(&self, data_type: &str) -> Result<i64> {
-        let table = match data_type {
-            "chats"         => "chats",
-            "documents"     => "documents",
-            "audit_logs"    => "audit_logs",
-            "training_data" => "training_interactions",
-            _               => return Err(anyhow::anyhow!("Unknown data type")),
+        // SAFETY: sql_stmt é uma string literal estática escolhida pelo match —
+        // data_type nunca é interpolado na query.
+        let sql_stmt: &'static str = match data_type {
+            "chats" =>
+                "DELETE FROM chats WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "documents" =>
+                "DELETE FROM documents WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "audit_logs" =>
+                "DELETE FROM audit_logs WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "training_data" =>
+                "DELETE FROM training_interactions WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            _ => return Err(anyhow::anyhow!(
+                "Tipo de dado inválido: '{}'. Permitidos: chats, documents, audit_logs, training_data",
+                data_type
+            )),
         };
+
         let policy: Option<i32> = sqlx::query_scalar(
             "SELECT retention_days FROM retention_policies WHERE data_type = $1 AND workspace_id = current_setting('app.workspace_id')::uuid"
         ).bind(data_type).fetch_optional(&self.db).await?;
 
         if let Some(days) = policy {
-            let result = sqlx::query(&format!(
-                "DELETE FROM {} WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
-                table
-            )).bind(days).execute(&self.db).await?;
+            let result = sqlx::query(sql_stmt)
+                .bind(days)
+                .execute(&self.db)
+                .await?;
             Ok(result.rows_affected() as i64)
         } else {
             Ok(0)

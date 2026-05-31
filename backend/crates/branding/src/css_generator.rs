@@ -1,5 +1,24 @@
 use serde::{Deserialize, Serialize};
 
+/// Remove linhas com constructs CSS perigosos que permitem CSS injection / Stored XSS.
+fn sanitize_custom_css(raw: &str) -> String {
+    const DANGEROUS: &[&str] = &[
+        "url(",
+        "expression(",
+        "behavior(",
+        "javascript:",
+        "@import",
+        "-moz-binding",
+    ];
+    raw.lines()
+        .filter(|line| {
+            let lower = line.to_lowercase();
+            !DANGEROUS.iter().any(|d| lower.contains(d))
+        })
+        .collect::<Vec<&str>>()
+        .join("\n")
+}
+
 /// Tema visual completo de um workspace.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -225,7 +244,7 @@ pub fn generate_theme_css(theme: &BrandTheme) -> String {
         radius = theme.border_radius,
         radius_lg = theme.border_radius_lg,
         radius_full = theme.border_radius_full,
-        custom_css = theme.custom_css,
+        custom_css = sanitize_custom_css(&theme.custom_css),
     )
 }
 
