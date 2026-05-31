@@ -1,7 +1,5 @@
 # Docker Compose para o stack RAG completo
-# Uso: docker compose -f docker-compose.rag.yml up
-
-version: "3.9"
+# Uso: docker compose -f backend/docker-compose.rag.yml --env-file .env up
 
 services:
 
@@ -19,6 +17,8 @@ services:
     environment:
       QDRANT__SERVICE__HTTP_PORT: 6333
     restart: unless-stopped
+    networks:
+      - btv-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
       interval: 10s
@@ -44,15 +44,9 @@ services:
       PORT: "8001"
     volumes:
       - embedding_cache:/root/.cache/huggingface
-    # Para usar GPU (requer nvidia-docker)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
     restart: unless-stopped
+    networks:
+      - btv-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 15s
@@ -71,6 +65,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       QDRANT_URL: http://qdrant:6333
       EMBEDDING_URL: http://embedding:8001
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       STORAGE_PATH: /data/uploads
       POLL_INTERVAL_SECS: "10"
       WORKER_CONCURRENCY: "4"
@@ -84,6 +79,13 @@ services:
       embedding:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - btv-net
+
+networks:
+  btv-net:
+    external: true
+    name: btvchatcorp_btv-net
 
 volumes:
   qdrant_data:
