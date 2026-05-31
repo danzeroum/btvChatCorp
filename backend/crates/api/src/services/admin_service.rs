@@ -8,6 +8,14 @@ use uuid::Uuid;
 
 use crate::models::admin::*;
 
+fn csv_field(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
 /// Serviço principal do módulo admin.
 /// Encapsula toda lógica de negócio — os handlers em admin.rs apenas delegam aqui.
 pub struct AdminService {
@@ -234,7 +242,7 @@ impl AdminService {
         let metrics = self.get_usage_metrics(period).await?;
         let csv = format!(
             "period,total_tokens_input,total_tokens_output,total_chat_requests,active_users,cost_total\n{},{},{},{},{},{}",
-            metrics.period, metrics.total_tokens_input, metrics.total_tokens_output,
+            csv_field(&metrics.period), metrics.total_tokens_input, metrics.total_tokens_output,
             metrics.total_chat_requests, metrics.active_users, metrics.estimated_cost.total
         );
         Ok(csv)
@@ -295,8 +303,13 @@ impl AdminService {
         let mut csv = "id,name,email,role,status,mfa_enabled,last_login\n".to_string();
         for u in users {
             csv.push_str(&format!("{},{},{},{},{},{},{}\n",
-                u.id, u.name, u.email, u.role_name, u.status, u.mfa_enabled,
-                u.last_login_at.map(|d| d.to_string()).unwrap_or_default()
+                u.id,
+                csv_field(&u.name),
+                csv_field(&u.email),
+                csv_field(&u.role_name),
+                csv_field(&u.status),
+                u.mfa_enabled,
+                csv_field(&u.last_login_at.map(|d| d.to_string()).unwrap_or_default())
             ));
         }
         Ok(csv)

@@ -348,6 +348,7 @@ pub struct WebhookRow {
     pub id: Uuid,
     pub name: String,
     pub url: String,
+    #[serde(skip_serializing)]
     pub secret: String,
     pub events: serde_json::Value,
     pub status: String,

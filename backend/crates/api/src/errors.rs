@@ -41,6 +41,9 @@ impl AppError {
     pub fn unprocessable(msg: impl Into<String>) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, "validation_error", msg)
     }
+    pub fn too_many_requests(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, "too_many_requests", msg)
+    }
 }
 
 impl From<validator::ValidationErrors> for AppError {

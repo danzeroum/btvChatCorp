@@ -36,3 +36,4 @@ validator          = { version = "0.18",  features = ["derive"] }
 utoipa             = { version = "4",     features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui  = { version = "7",     features = ["axum"] }
 rand               = "0.8"
+dashmap            = "6.1"
