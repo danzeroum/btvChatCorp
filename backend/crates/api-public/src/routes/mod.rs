@@ -8,13 +8,15 @@
 //! enrichment (C2), que adiciona o service-user, enriquece o `AppState` e unifica
 //! `webhook_endpoints`/`webhooks`.
 pub mod chat;
+pub mod projects;
 pub mod search;
 pub mod usage;
 pub mod webhooks;
 
-// TODO(C2-writes): reativar após service-user — estes delegam aos handlers vivos
-// do crate `api`, que gravam created_by/uploaded_by/curator_id (FK users) e
-// exigem um user_id válido sob API key.
-// pub mod projects;
+// `projects` reativado (C2-writes): grava `created_by` a partir do dono da API
+// key (`api_keys.created_by` → `ApiKeyContext.user_id`).
+//
+// TODO(C2-writes): `documents`/`training` ainda dependem de
+// uploaded_by/curator_id (FK users) e seguem desativados até o mesmo tratamento.
 // pub mod documents;
 // pub mod training;
