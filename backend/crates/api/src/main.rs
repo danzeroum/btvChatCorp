@@ -1,9 +1,12 @@
 use std::env;
 
+use axum::extract::Request;
 use axum::http::{header, HeaderValue, Method};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Json, Router, ServiceExt};
+use tower::Layer;
 use tower_http::cors::CorsLayer;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -99,9 +102,14 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
+    // Normaliza a barra final antes do roteamento: `/api/v1/projects/` casa com
+    // a rota `/api/v1/projects`. Axum 0.7 removeu o redirect automatico de
+    // trailing slash, e o frontend chama varias colecoes com barra no final.
+    let app = NormalizePathLayer::trim_trailing_slash().layer(app);
+
     let addr = "0.0.0.0:3000";
     tracing::info!("API escutando em {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, ServiceExt::<Request>::into_make_service(app)).await?;
     Ok(())
 }
