@@ -121,13 +121,25 @@ export class BrandingService {
   }
 
   private injectCustomCss(css: string): void {
+    const safe = this.sanitizeCss(css);
     let el = document.getElementById('custom-css-preview') as HTMLStyleElement | null;
     if (!el) {
       el = document.createElement('style');
       el.id = 'custom-css-preview';
       document.head.appendChild(el);
     }
-    el.textContent = css;
+    el.textContent = safe;
+  }
+
+  private sanitizeCss(css: string): string {
+    const dangerous = ['url(', 'expression(', 'behavior(', 'javascript:', '@import', '-moz-binding'];
+    return css
+      .split('\n')
+      .filter(line => {
+        const lower = line.toLowerCase();
+        return !dangerous.some(d => lower.includes(d));
+      })
+      .join('\n');
   }
 
   private updateFavicon(url: string): void {

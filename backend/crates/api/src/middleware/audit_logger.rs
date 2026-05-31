@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -11,10 +7,7 @@ use crate::extractors::WorkspaceContext;
 /// Middleware que grava uma entrada no audit_log para cada request
 /// que modifica dados (POST, PUT, PATCH, DELETE).
 /// Requests GET são ignorados para não poluir o log.
-pub async fn audit_log_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn audit_log_middleware(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
@@ -56,15 +49,15 @@ fn infer_action(method: &str, path: &str) -> String {
     let resource = path
         .split('/')
         .filter(|s| !s.is_empty())
-        .nth(1)  // ex: /admin/users -> "users"
+        .nth(1) // ex: /admin/users -> "users"
         .unwrap_or("unknown");
 
     match method {
-        "post"   => format!("{}.created", resource),
-        "put"    => format!("{}.updated", resource),
-        "patch"  => format!("{}.patched", resource),
+        "post" => format!("{}.created", resource),
+        "put" => format!("{}.updated", resource),
+        "patch" => format!("{}.patched", resource),
         "delete" => format!("{}.deleted", resource),
-        _        => format!("{}.action", resource),
+        _ => format!("{}.action", resource),
     }
 }
 

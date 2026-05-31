@@ -54,4 +54,13 @@ export class OnboardingService {
   isComplete(): boolean {
     return !!this._state()?.completedAt;
   }
+
+  /** Atualiza parcialmente o estado local do onboarding sem persistir no servidor.
+   *  Chamado pelos componentes step-* para reflectir mudancas de UI antes do advanceStep. */
+  updateState(partial: Partial<OnboardingState>): void {
+    const current = this._state();
+    if (current) {
+      this._state.set({ ...current, ...partial });
+    }
+  }
 }

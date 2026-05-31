@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: 'app-workspace-settings',
@@ -25,7 +26,15 @@ import { FormsModule } from '@angular/forms';
           Ativar ciclo semanal de LoRA
         </label>
       </div>
-      <button (click)="save()">Salvar configurações</button>
+      @if (saveError()) {
+        <p class="error">{{ saveError() }}</p>
+      }
+      @if (saveSuccess()) {
+        <p class="success">Configurações salvas com sucesso.</p>
+      }
+      <button (click)="save()" [disabled]="saving()">
+        {{ saving() ? 'Salvando...' : 'Salvar configurações' }}
+      </button>
     </div>
   `,
   styles: [`
@@ -36,14 +45,36 @@ import { FormsModule } from '@angular/forms';
     select, input[type=checkbox] { margin-top: 0.25rem; }
     select { padding: 0.5rem; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 6px; }
     button { margin-top: 1rem; padding: 0.75rem 2rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { color: #f87171; margin-top: 0.5rem; }
+    .success { color: #4ade80; margin-top: 0.5rem; }
   `]
 })
 export class WorkspaceSettingsComponent {
+  private http = inject(HttpClient);
+
   retention = '90';
   autoTraining = true;
+  saving = signal(false);
+  saveError = signal('');
+  saveSuccess = signal(false);
 
-  save() {
-    // TODO: integrar com API de settings
-    alert('Configurações salvas!');
+  save(): void {
+    this.saving.set(true);
+    this.saveError.set('');
+    this.saveSuccess.set(false);
+    this.http.patch('/api/v1/admin/settings', {
+      data_retention_days: parseInt(this.retention, 10),
+      auto_training_enabled: this.autoTraining,
+    }).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.saveSuccess.set(true);
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.saveError.set(err.error?.error?.message || 'Erro ao salvar configurações.');
+      },
+    });
   }
 }

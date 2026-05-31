@@ -10,8 +10,12 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use std::sync::Arc;
+
 use api::routes;
+use api::services::admin_service::AdminService;
 use api::state::AppState;
+use dashmap::DashMap;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,6 +45,12 @@ async fn main() -> anyhow::Result<()> {
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
     let api_key_hmac_secret =
         env::var("API_KEY_HMAC_SECRET").expect("API_KEY_HMAC_SECRET obrigatorio");
+    // BH-04: falha rapida no startup se o token de servicos internos estiver ausente.
+    // Preferimos panicar aqui (servidor nao sobe) a operar RAG sem autenticacao
+    // entre servicos. Os handlers leem a var em tempo de request com degradacao
+    // graciosa, ja garantida presente quando o servidor esta no ar.
+    let _internal_service_token = env::var("INTERNAL_SERVICE_TOKEN")
+        .expect("INTERNAL_SERVICE_TOKEN obrigatorio para comunicacao com servicos internos");
     let ollama_auth = match env::var("OLLAMA_AUTH_USER").ok() {
         Some(u) => {
             let p = env::var("OLLAMA_AUTH_PASS").unwrap_or_default();
@@ -60,6 +70,13 @@ async fn main() -> anyhow::Result<()> {
         embedding_url
     );
 
+    let admin_service = Arc::new(AdminService::new(
+        db.clone(),
+        ollama_url.clone(),
+        qdrant_url.clone(),
+        embedding_url.clone(),
+    ));
+
     let state = AppState {
         db,
         ollama_url,
@@ -69,6 +86,8 @@ async fn main() -> anyhow::Result<()> {
         api_key_hmac_secret,
         qdrant_url,
         embedding_url,
+        admin_service,
+        login_attempts: Arc::new(DashMap::new()),
     };
 
     // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.

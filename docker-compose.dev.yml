@@ -26,8 +26,8 @@ services:
     environment:
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       OLLAMA_HOST: ${OLLAMA_HOST:-https://api.buildtovalue.cloud}
-      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-buildtovalue}
-      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-***REMOVED***}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:?Erro: OLLAMA_AUTH_USER obrigatorio — defina no .env}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:?Erro: OLLAMA_AUTH_PASS obrigatorio — defina no .env}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3:70b}
       VLLM_URL: ""   # não usado em modo ollama
     depends_on:

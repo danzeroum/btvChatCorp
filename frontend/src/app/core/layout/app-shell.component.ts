@@ -4,6 +4,7 @@ import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { WorkspaceContextService } from '../services/workspace-context.service';
+import { AuthService } from '../services/auth.service';
 
 interface NavItem {
   label: string;
@@ -95,10 +96,12 @@ interface ProjectItem {
 
         <!-- Footer: workspace + user -->
         <div class="sidebar-footer">
-          <a routerLink="/admin" routerLinkActive="active" class="nav-link">
-            <span class="nav-icon">⚙️</span>
-            @if (!collapsed()) { <span class="nav-label">Admin</span> }
-          </a>
+          @if (isAdmin()) {
+            <a routerLink="/admin" routerLinkActive="active" class="nav-link">
+              <span class="nav-icon">⚙️</span>
+              @if (!collapsed()) { <span class="nav-label">Admin</span> }
+            </a>
+          }
           <div class="user-pill" (click)="toggleUserMenu()">
             <span class="user-avatar">{{ userInitials() }}</span>
             @if (!collapsed()) {
@@ -301,10 +304,15 @@ interface ProjectItem {
 })
 export class AppShellComponent {
   private wsCtx = inject(WorkspaceContextService);
+  private authService = inject(AuthService);
   private router = inject(Router);
-  
+
   collapsed = signal(false);
   projects = signal<ProjectItem[]>([]);
+  isAdmin = computed(() => {
+    const roles = this.authService.user()?.roles ?? [];
+    return roles.some(r => r === 'admin' || r === 'owner');
+  });
 
   mainNav: NavItem[] = [
     { label: 'Chat', icon: '💬', route: '/chat' },

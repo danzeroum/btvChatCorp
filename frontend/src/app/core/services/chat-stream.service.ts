@@ -1,9 +1,16 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
+export interface SourceDocument {
+  filename: string;
+  section: string;
+  chunk_index: number;
+  score: number;
+}
+
 export interface StreamChunk {
-  type: 'token' | 'sources' | 'error';
-  data: any;
+  type: 'token' | 'sources' | 'done' | 'error';
+  data: string | SourceDocument[] | null;
 }
 
 export interface ChatStreamRequest {

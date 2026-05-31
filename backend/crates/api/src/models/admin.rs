@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 // ── System Health ──────────────────────────────────────────────────────────────
 
@@ -240,9 +240,14 @@ pub struct AuditFiltersQuery {
 impl From<super::super::routes::admin::AuditQuery> for AuditFiltersQuery {
     fn from(q: super::super::routes::admin::AuditQuery) -> Self {
         Self {
-            page: q.page, per_page: q.per_page, category: q.category,
-            severity: q.severity, user_id: q.user_id,
-            date_from: q.date_from, date_to: q.date_to, search: q.search,
+            page: q.page,
+            per_page: q.per_page,
+            category: q.category,
+            severity: q.severity,
+            user_id: q.user_id,
+            date_from: q.date_from,
+            date_to: q.date_to,
+            search: q.search,
         }
     }
 }
@@ -348,6 +353,7 @@ pub struct WebhookRow {
     pub id: Uuid,
     pub name: String,
     pub url: String,
+    #[serde(skip_serializing)]
     pub secret: String,
     pub events: serde_json::Value,
     pub status: String,

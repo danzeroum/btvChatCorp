@@ -9,13 +9,24 @@ API:
   GET  /health  -> { status: ok }
 """
 
+import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from sentence_transformers import CrossEncoder
 import logging
+
+INTERNAL_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+
+
+async def verify_internal_token(x_internal_token: str = Header(default="")):
+    if not INTERNAL_TOKEN:
+        raise HTTPException(503, "INTERNAL_SERVICE_TOKEN não configurado no serviço")
+    if not secrets.compare_digest(x_internal_token, INTERNAL_TOKEN):
+        raise HTTPException(401, "Token interno inválido")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,7 +67,7 @@ class RerankResponse(BaseModel):
     scores: List[float]
 
 
-@app.post("/rerank", response_model=RerankResponse)
+@app.post("/rerank", response_model=RerankResponse, dependencies=[Depends(verify_internal_token)])
 async def rerank(request: RerankRequest) -> RerankResponse:
     """Reranqueia documentos para uma query usando cross-encoder."""
     if not request.documents:
