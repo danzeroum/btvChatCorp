@@ -1,4 +1,7 @@
+use std::sync::Arc;
 use sqlx::PgPool;
+
+use crate::services::admin_service::AdminService;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -9,12 +12,12 @@ pub struct AppState {
     pub ollama_auth: Option<String>,
     pub jwt_secret: String,
     /// Segredo para HMAC-SHA256 do hash de API keys.
-    // Consumido pelo middleware de API key da `api-public` (crate fora do workspace — ver C12);
-    // por isso o crate `api` sozinho não tem leitor e o lint o veria como morto.
     #[allow(dead_code)]
     pub api_key_hmac_secret: String,
     /// URL do Qdrant (ex: http://localhost:6333)
     pub qdrant_url: String,
     /// URL do servico de embedding Python (ex: http://localhost:8001)
     pub embedding_url: String,
+    /// Serviço admin (métricas, usuários, configurações)
+    pub admin_service: Arc<AdminService>,
 }

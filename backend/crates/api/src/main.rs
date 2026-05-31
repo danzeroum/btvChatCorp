@@ -10,7 +10,10 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use std::sync::Arc;
+
 use api::routes;
+use api::services::admin_service::AdminService;
 use api::state::AppState;
 
 #[tokio::main]
@@ -60,6 +63,13 @@ async fn main() -> anyhow::Result<()> {
         embedding_url
     );
 
+    let admin_service = Arc::new(AdminService::new(
+        db.clone(),
+        ollama_url.clone(),
+        qdrant_url.clone(),
+        embedding_url.clone(),
+    ));
+
     let state = AppState {
         db,
         ollama_url,
@@ -69,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         api_key_hmac_secret,
         qdrant_url,
         embedding_url,
+        admin_service,
     };
 
     // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.

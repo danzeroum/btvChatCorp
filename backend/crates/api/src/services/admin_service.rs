@@ -14,15 +14,19 @@ pub struct AdminService {
     pub db: PgPool,
     pub http: Client,
     pub vllm_url: String,
+    pub qdrant_url: String,
+    pub embedding_url: String,
     pub start_time: std::time::Instant,
 }
 
 impl AdminService {
-    pub fn new(db: PgPool, vllm_url: String) -> Self {
+    pub fn new(db: PgPool, vllm_url: String, qdrant_url: String, embedding_url: String) -> Self {
         Self {
             db,
             http: Client::new(),
             vllm_url,
+            qdrant_url,
+            embedding_url,
             start_time: std::time::Instant::now(),
         }
     }
@@ -63,13 +67,15 @@ impl AdminService {
     }
 
     async fn check_qdrant(&self) -> bool {
-        self.http.get("http://qdrant:6333/healthz")
+        let url = format!("{}/healthz", self.qdrant_url.trim_end_matches('/'));
+        self.http.get(&url)
             .timeout(std::time::Duration::from_secs(3))
             .send().await.map(|r| r.status().is_success()).unwrap_or(false)
     }
 
     async fn check_embedding(&self) -> bool {
-        self.http.get("http://embedding-service:8001/health")
+        let url = format!("{}/health", self.embedding_url.trim_end_matches('/'));
+        self.http.get(&url)
             .timeout(std::time::Duration::from_secs(3))
             .send().await.map(|r| r.status().is_success()).unwrap_or(false)
     }
