@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod branding;
 pub mod chats;
@@ -112,6 +113,8 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(projects::routes())
         .merge(training::routes())
         .merge(onboarding::protected_routes())
+        // Admin: guard aplicado internamente em admin_routes() via require_admin_role
+        .merge(admin::admin_routes())
         .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
 
     // Rotas publicas (sem JWT)

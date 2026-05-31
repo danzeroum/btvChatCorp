@@ -12,6 +12,7 @@ pub mod models;
 pub mod rag;
 pub mod routes;
 pub mod security;
+pub mod services;
 pub mod state;
 
 #[cfg(test)]
