@@ -11,16 +11,19 @@ use uuid::Uuid;
 /// Sanitiza um nome de arquivo fornecido pelo usuário, prevenindo path traversal (CWE-22).
 fn sanitize_filename(raw: &str) -> String {
     // Pega apenas o componente final — descarta qualquer prefixo de diretório
-    let name = raw
-        .rsplit(|c| c == '/' || c == '\\' || c == '\x00')
-        .next()
-        .unwrap_or("upload");
+    let name = raw.rsplit(['/', '\\', '\x00']).next().unwrap_or("upload");
     if name.is_empty() || name == "." || name == ".." {
         return "upload".to_string();
     }
     // Permite apenas caracteres alfanuméricos, ponto, hífen e underscore
     name.chars()
-        .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -130,8 +133,8 @@ async fn upload(
         let dest = upload_path.join(&stored_name);
 
         // Garante que o caminho canonicalizado permanece dentro de upload_dir
-        let canonical_upload = std::fs::canonicalize(&upload_path)
-            .unwrap_or_else(|_| upload_path.clone());
+        let canonical_upload =
+            std::fs::canonicalize(&upload_path).unwrap_or_else(|_| upload_path.clone());
         let canonical_dest = dest
             .canonicalize()
             .unwrap_or_else(|_| canonical_upload.join(&stored_name));

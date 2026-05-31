@@ -23,8 +23,8 @@ pub fn sign_payload(secret: &str, payload_bytes: &[u8]) -> String {
 pub fn verify_signature(secret: &str, payload_bytes: &[u8], signature: &str) -> bool {
     let expected = sign_payload(secret, payload_bytes);
     // Usa Mac::verify_slice para comparacao constant-time (previne timing attacks).
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(payload_bytes);
     // Remove "sha256=" prefix do signature recebido antes de verificar
     let sig_bytes = signature.strip_prefix("sha256=").unwrap_or(signature);

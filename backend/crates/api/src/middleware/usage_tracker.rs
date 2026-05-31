@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 
 /// Contabiliza requisições por API key para billing/métricas.
 /// A contagem de tokens é feita dentro do handler de chat.

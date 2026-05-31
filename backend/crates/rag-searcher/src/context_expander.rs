@@ -70,12 +70,12 @@ impl ContextExpander {
             .map_err(|e| SearchError::Qdrant(e.to_string()))?;
 
         Ok(results.result.into_iter().next().and_then(|p| {
-            p.payload.get("content").and_then(|v| {
-                match v.kind.as_ref()? {
+            p.payload
+                .get("content")
+                .and_then(|v| match v.kind.as_ref()? {
                     qdrant_client::qdrant::value::Kind::StringValue(s) => Some(s.clone()),
                     _ => None,
-                }
-            })
+                })
         }))
     }
 }

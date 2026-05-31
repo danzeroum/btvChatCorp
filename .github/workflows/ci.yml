@@ -50,10 +50,10 @@ jobs:
 
       - name: "[Fase 4] interceptor trata 401/403"
         run: |
-          grep -q '401' src/app/features/auth/auth.interceptor.ts \
-            && grep -q '403' src/app/features/auth/auth.interceptor.ts \
-            && echo "auth.interceptor OK" \
-            || (echo "Tratamento 401/403 ausente" && exit 1)
+          grep -q '401' src/app/core/interceptors/auth.interceptor.fn.ts \
+            && grep -q '403' src/app/core/interceptors/auth.interceptor.fn.ts \
+            && echo "auth.interceptor.fn OK" \
+            || (echo "Tratamento 401/403 ausente em auth.interceptor.fn.ts" && exit 1)
 
       - name: "[Fase 4] componentes UX polish existem"
         run: |

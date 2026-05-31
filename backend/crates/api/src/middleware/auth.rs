@@ -58,13 +58,17 @@ pub async fn require_auth(
 
     let c = token_data.claims;
     let user_id: Uuid = c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?;
-    let workspace_id: Uuid = c.workspace_id.parse().map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let workspace_id: Uuid = c
+        .workspace_id
+        .parse()
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     req.extensions_mut().insert(AuthUser {
         user_id,
         workspace_id,
         role: c.role.clone(),
     });
-    req.extensions_mut().insert(WorkspaceContext::from_role(user_id, workspace_id, &c.role));
+    req.extensions_mut()
+        .insert(WorkspaceContext::from_role(user_id, workspace_id, &c.role));
     Ok(next.run(req).await)
 }

@@ -185,7 +185,10 @@ async fn login(
     let client_ip = extract_client_ip(&headers);
     {
         let now = std::time::Instant::now();
-        let mut entry = state.login_attempts.entry(client_ip.clone()).or_insert((0, now));
+        let mut entry = state
+            .login_attempts
+            .entry(client_ip.clone())
+            .or_insert((0, now));
         let (count, since) = *entry;
         if since.elapsed().as_secs() >= LOGIN_WINDOW_SECS {
             *entry = (0, now);
@@ -207,16 +210,26 @@ async fn login(
     .map_err(|_| AppError::internal("Erro interno"))?;
 
     let Some((user_id, workspace_id, name, _email, password_hash, role)) = row else {
-        state.login_attempts.entry(client_ip.clone()).and_modify(|(c, t)| {
-            *c += 1; *t = std::time::Instant::now();
-        }).or_insert((1, std::time::Instant::now()));
+        state
+            .login_attempts
+            .entry(client_ip.clone())
+            .and_modify(|(c, t)| {
+                *c += 1;
+                *t = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     };
 
     if !bcrypt::verify(&dto.password, &password_hash).map_err(|_| AppError::internal("Erro"))? {
-        state.login_attempts.entry(client_ip.clone()).and_modify(|(c, t)| {
-            *c += 1; *t = std::time::Instant::now();
-        }).or_insert((1, std::time::Instant::now()));
+        state
+            .login_attempts
+            .entry(client_ip.clone())
+            .and_modify(|(c, t)| {
+                *c += 1;
+                *t = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     }
 

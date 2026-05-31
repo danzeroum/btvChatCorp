@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use std::time::Instant;
 use dashmap::DashMap;
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::services::admin_service::AdminService;
 
