@@ -110,8 +110,8 @@ pub mod helpers {
 
         let state = AppState {
             db: pool.clone(),
-            jwt_secret: TEST_JWT_SECRET.to_string(),
-            api_key_hmac_secret: "test-hmac-secret".to_string(),
+            jwt_secret: TEST_JWT_SECRET.into(),
+            api_key_hmac_secret: "test-hmac-secret".into(),
             ollama_url: ollama_url.clone(),
             ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.1:8b".into()),
             ollama_auth: None,
