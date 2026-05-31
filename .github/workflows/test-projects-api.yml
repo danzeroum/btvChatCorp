@@ -38,6 +38,9 @@ jobs:
       OLLAMA_MOCK: "true"
       OLLAMA_URL: http://localhost:11434
       OLLAMA_MODEL: llama3.1:8b
+      TRAINING_MOCK: "true"
+      TRAINING_URL: https://api.buildtovalue.cloud
+      INTERNAL_SERVICE_TOKEN: test_internal_token_for_ci_only
       QDRANT_URL: http://localhost:6333
       EMBEDDING_URL: http://localhost:8001
 
@@ -57,13 +60,21 @@ jobs:
           key: ${{ runner.os }}-cargo-projects-${{ hashFiles('backend/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-projects-
 
+      - name: Criar diretorio de uploads
+        run: mkdir -p "$UPLOAD_DIR"
+
       - name: Run migrations
         run: |
           cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
           sqlx migrate run --database-url "$DATABASE_URL" --source migrations
 
-      - name: Test api + api-public
-        run: cargo test -p api -p api-public -- --test-threads=1 --nocapture
+      # Compila o crate api-public (valida os macros sqlx::query! contra o schema,
+      # incluindo a coluna nova api_keys.created_by).
+      - name: Build api-public
+        run: cargo build -p api-public
 
-      - name: "Smoke - POST /projects (201 Created)"
+      # Foca nos testes de projects (caminho JWT no crate api). A suíte completa
+      # já é coberta pelo job "Backend (Rust)" do ci.yml.
+      - name: "Projects API tests (POST /projects -> 201)"
         run: cargo test -p api projects_test -- --test-threads=1 --nocapture
+
