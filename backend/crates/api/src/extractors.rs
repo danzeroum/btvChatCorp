@@ -28,6 +28,10 @@ impl WorkspaceContext {
         } else {
             vec![]
         };
-        Self { user_id, workspace_id, permissions }
+        Self {
+            user_id,
+            workspace_id,
+            permissions,
+        }
     }
 }

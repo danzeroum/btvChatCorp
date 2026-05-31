@@ -42,6 +42,10 @@ export const authInterceptorFn: HttpInterceptorFn = (req, next) => {
 
   return next(withAuth(req, token)).pipe(
     catchError((error: HttpErrorResponse) => {
+      if (error.status === 403) {
+        router.navigate(['/unauthorized']);
+        return throwError(() => error);
+      }
       if (error.status !== 401) {
         return throwError(() => error);
       }

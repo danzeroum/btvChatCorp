@@ -71,14 +71,18 @@ pub async fn api_key_auth(
     });
 
     let permissions: Vec<ApiKeyPermission> = serde_json::from_value(
-        record.permissions.unwrap_or(serde_json::Value::Array(vec![])),
+        record
+            .permissions
+            .unwrap_or(serde_json::Value::Array(vec![])),
     )
     .unwrap_or_default();
 
     let project_scope = match record.project_scope.as_deref() {
         Some("specific") => {
             let ids: Vec<String> = serde_json::from_value(
-                record.allowed_project_ids.unwrap_or(serde_json::Value::Array(vec![])),
+                record
+                    .allowed_project_ids
+                    .unwrap_or(serde_json::Value::Array(vec![])),
             )
             .unwrap_or_default();
             ProjectScope::Specific(ids)
