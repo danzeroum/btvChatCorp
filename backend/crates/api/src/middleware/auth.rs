@@ -9,6 +9,7 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::extractors::WorkspaceContext;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,13 +48,14 @@ pub async fn require_auth(
     .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     let c = token_data.claims;
+    let user_id: Uuid = c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let workspace_id: Uuid = c.workspace_id.parse().map_err(|_| StatusCode::UNAUTHORIZED)?;
+
     req.extensions_mut().insert(AuthUser {
-        user_id: c.sub.parse().map_err(|_| StatusCode::UNAUTHORIZED)?,
-        workspace_id: c
-            .workspace_id
-            .parse()
-            .map_err(|_| StatusCode::UNAUTHORIZED)?,
-        role: c.role,
+        user_id,
+        workspace_id,
+        role: c.role.clone(),
     });
+    req.extensions_mut().insert(WorkspaceContext::from_role(user_id, workspace_id, &c.role));
     Ok(next.run(req).await)
 }
