@@ -1,7 +1,7 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 
 export interface ProjectInstruction {
@@ -278,6 +278,7 @@ export interface Project {
 })
 export class ProjectWorkspaceComponent implements OnInit {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private http = inject(HttpClient);
 
   loading = signal(true);
@@ -330,11 +331,11 @@ export class ProjectWorkspaceComponent implements OnInit {
     const pid = this.project()?.id;
     if (!pid) return;
     this.http.post<{ id: string }>(`/api/v1/projects/${pid}/chats`, { title: 'Nova Conversa' }).subscribe({
-      next: res => window.location.href = `/projects/${pid}/chat/${res.id}`,
+      next: res => this.router.navigate(['/projects', pid, 'chat', res.id]),
     });
   }
 
-  uploadDocs() { window.location.href = '/documents'; }
+  uploadDocs() { this.router.navigate(['/documents']); }
   addInstruction() { /* TODO: modal */ }
 
   timeAgo(dateStr: string): string {
