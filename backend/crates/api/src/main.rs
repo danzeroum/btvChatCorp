@@ -45,6 +45,12 @@ async fn main() -> anyhow::Result<()> {
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
     let api_key_hmac_secret =
         env::var("API_KEY_HMAC_SECRET").expect("API_KEY_HMAC_SECRET obrigatorio");
+    // BH-04: falha rapida no startup se o token de servicos internos estiver ausente.
+    // Preferimos panicar aqui (servidor nao sobe) a operar RAG sem autenticacao
+    // entre servicos. Os handlers leem a var em tempo de request com degradacao
+    // graciosa, ja garantida presente quando o servidor esta no ar.
+    let _internal_service_token = env::var("INTERNAL_SERVICE_TOKEN")
+        .expect("INTERNAL_SERVICE_TOKEN obrigatorio para comunicacao com servicos internos");
     let ollama_auth = match env::var("OLLAMA_AUTH_USER").ok() {
         Some(u) => {
             let p = env::var("OLLAMA_AUTH_PASS").unwrap_or_default();
