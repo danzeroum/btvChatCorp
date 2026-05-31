@@ -323,10 +323,14 @@ async fn refresh(
 ) -> Result<Json<AuthResponse>, AppError> {
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
+    // validate_aud = false: aceita tokens novos (com aud) e legados (sem aud),
+    // consistente com a validacao no middleware require_auth.
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_aud = false;
     let data = decode::<Claims>(
         &dto.token,
         &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
+        &validation,
     )
     .map_err(|_| AppError::unauthorized("Token inválido ou expirado"))?;
 
