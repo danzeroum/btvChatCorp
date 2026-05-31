@@ -43,3 +43,14 @@ cd frontend && npm install && ng serve
 cd training && pip install -r requirements.txt
 python continuous_trainer.py
 ```
+
+## Primeiro acesso
+
+Após subir os containers, crie o usuário admin:
+
+```bash
+./scripts/seed-admin.sh
+```
+
+Credenciais padrão: `admin@btv.com` / `Admin123!`
+> ⚠️ Troque a senha após o primeiro login.

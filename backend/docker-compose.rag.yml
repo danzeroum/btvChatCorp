@@ -39,6 +39,8 @@ services:
       EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
       EMBED_BATCH_SIZE: "32"
       EMBED_MAX_LENGTH: "512"
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      EMBEDDING_MODEL_REVISION: "1066b6599d099fbb93dfcb64f9c37a7c9e503e85"
       PORT: "8001"
     volumes:
       - embedding_cache:/root/.cache/huggingface
