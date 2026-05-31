@@ -1,0 +1,69 @@
+name: CI - Projects API
+
+on:
+  pull_request:
+    paths:
+      - 'backend/crates/api/**'
+      - 'backend/crates/api-public/**'
+      - 'backend/migrations/**'
+
+jobs:
+  projects:
+    name: Projects API (api + api-public)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: btv
+          POSTGRES_PASSWORD: btv
+          POSTGRES_DB: btvtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvtest
+      JWT_SECRET: test_secret_for_ci_only
+      API_KEY_HMAC_SECRET: test_hmac_secret_for_ci_only
+      UPLOAD_DIR: /tmp/btv-uploads
+      OLLAMA_MOCK: "true"
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+      QDRANT_URL: http://localhost:6333
+      EMBEDDING_URL: http://localhost:8001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            backend/target
+          key: ${{ runner.os }}-cargo-projects-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-projects-
+
+      - name: Run migrations
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
+          sqlx migrate run --database-url "$DATABASE_URL" --source migrations
+
+      - name: Test api + api-public
+        run: cargo test -p api -p api-public -- --test-threads=1 --nocapture
+
+      - name: "Smoke - POST /projects (201 Created)"
+        run: cargo test -p api projects_test -- --test-threads=1 --nocapture
