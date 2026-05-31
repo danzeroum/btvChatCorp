@@ -46,8 +46,14 @@ pub async fn require_auth(
         .and_then(|v: &str| v.strip_prefix("Bearer "))
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Validacao de iss/aud sera enforced em versao futura apos rotacao de tokens
-    let validation = Validation::new(Algorithm::HS256);
+    // Tokens novos carregam iss/aud (ver make_jwt). O jsonwebtoken v9 valida aud
+    // por padrao (validate_aud = true) e rejeita um token com aud presente quando
+    // nenhum aud esperado e configurado — o que daria 401 em toda sessao recem
+    // logada. Como a aplicacao de iss/aud sera ativada numa versao futura (apos
+    // rotacao de tokens), desligamos validate_aud para aceitar tokens com aud
+    // (novos) e sem aud (legados).
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_aud = false;
 
     let token_data = decode::<Claims>(
         token,
