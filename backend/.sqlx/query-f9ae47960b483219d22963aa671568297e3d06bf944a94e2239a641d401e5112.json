@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO webhook_deliveries (id, webhook_id, status, http_status, attempt_number)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (id) DO UPDATE\n                SET status         = EXCLUDED.status,\n                    http_status    = EXCLUDED.http_status,\n                    attempt_number = EXCLUDED.attempt_number\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9ae47960b483219d22963aa671568297e3d06bf944a94e2239a641d401e5112"
+}

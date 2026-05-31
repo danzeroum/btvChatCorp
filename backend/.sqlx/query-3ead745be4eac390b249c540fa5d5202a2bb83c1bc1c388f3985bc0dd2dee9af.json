@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE training_interactions\n            SET assistant_response = $1,\n                prompt_tokens = $2,\n                completion_tokens = $3\n            WHERE id = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ead745be4eac390b249c540fa5d5202a2bb83c1bc1c388f3985bc0dd2dee9af"
+}
