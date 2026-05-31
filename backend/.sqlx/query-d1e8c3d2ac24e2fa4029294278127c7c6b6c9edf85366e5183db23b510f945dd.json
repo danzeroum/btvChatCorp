@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE training_interactions\n            SET curator_priority = 'high'\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1e8c3d2ac24e2fa4029294278127c7c6b6c9edf85366e5183db23b510f945dd"
+}
