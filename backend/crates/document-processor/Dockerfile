@@ -10,19 +10,19 @@ RUN apt-get update && apt-get install -y \
     libpoppler-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia workspace Cargo files para cache de dependências
+# Copia os manifests da workspace + TODOS os crates membros.
+# O backend/Cargo.toml declara todos os crates da workspace, então o Cargo
+# precisa de todos os Cargo.toml presentes para resolver o grafo — mesmo que
+# `--bin rag-worker` só compile o document-processor e suas dependências.
 COPY backend/Cargo.toml backend/Cargo.lock ./
-COPY backend/crates/document-processor/Cargo.toml crates/document-processor/
+COPY backend/crates ./crates
 
-# Build só das dependências (cache layer)
-RUN mkdir -p crates/document-processor/src && \
-    echo 'fn main() {}' > crates/document-processor/src/main.rs && \
-    cargo build --release --bin rag-worker 2>/dev/null || true
+# Cache de queries do sqlx (modo offline): permite compilar os `query!` macros
+# sem um banco de dados acessível durante o `docker build`.
+COPY backend/.sqlx ./.sqlx
+ENV SQLX_OFFLINE=true
 
-# Copia o código real
-COPY backend/crates/document-processor/src crates/document-processor/src
-
-# Build final
+# Build do binário do worker
 RUN cargo build --release --bin rag-worker
 
 # ── Runtime stage ───────────────────────────────────────────────────────────
