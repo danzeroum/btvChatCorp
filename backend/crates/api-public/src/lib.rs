@@ -39,6 +39,8 @@ fn api_v1_routes(state: AppState) -> Router<AppState> {
         .merge(routes::search::search_routes())
         // CRUD de webhooks
         .merge(routes::webhooks::webhook_routes())
+        // CRUD de projetos (created_by = dono da API key)
+        .merge(routes::projects::project_routes())
         // Métricas de uso
         .merge(routes::usage::usage_routes())
         // Middleware stack (aplicado em ordem reversa de execução):

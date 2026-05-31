@@ -10,6 +10,10 @@ pub struct ApiKeyContext {
     pub permissions: Vec<ApiKeyPermission>,
     pub project_scope: ProjectScope,
     pub rate_limit: u32,
+    /// Usuário dono da API key (`api_keys.created_by`). Usado como `created_by`
+    /// nas escritas que exigem FK em `users` (ex.: criação de projetos). Pode ser
+    /// `None` em keys legadas sem dono atribuído.
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,6 +11,8 @@ mod chats_test;
 #[cfg(test)]
 mod documents_test;
 #[cfg(test)]
+mod projects_test;
+#[cfg(test)]
 mod training_test;
 
 use axum::Router;

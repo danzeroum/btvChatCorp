@@ -41,7 +41,7 @@ pub async fn api_key_auth(
     let record = sqlx::query!(
         r#"
         SELECT id, workspace_id, name, permissions, project_scope,
-               allowed_project_ids, rate_limit, status
+               allowed_project_ids, rate_limit, status, created_by
         FROM api_keys
         WHERE (key_hash = $1 OR key_hash = $2) AND status = 'active'
         "#,
@@ -93,6 +93,7 @@ pub async fn api_key_auth(
         permissions,
         project_scope,
         rate_limit: record.rate_limit.unwrap_or(60) as u32,
+        user_id: record.created_by,
     };
 
     request.extensions_mut().insert(ctx);
