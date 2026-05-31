@@ -1,12 +1,20 @@
 use anyhow::Result;
 use chrono::Utc;
-use sha2::Sha256;
 use hex;
 use reqwest::Client;
+use sha2::Sha256;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::admin::*;
+
+fn csv_field(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
 
 /// Serviço principal do módulo admin.
 /// Encapsula toda lógica de negócio — os handlers em admin.rs apenas delegam aqui.
@@ -14,15 +22,19 @@ pub struct AdminService {
     pub db: PgPool,
     pub http: Client,
     pub vllm_url: String,
+    pub qdrant_url: String,
+    pub embedding_url: String,
     pub start_time: std::time::Instant,
 }
 
 impl AdminService {
-    pub fn new(db: PgPool, vllm_url: String) -> Self {
+    pub fn new(db: PgPool, vllm_url: String, qdrant_url: String, embedding_url: String) -> Self {
         Self {
             db,
             http: Client::new(),
             vllm_url,
+            qdrant_url,
+            embedding_url,
             start_time: std::time::Instant::now(),
         }
     }
@@ -37,7 +49,7 @@ impl AdminService {
             self.check_embedding(),
         );
         let all_healthy = db_ok && vllm_ok && qdrant_ok && embedding_ok;
-        let uptime_secs = self.start_time.elapsed().as_secs_f64();
+        let _uptime_secs = self.start_time.elapsed().as_secs_f64();
         // Uptime % simples baseado em health checks acumulados (simplificado)
         let uptime_pct = if all_healthy { 99.9_f64 } else { 95.0_f64 };
         Ok(SystemHealth {
@@ -57,26 +69,43 @@ impl AdminService {
     }
 
     async fn check_vllm(&self) -> bool {
-        self.http.get(format!("{}/health", self.vllm_url))
+        self.http
+            .get(format!("{}/health", self.vllm_url))
             .timeout(std::time::Duration::from_secs(3))
-            .send().await.map(|r| r.status().is_success()).unwrap_or(false)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
     }
 
     async fn check_qdrant(&self) -> bool {
-        self.http.get("http://qdrant:6333/healthz")
+        let url = format!("{}/healthz", self.qdrant_url.trim_end_matches('/'));
+        self.http
+            .get(&url)
             .timeout(std::time::Duration::from_secs(3))
-            .send().await.map(|r| r.status().is_success()).unwrap_or(false)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
     }
 
     async fn check_embedding(&self) -> bool {
-        self.http.get("http://embedding-service:8001/health")
+        let url = format!("{}/health", self.embedding_url.trim_end_matches('/'));
+        self.http
+            .get(&url)
             .timeout(std::time::Duration::from_secs(3))
-            .send().await.map(|r| r.status().is_success()).unwrap_or(false)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
     }
 
     async fn measure_latency(&self) -> Result<u64> {
         let start = std::time::Instant::now();
-        self.http.get(format!("{}/health", self.vllm_url)).send().await?;
+        self.http
+            .get(format!("{}/health", self.vllm_url))
+            .send()
+            .await?;
         Ok(start.elapsed().as_millis() as u64)
     }
 
@@ -84,10 +113,13 @@ impl AdminService {
 
     pub async fn get_gpu_status(&self) -> Result<GpuInfo> {
         // Busca métricas Prometheus do vLLM e parseia
-        let metrics_text = self.http
+        let metrics_text = self
+            .http
             .get(format!("{}/metrics", self.vllm_url))
-            .send().await?
-            .text().await?;
+            .send()
+            .await?
+            .text()
+            .await?;
         Ok(parse_vllm_metrics(&metrics_text))
     }
 
@@ -172,7 +204,7 @@ impl AdminService {
             WHERE workspace_id = current_setting('app.workspace_id')::uuid
               AND created_at >= NOW() - ($1 || ' days')::interval
             GROUP BY DATE(created_at)
-            ORDER BY date"#
+            ORDER BY date"#,
         )
         .bind(days)
         .fetch_all(&self.db)
@@ -195,7 +227,7 @@ impl AdminService {
             WHERE p.workspace_id = current_setting('app.workspace_id')::uuid
             GROUP BY p.id
             ORDER BY tokens_used DESC
-            LIMIT $1"#
+            LIMIT $1"#,
         )
         .bind(limit)
         .fetch_all(&self.db)
@@ -216,7 +248,7 @@ impl AdminService {
             WHERE u.workspace_id = current_setting('app.workspace_id')::uuid
             GROUP BY u.id
             ORDER BY message_count DESC
-            LIMIT $1"#
+            LIMIT $1"#,
         )
         .bind(limit)
         .fetch_all(&self.db)
@@ -228,7 +260,7 @@ impl AdminService {
         let metrics = self.get_usage_metrics(period).await?;
         let csv = format!(
             "period,total_tokens_input,total_tokens_output,total_chat_requests,active_users,cost_total\n{},{},{},{},{},{}",
-            metrics.period, metrics.total_tokens_input, metrics.total_tokens_output,
+            csv_field(&metrics.period), metrics.total_tokens_input, metrics.total_tokens_output,
             metrics.total_chat_requests, metrics.active_users, metrics.estimated_cost.total
         );
         Ok(csv)
@@ -250,7 +282,12 @@ impl AdminService {
         Ok(row)
     }
 
-    pub async fn invite_user(&self, email: &str, role_id: &str, project_ids: &[Uuid]) -> Result<()> {
+    pub async fn invite_user(
+        &self,
+        email: &str,
+        role_id: &str,
+        project_ids: &[Uuid],
+    ) -> Result<()> {
         let user_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO users (id, email, role_id, workspace_id, status) VALUES ($1, $2, $3, current_setting('app.workspace_id')::uuid, 'invited')"
@@ -280,7 +317,10 @@ impl AdminService {
 
     pub async fn set_user_status(&self, id: Uuid, status: &str) -> Result<()> {
         sqlx::query("UPDATE users SET status = $2, updated_at = NOW() WHERE id = $1")
-            .bind(id).bind(status).execute(&self.db).await?;
+            .bind(id)
+            .bind(status)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -288,9 +328,15 @@ impl AdminService {
         let users = self.list_users().await?;
         let mut csv = "id,name,email,role,status,mfa_enabled,last_login\n".to_string();
         for u in users {
-            csv.push_str(&format!("{},{},{},{},{},{},{}\n",
-                u.id, u.name, u.email, u.role_name, u.status, u.mfa_enabled,
-                u.last_login_at.map(|d| d.to_string()).unwrap_or_default()
+            csv.push_str(&format!(
+                "{},{},{},{},{},{},{}\n",
+                u.id,
+                csv_field(&u.name),
+                csv_field(&u.email),
+                csv_field(&u.role_name),
+                csv_field(&u.status),
+                u.mfa_enabled,
+                csv_field(&u.last_login_at.map(|d| d.to_string()).unwrap_or_default())
             ));
         }
         Ok(csv)
@@ -329,7 +375,9 @@ impl AdminService {
 
     pub async fn delete_role(&self, id: Uuid) -> Result<()> {
         sqlx::query("DELETE FROM roles WHERE id = $1 AND is_system = false")
-            .bind(id).execute(&self.db).await?;
+            .bind(id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -344,7 +392,9 @@ impl AdminService {
 
     pub async fn terminate_session(&self, id: Uuid) -> Result<()> {
         sqlx::query("UPDATE sessions SET expires_at = NOW() WHERE id = $1")
-            .bind(id).execute(&self.db).await?;
+            .bind(id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -369,27 +419,34 @@ impl AdminService {
                AND ($2::text IS NULL OR severity = $2)
                AND ($3::uuid IS NULL OR user_id = $3)
                ORDER BY created_at DESC
-               LIMIT $4 OFFSET $5"#
+               LIMIT $4 OFFSET $5"#,
         )
         .bind(&filters.category)
         .bind(&filters.severity)
         .bind(filters.user_id)
         .bind(per_page)
         .bind(offset)
-        .fetch_all(&self.db).await?;
+        .fetch_all(&self.db)
+        .await?;
 
         let total: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM audit_logs WHERE workspace_id = current_setting('app.workspace_id')::uuid"
         ).fetch_one(&self.db).await.unwrap_or(0);
 
-        Ok(AuditPage { entries: rows, total, page, per_page })
+        Ok(AuditPage {
+            entries: rows,
+            total,
+            page,
+            per_page,
+        })
     }
 
     pub async fn export_audit_csv(&self, filters: AuditFiltersQuery) -> Result<String> {
         let page = self.query_audit_logs(filters).await?;
         let mut csv = "id,timestamp,user,action,resource,severity,category\n".to_string();
         for e in page.entries {
-            csv.push_str(&format!("{},{},{},{},{},{},{}\n",
+            csv.push_str(&format!(
+                "{},{},{},{},{},{},{}\n",
                 e.id, e.created_at, e.user_name, e.action, e.resource_name, e.severity, e.category
             ));
         }
@@ -406,7 +463,11 @@ impl AdminService {
             "SELECT COUNT(*) FROM users WHERE workspace_id = current_setting('app.workspace_id')::uuid AND mfa_enabled = true"
         ).fetch_one(&self.db).await.unwrap_or(0);
 
-        let mfa_percent = if total_users > 0 { (mfa_enabled * 100) / total_users } else { 0 };
+        let mfa_percent = if total_users > 0 {
+            (mfa_enabled * 100) / total_users
+        } else {
+            0
+        };
         let overall_score = ((mfa_percent as f64 * 0.2) + 80.0).min(100.0);
 
         Ok(ComplianceReport {
@@ -453,8 +514,12 @@ impl AdminService {
         // Desativa o atual e ativa a nova versão
         sqlx::query("UPDATE lora_adapters SET status = 'available' WHERE workspace_id = current_setting('app.workspace_id')::uuid AND status = 'active'")
             .execute(&self.db).await?;
-        sqlx::query("UPDATE lora_adapters SET status = 'active', deployed_at = NOW() WHERE version = $1")
-            .bind(version).execute(&self.db).await?;
+        sqlx::query(
+            "UPDATE lora_adapters SET status = 'active', deployed_at = NOW() WHERE version = $1",
+        )
+        .bind(version)
+        .execute(&self.db)
+        .await?;
         // TODO: hot-swap no vLLM via API
         Ok(())
     }
@@ -527,7 +592,7 @@ impl AdminService {
         let hmac_secret = std::env::var("API_KEY_HMAC_SECRET").unwrap_or_default();
         let key_hash = crate::security::hash_api_key_hmac(&raw_key, &hmac_secret);
         let prefix = &raw_key[..12]; // primeiros 12 chars visíveis
-        let masked = format!("{}••••••••••••{}", prefix, &raw_key[raw_key.len()-4..]);
+        let masked = format!("{}••••••••••••{}", prefix, &raw_key[raw_key.len() - 4..]);
 
         let row = sqlx::query_as::<_, ApiKeyRow>(
             r#"INSERT INTO api_keys (id, workspace_id, name, key_hash, masked_key, prefix, permissions, rate_limit, expires_at, status)
@@ -562,7 +627,10 @@ impl AdminService {
     }
 
     pub async fn delete_api_key(&self, id: Uuid) -> Result<()> {
-        sqlx::query("DELETE FROM api_keys WHERE id = $1").bind(id).execute(&self.db).await?;
+        sqlx::query("DELETE FROM api_keys WHERE id = $1")
+            .bind(id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -577,7 +645,9 @@ impl AdminService {
 
     pub async fn get_webhook(&self, id: Uuid) -> Result<WebhookRow> {
         let row = sqlx::query_as::<_, WebhookRow>("SELECT * FROM webhooks WHERE id = $1")
-            .bind(id).fetch_one(&self.db).await?;
+            .bind(id)
+            .fetch_one(&self.db)
+            .await?;
         Ok(row)
     }
 
@@ -608,32 +678,45 @@ impl AdminService {
     }
 
     pub async fn delete_webhook(&self, id: Uuid) -> Result<()> {
-        sqlx::query("DELETE FROM webhooks WHERE id = $1").bind(id).execute(&self.db).await?;
+        sqlx::query("DELETE FROM webhooks WHERE id = $1")
+            .bind(id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
     pub async fn set_webhook_status(&self, id: Uuid, status: &str) -> Result<()> {
         sqlx::query("UPDATE webhooks SET status = $2, updated_at = NOW() WHERE id = $1")
-            .bind(id).bind(status).execute(&self.db).await?;
+            .bind(id)
+            .bind(status)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
     pub async fn test_webhook(&self, id: Uuid) -> Result<()> {
         let wh = self.get_webhook(id).await?;
-        let payload = serde_json::json!({ "event": "webhook.test", "data": { "timestamp": Utc::now() } });
+        let payload =
+            serde_json::json!({ "event": "webhook.test", "data": { "timestamp": Utc::now() } });
         // Assina com HMAC-SHA256
         let signature = sign_hmac(&wh.secret, &payload.to_string());
-        self.http.post(&wh.url)
+        self.http
+            .post(&wh.url)
             .header("X-BTV-Signature", &signature)
             .header("X-BTV-Event", "webhook.test")
             .json(&payload)
             .timeout(std::time::Duration::from_millis(wh.timeout_ms as u64))
-            .send().await?;
+            .send()
+            .await?;
         Ok(())
     }
 
     pub async fn list_webhook_deliveries(
-        &self, webhook_id: Uuid, page: i64, per_page: i64, status: Option<&str>
+        &self,
+        webhook_id: Uuid,
+        page: i64,
+        per_page: i64,
+        status: Option<&str>,
     ) -> Result<Vec<WebhookDelivery>> {
         let offset = (page - 1) * per_page;
         let rows = sqlx::query_as::<_, WebhookDelivery>(
@@ -691,7 +774,10 @@ impl AdminService {
     }
 
     pub async fn delete_resource_limit(&self, id: Uuid) -> Result<()> {
-        sqlx::query("DELETE FROM resource_limits WHERE id = $1").bind(id).execute(&self.db).await?;
+        sqlx::query("DELETE FROM resource_limits WHERE id = $1")
+            .bind(id)
+            .execute(&self.db)
+            .await?;
         Ok(())
     }
 
@@ -710,7 +796,7 @@ impl AdminService {
                session_timeout_minutes=$6, max_concurrent_sessions=$7, mfa_required=$8,
                notify_on_new_user=$9, notify_on_training_complete=$10, notify_on_security_event=$11,
                notification_email=$12, updated_at=NOW()
-               WHERE workspace_id = current_setting('app.workspace_id')::uuid"#
+               WHERE workspace_id = current_setting('app.workspace_id')::uuid"#,
         )
         .bind(&settings.name)
         .bind(&settings.slug)
@@ -723,7 +809,8 @@ impl AdminService {
         .bind(settings.notify_on_training_complete)
         .bind(settings.notify_on_security_event)
         .bind(&settings.notification_email)
-        .execute(&self.db).await?;
+        .execute(&self.db)
+        .await?;
         Ok(())
     }
 
@@ -801,22 +888,29 @@ impl AdminService {
     }
 
     pub async fn manual_purge(&self, data_type: &str) -> Result<i64> {
-        let table = match data_type {
-            "chats"         => "chats",
-            "documents"     => "documents",
-            "audit_logs"    => "audit_logs",
-            "training_data" => "training_interactions",
-            _               => return Err(anyhow::anyhow!("Unknown data type")),
+        // SAFETY: sql_stmt é uma string literal estática escolhida pelo match —
+        // data_type nunca é interpolado na query.
+        let sql_stmt: &'static str = match data_type {
+            "chats" =>
+                "DELETE FROM chats WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "documents" =>
+                "DELETE FROM documents WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "audit_logs" =>
+                "DELETE FROM audit_logs WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            "training_data" =>
+                "DELETE FROM training_interactions WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
+            _ => return Err(anyhow::anyhow!(
+                "Tipo de dado inválido: '{}'. Permitidos: chats, documents, audit_logs, training_data",
+                data_type
+            )),
         };
+
         let policy: Option<i32> = sqlx::query_scalar(
             "SELECT retention_days FROM retention_policies WHERE data_type = $1 AND workspace_id = current_setting('app.workspace_id')::uuid"
         ).bind(data_type).fetch_optional(&self.db).await?;
 
         if let Some(days) = policy {
-            let result = sqlx::query(&format!(
-                "DELETE FROM {} WHERE workspace_id = current_setting('app.workspace_id')::uuid AND created_at < NOW() - ($1 || ' days')::interval",
-                table
-            )).bind(days).execute(&self.db).await?;
+            let result = sqlx::query(sql_stmt).bind(days).execute(&self.db).await?;
             Ok(result.rows_affected() as i64)
         } else {
             Ok(0)
@@ -850,21 +944,31 @@ impl AdminService {
         // Retorna lista estática dos endpoints documentados
         Ok(vec![
             ApiEndpointDoc {
-                method: "POST".into(), path: "/v1/chat".into(),
+                method: "POST".into(),
+                path: "/v1/chat".into(),
                 summary: "Criar completion de chat".into(),
                 description: "Envia uma mensagem e recebe resposta do modelo LLM com RAG.".into(),
-                tag: "Chat".into(), requires_auth: true,
+                tag: "Chat".into(),
+                requires_auth: true,
                 scopes: vec!["chat:write".into()],
-                request_body: Some(serde_json::json!({ "message": "string", "project_id": "uuid", "stream": true })),
-                response_example: Some(serde_json::json!({ "id": "uuid", "content": "string", "sources": [] })),
+                request_body: Some(
+                    serde_json::json!({ "message": "string", "project_id": "uuid", "stream": true }),
+                ),
+                response_example: Some(
+                    serde_json::json!({ "id": "uuid", "content": "string", "sources": [] }),
+                ),
             },
             ApiEndpointDoc {
-                method: "POST".into(), path: "/v1/documents".into(),
+                method: "POST".into(),
+                path: "/v1/documents".into(),
                 summary: "Upload de documento".into(),
                 description: "Envia um documento para indexação no Vector DB do projeto.".into(),
-                tag: "Documents".into(), requires_auth: true,
+                tag: "Documents".into(),
+                requires_auth: true,
                 scopes: vec!["documents:write".into()],
-                request_body: Some(serde_json::json!({ "file": "binary", "project_id": "uuid", "classification": "INTERNAL" })),
+                request_body: Some(
+                    serde_json::json!({ "file": "binary", "project_id": "uuid", "classification": "INTERNAL" }),
+                ),
                 response_example: Some(serde_json::json!({ "id": "uuid", "status": "processing" })),
             },
         ])
@@ -882,13 +986,19 @@ impl AdminService {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 fn period_to_days(period: &str) -> i32 {
-    match period { "7d" => 7, "90d" => 90, _ => 30 }
+    match period {
+        "7d" => 7,
+        "90d" => 90,
+        _ => 30,
+    }
 }
 
 fn generate_random_token(len: usize) -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    (0..len).map(|_| rng.sample(rand::distributions::Alphanumeric) as char).collect()
+    (0..len)
+        .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
+        .collect()
 }
 
 fn sign_hmac(secret: &str, payload: &str) -> String {

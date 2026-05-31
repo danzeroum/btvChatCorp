@@ -34,6 +34,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/api /app/api
 COPY --from=builder /app/migrations /app/migrations
 
-EXPOSE 8080
+EXPOSE 3000
 
 CMD ["/app/api"]

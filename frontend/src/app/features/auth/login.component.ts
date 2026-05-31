@@ -125,9 +125,7 @@ export class LoginComponent {
     }).subscribe({
       next: (res) => {
         localStorage.setItem('jwt_token', res.token);
-        localStorage.setItem('workspace_id', res.workspace_id);
         localStorage.setItem('user_name', res.name);
-        localStorage.setItem('user_role', res.role);
         this.router.navigate(['/chat']);
       },
       error: (err) => {

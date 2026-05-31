@@ -8,6 +8,25 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+/// Sanitiza um nome de arquivo fornecido pelo usuário, prevenindo path traversal (CWE-22).
+fn sanitize_filename(raw: &str) -> String {
+    // Pega apenas o componente final — descarta qualquer prefixo de diretório
+    let name = raw.rsplit(['/', '\\', '\x00']).next().unwrap_or("upload");
+    if name.is_empty() || name == "." || name == ".." {
+        return "upload".to_string();
+    }
+    // Permite apenas caracteres alfanuméricos, ponto, hífen e underscore
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 use crate::{
     errors::AppError, middleware::auth::AuthUser, models::document::Document, state::AppState,
 };
@@ -109,8 +128,20 @@ async fn upload(
         let hash = format!("{:x}", hasher.finalize());
         let hash_short = &hash[..16];
 
-        let stored_name = format!("{hash_short}_{original_name}");
+        let safe_name = sanitize_filename(&original_name);
+        let stored_name = format!("{hash_short}_{safe_name}");
         let dest = upload_path.join(&stored_name);
+
+        // Garante que o caminho canonicalizado permanece dentro de upload_dir
+        let canonical_upload =
+            std::fs::canonicalize(&upload_path).unwrap_or_else(|_| upload_path.clone());
+        let canonical_dest = dest
+            .canonicalize()
+            .unwrap_or_else(|_| canonical_upload.join(&stored_name));
+        if !canonical_dest.starts_with(&canonical_upload) {
+            return Err(AppError::bad_request("Nome de arquivo inválido"));
+        }
+
         tokio::fs::write(&dest, &data)
             .await
             .map_err(|e| AppError::internal(e.to_string()))?;

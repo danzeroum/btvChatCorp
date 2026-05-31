@@ -4,15 +4,26 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use sqlx::FromRow;
+use uuid::Uuid;
 
 use crate::models::api_key::{ApiKeyContext, ApiKeyPermission, ProjectScope};
-// Hash das API keys e AppState reaproveitados do crate `api` (workspace unificado).
 use crate_api::security::{hash_api_key_hmac, hash_api_key_sha256};
 use crate_api::state::AppState;
 
+#[derive(FromRow)]
+struct ApiKeyRow {
+    id: Uuid,
+    workspace_id: Uuid,
+    name: String,
+    permissions: Option<serde_json::Value>,
+    project_scope: Option<String>,
+    allowed_project_ids: Option<serde_json::Value>,
+    rate_limit: Option<i32>,
+    created_by: Option<Uuid>,
+}
+
 /// Middleware de autenticação por API Key para a API Pública.
-/// Extrai o token do header `Authorization: Bearer sk_live_...`,
-/// valida contra o hash no banco, e injeta `ApiKeyContext` nas extensions.
 pub async fn api_key_auth(
     State(app): State<AppState>,
     mut request: Request,
@@ -28,44 +39,37 @@ pub async fn api_key_auth(
         .strip_prefix("Bearer ")
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Valida formato (sk_live_ ou sk_test_)
     if !api_key.starts_with("sk_live_") && !api_key.starts_with("sk_test_") {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Lookup seguro por hash. Aceita HMAC (atual) e SHA-256 puro (legado) durante
-    // a janela de migração das keys.
     let hmac_hash = hash_api_key_hmac(api_key, &app.api_key_hmac_secret);
     let legacy_hash = hash_api_key_sha256(api_key);
 
-    let record = sqlx::query!(
-        r#"
-        SELECT id, workspace_id, name, permissions, project_scope,
-               allowed_project_ids, rate_limit, status, created_by
-        FROM api_keys
-        WHERE (key_hash = $1 OR key_hash = $2) AND status = 'active'
-        "#,
-        hmac_hash,
-        legacy_hash,
+    let record = sqlx::query_as::<_, ApiKeyRow>(
+        r#"SELECT id, workspace_id, name, permissions, project_scope,
+                  allowed_project_ids, rate_limit, status, created_by
+           FROM api_keys
+           WHERE (key_hash = $1 OR key_hash = $2) AND status = 'active'"#,
     )
+    .bind(&hmac_hash)
+    .bind(&legacy_hash)
     .fetch_optional(&app.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Atualiza last_used_at de forma não-bloqueante
     let db = app.db.clone();
-    let key_id = record.id.to_string();
+    let key_id_update = record.id;
     tokio::spawn(async move {
-        let _ = sqlx::query!(
+        let _ = sqlx::query(
             "UPDATE api_keys SET last_used_at = NOW(), request_count = request_count + 1 WHERE id = $1",
-            record.id,
         )
+        .bind(key_id_update)
         .execute(&db)
         .await;
     });
 
-    // Parse das permissões (armazenadas como JSONB)
     let permissions: Vec<ApiKeyPermission> = serde_json::from_value(
         record
             .permissions
@@ -87,7 +91,7 @@ pub async fn api_key_auth(
     };
 
     let ctx = ApiKeyContext {
-        key_id,
+        key_id: record.id.to_string(),
         workspace_id: record.workspace_id,
         key_name: record.name,
         permissions,

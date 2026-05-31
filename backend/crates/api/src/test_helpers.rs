@@ -6,12 +6,15 @@ pub use helpers::*;
 
 #[cfg(test)]
 pub mod helpers {
+    use std::sync::Arc;
+
     use axum::Router;
+    use dashmap::DashMap;
     use jsonwebtoken::{encode, EncodingKey, Header};
     use serde::{Deserialize, Serialize};
     use uuid::Uuid;
 
-    use crate::{routes, state::AppState};
+    use crate::{routes, services::admin_service::AdminService, state::AppState};
 
     pub const TEST_JWT_SECRET: &str = "test_secret_for_ci_only";
 
@@ -98,18 +101,29 @@ pub mod helpers {
 
         seed_defaults(&pool).await;
 
+        let qdrant_url =
+            std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".into());
+        let embedding_url =
+            std::env::var("EMBEDDING_URL").unwrap_or_else(|_| "http://localhost:8001".into());
+        let ollama_url =
+            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
+
         let state = AppState {
-            db: pool,
+            db: pool.clone(),
             jwt_secret: TEST_JWT_SECRET.to_string(),
             api_key_hmac_secret: "test-hmac-secret".to_string(),
-            ollama_url: std::env::var("OLLAMA_URL")
-                .unwrap_or_else(|_| "http://localhost:11434".into()),
+            ollama_url: ollama_url.clone(),
             ollama_model: std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.1:8b".into()),
             ollama_auth: None,
-            qdrant_url: std::env::var("QDRANT_URL")
-                .unwrap_or_else(|_| "http://localhost:6333".into()),
-            embedding_url: std::env::var("EMBEDDING_URL")
-                .unwrap_or_else(|_| "http://localhost:8001".into()),
+            qdrant_url: qdrant_url.clone(),
+            embedding_url: embedding_url.clone(),
+            admin_service: Arc::new(AdminService::new(
+                pool,
+                ollama_url,
+                qdrant_url,
+                embedding_url,
+            )),
+            login_attempts: Arc::new(DashMap::new()),
         };
 
         axum::Router::new()

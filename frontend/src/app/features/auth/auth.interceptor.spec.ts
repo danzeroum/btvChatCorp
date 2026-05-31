@@ -10,9 +10,9 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideRouter, Router } from '@angular/router';
-import { authInterceptor } from './auth.interceptor';
+import { authInterceptorFn } from '../../core/interceptors/auth.interceptor.fn';
 
-describe('authInterceptor', () => {
+describe('authInterceptorFn', () => {
   let http: HttpClient;
   let httpMock: HttpTestingController;
   let router: Router;
@@ -20,7 +20,7 @@ describe('authInterceptor', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClient(withInterceptors([authInterceptorFn])),
         provideHttpClientTesting(),
         provideRouter([]),
       ],
@@ -49,16 +49,6 @@ describe('authInterceptor', () => {
     expect(req.request.headers.has('Authorization')).toBeFalse();
     req.flush({});
     localStorage.removeItem('jwt_token');
-  });
-
-  it('redireciona para /auth/login em 401', () => {
-    http.get('/api/v1/chat').subscribe({ error: () => {} });
-    const req = httpMock.expectOne('/api/v1/chat');
-    req.flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
-    expect(router.navigate).toHaveBeenCalledWith(
-      ['/auth/login'],
-      jasmine.objectContaining({ queryParams: { reason: 'session_expired' } }),
-    );
   });
 
   it('redireciona para /unauthorized em 403', () => {

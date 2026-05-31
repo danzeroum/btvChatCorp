@@ -1,32 +1,34 @@
-# ADR-004 — Autenticação: JWT + MFA TOTP + RBAC
+# ADR-004 — Autenticação: JWT + RBAC
 
-**Status:** Aceito  
-**Data:** 2026-03
+**Status:** Atualizado (2026-05)
+**Data original:** 2026-03
 
 ## Contexto
 
-O sistema serve múltiplos workspaces corporativos isolados. Cada workspace precisa de controle de acesso granular com suporte a SSO (Google, Microsoft, SAML) e MFA obrigatório para administradores.
+O sistema serve múltiplos workspaces corporativos isolados. Cada workspace precisa de controle de acesso granular. A decisão original especificava refresh token em httpOnly cookie e Redis. A implementação atual difere em alguns pontos.
 
-## Decisão
+## Decisão Atual (implementada no crate `api`)
 
-- **Access token JWT** com validade de 15 minutos
-- **Refresh token** com validade de 7 dias, armazenado em `httpOnly` cookie
-- **MFA TOTP** (RFC 6238) via `pyotp` — obrigatório para role `admin` e `curator`
-- **RBAC** com 4 roles: `super_admin`, `admin`, `curator`, `member`
-- **SSO** via OAuth2 (Google/Microsoft) e SAML 2.0 como provedor alternativo
-- Refresh tokens armazenados no **Redis** com TTL para revogação imediata
+- **Access token JWT HS256** com validade configurável via `JWT_EXPIRY_HOURS` (default 1h)
+- **Claims JWT**: `sub` (user_id), `workspace_id`, `role`, `exp`, `iss: "btvchatcorp"`, `aud: ["btvchatcorp-api"]`
+- **Renovação**: `POST /api/v1/auth/refresh` recebe `{ refresh_token }` e emite novo access token se válido. O backend valida que o usuário ainda está ativo no banco antes de emitir.
+- **RBAC**: roles `owner`, `admin`, `user`; admin guard no painel admin via middleware `require_admin_role`
+- **Brute-force protection**: 5 tentativas falhas por IP em 15 minutos → 429; contagem zerada no login bem-sucedido
+- **Fonte de verdade do cliente**: `GET /api/v1/auth/me` para obter roles/workspace frescos do banco; frontend não deve confiar apenas no payload do JWT
 
-## Justificativa
+## Estado Pendente (não implementado)
 
-JWT stateless reduz carga no banco para autenticação. O armazenamento do refresh token no Redis permite logout global e revogação por sessão sem invalidar o access token imediatamente — trade-off deliberado de 15 minutos aceito.
+- Redis para revogação imediata de tokens ainda não implementado (ver `JWT_EXPIRY_HOURS=1`)
+- MFA TOTP ainda não implementado
+- SSO OIDC/SAML ainda não implementado
 
 ## Consequências
 
 **Positivas:**
-- Revogação imediata de sessão via Redis
-- MFA TOTP sem dependência de SMS (resistente a SIM swap)
-- SSO reduz fricção de onboarding corporativo
+- Access token de curta duração (1h) limita janela de replay
+- Validação server-side no refresh: usuário desativado não renova sessão
+- Claims `iss`/`aud` emitidos em tokens novos (backward-compatible com tokens legados)
 
 **Negativas / Trade-offs:**
-- Access token válido por até 15 min mesmo após logout (janela de risco aceita)
-- Requer Redis em alta disponibilidade para não bloquear refresh
+- Sem Redis: logout não invalida tokens emitidos imediatamente (janela = JWT_EXPIRY_HOURS)
+- Refresh token é um access token válido — não um token de longa duração separado

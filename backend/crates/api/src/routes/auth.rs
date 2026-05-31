@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -150,6 +150,19 @@ async fn register(
     ))
 }
 
+const LOGIN_MAX_ATTEMPTS: u32 = 5;
+const LOGIN_WINDOW_SECS: u64 = 900; // 15 minutos
+
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("X-Real-IP")
+        .or_else(|| headers.get("X-Forwarded-For"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 /// Autentica usuario e retorna JWT
 #[utoipa::path(
     post,
@@ -159,29 +172,69 @@ async fn register(
     responses(
         (status = 200, description = "Login realizado", body = AuthResponse),
         (status = 401, description = "Email ou senha invalidos"),
+        (status = 429, description = "Muitas tentativas"),
     )
 )]
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(dto): Json<LoginDto>,
 ) -> Result<Json<AuthResponse>, AppError> {
     dto.validate()?;
 
-    let row: (Uuid, Uuid, String, String, String, String) = sqlx::query_as(
+    let client_ip = extract_client_ip(&headers);
+    {
+        let now = std::time::Instant::now();
+        let mut entry = state
+            .login_attempts
+            .entry(client_ip.clone())
+            .or_insert((0, now));
+        let (count, since) = *entry;
+        if since.elapsed().as_secs() >= LOGIN_WINDOW_SECS {
+            *entry = (0, now);
+        } else if count >= LOGIN_MAX_ATTEMPTS {
+            return Err(AppError::too_many_requests(
+                "Muitas tentativas de login. Tente novamente em alguns minutos.",
+            ));
+        }
+    }
+
+    let row: Option<(Uuid, Uuid, String, String, String, String)> = sqlx::query_as(
         "SELECT id, workspace_id, name, email, password_hash, role
          FROM users
          WHERE email = $1 AND is_active = true",
     )
     .bind(&dto.email)
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await
-    .map_err(|_| AppError::unauthorized("Email ou senha invalidos"))?;
+    .map_err(|_| AppError::internal("Erro interno"))?;
 
-    let (user_id, workspace_id, name, _email, password_hash, role) = row;
+    let Some((user_id, workspace_id, name, _email, password_hash, role)) = row else {
+        state
+            .login_attempts
+            .entry(client_ip.clone())
+            .and_modify(|(c, t)| {
+                *c += 1;
+                *t = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
+        return Err(AppError::unauthorized("Email ou senha invalidos"));
+    };
 
     if !bcrypt::verify(&dto.password, &password_hash).map_err(|_| AppError::internal("Erro"))? {
+        state
+            .login_attempts
+            .entry(client_ip.clone())
+            .and_modify(|(c, t)| {
+                *c += 1;
+                *t = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     }
+
+    // Login bem-sucedido: limpa contagem de tentativas
+    state.login_attempts.remove(&client_ip);
 
     sqlx::query("UPDATE users SET last_login_at = NOW() WHERE id = $1")
         .bind(user_id)
@@ -270,10 +323,14 @@ async fn refresh(
 ) -> Result<Json<AuthResponse>, AppError> {
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
+    // validate_aud = false: aceita tokens novos (com aud) e legados (sem aud),
+    // consistente com a validacao no middleware require_auth.
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_aud = false;
     let data = decode::<Claims>(
         &dto.token,
         &DecodingKey::from_secret(state.jwt_secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
+        &validation,
     )
     .map_err(|_| AppError::unauthorized("Token inválido ou expirado"))?;
 
@@ -325,6 +382,8 @@ fn make_jwt(
             workspace_id: workspace_id.to_string(),
             role: role.into(),
             exp,
+            iss: "btvchatcorp".into(),
+            aud: vec!["btvchatcorp-api".into()],
         },
         &EncodingKey::from_secret(secret.as_bytes()),
     )

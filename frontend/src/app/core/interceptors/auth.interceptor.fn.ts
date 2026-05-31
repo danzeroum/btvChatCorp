@@ -19,10 +19,16 @@ import { Observable, catchError, finalize, map, of, switchMap, throwError } from
 // Estado compartilhado entre invocações do interceptor: um único refresh em andamento.
 let refreshInFlight$: Observable<string | null> | null = null;
 
-const isAuthEndpoint = (url: string): boolean =>
-  url.includes('/auth/login') ||
-  url.includes('/auth/register') ||
-  url.includes('/auth/refresh');
+const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
+
+const isAuthEndpoint = (url: string): boolean => {
+  try {
+    const pathname = new URL(url, location.origin).pathname;
+    return AUTH_PATHS.some(p => pathname === p || pathname.endsWith(p));
+  } catch {
+    return AUTH_PATHS.some(p => url.includes(p));
+  }
+};
 
 export const authInterceptorFn: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
@@ -36,6 +42,10 @@ export const authInterceptorFn: HttpInterceptorFn = (req, next) => {
 
   return next(withAuth(req, token)).pipe(
     catchError((error: HttpErrorResponse) => {
+      if (error.status === 403) {
+        router.navigate(['/unauthorized']);
+        return throwError(() => error);
+      }
       if (error.status !== 401) {
         return throwError(() => error);
       }
@@ -63,19 +73,22 @@ function withAuth(req: Parameters<HttpInterceptorFn>[0], token: string | null) {
   return req.clone({ setHeaders: headers });
 }
 
-/** Renova o token; concorrentes compartilham o mesmo Observable em andamento. */
+/** Renova o token usando o refresh_token separado (não o access token).
+ *  Concorrentes compartilham o mesmo Observable em andamento. */
 function refreshToken(http: HttpClient): Observable<string | null> {
   if (refreshInFlight$) return refreshInFlight$;
 
-  const current = localStorage.getItem('jwt_token');
-  if (!current) return of(null);
+  const refreshTok = localStorage.getItem('refresh_token');
+  if (!refreshTok) return of(null);
 
   refreshInFlight$ = http
-    .post<{ token: string }>('/api/v1/auth/refresh', { token: current })
+    .post<{ access_token: string }>('/api/v1/auth/refresh', { refresh_token: refreshTok }, {
+      withCredentials: true,
+    })
     .pipe(
       map((res) => {
-        localStorage.setItem('jwt_token', res.token);
-        return res.token;
+        localStorage.setItem('jwt_token', res.access_token);
+        return res.access_token;
       }),
       catchError(() => of(null)),
       finalize(() => {
