@@ -227,6 +227,100 @@ mod chats_tests {
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
+    /// POST /api/v1/chat/stream retorna 200 com Content-Type: text/event-stream.
+    #[tokio::test]
+    async fn test_stream_message_returns_200_with_sse() {
+        std::env::set_var("OLLAMA_MOCK", "true");
+        let app: Router = make_app().await;
+        let chat_id = create_chat_helper(app.clone(), "Chat stream SSE").await;
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/chat/stream")
+                    .header("Authorization", make_auth_header("user"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "message": "Olá, teste de stream!",
+                            "chat_id": chat_id
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let ct = res
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            ct.contains("text/event-stream"),
+            "content-type deve ser SSE, foi: {}",
+            ct
+        );
+    }
+
+    /// Após o stream, as mensagens user + assistant devem estar no histórico.
+    #[tokio::test]
+    async fn test_stream_message_saves_to_history() {
+        std::env::set_var("OLLAMA_MOCK", "true");
+        let app: Router = make_app().await;
+        let chat_id = create_chat_helper(app.clone(), "Chat stream history").await;
+
+        // Dispara o stream e consome o body inteiro para que o spawn rode até o fim
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/chat/stream")
+                    .header("Authorization", make_auth_header("user"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        json!({ "message": "Mensagem de teste", "chat_id": chat_id }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Consome o body SSE completo (força o spawn a terminar)
+        let _ = axum::body::to_bytes(resp.into_body(), usize::MAX).await;
+
+        // Pequena margem para o tokio::spawn persistir no banco
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/api/v1/chats/{}/messages", chat_id))
+                    .header("Authorization", make_auth_header("user"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let msgs: Vec<Value> = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            msgs.len() >= 2,
+            "Deve ter user + assistant, tem: {}",
+            msgs.len()
+        );
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[1]["role"], "assistant");
+    }
+
     #[tokio::test]
     async fn test_get_nonexistent_chat_returns_404() {
         let app: Router = make_app().await;
