@@ -33,6 +33,8 @@ utoipa             = { workspace = true }
 utoipa-swagger-ui  = { workspace = true }
 rand               = { workspace = true }
 dashmap            = { workspace = true }
+pdf-extract        = { workspace = true }
+zip                = { workspace = true }
 branding           = { path = "../branding" }
 onboarding         = { path = "../onboarding" }
 

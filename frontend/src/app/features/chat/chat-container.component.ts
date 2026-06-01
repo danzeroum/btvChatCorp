@@ -22,6 +22,13 @@ interface Message {
   feedback?: 1 | -1;
 }
 
+interface Attachment {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
 // Gera UUID sem depender de crypto.randomUUID (incompativel com HTTP)
 function genId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -159,14 +166,35 @@ function genId(): string {
         </div>
 
         <div class="input-area">
-          <textarea [(ngModel)]="inputText"
-                    (keydown)="onKeydown($event)"
-                    [disabled]="sending()"
-                    placeholder="Mensagem... (Enter envia, Shift+Enter nova linha)"
-                    rows="3"></textarea>
-          <button (click)="send()" [disabled]="sending() || !inputText.trim()">
-            {{ sending() ? '...' : 'Enviar' }}
-          </button>
+          <input type="file" #fileInput multiple hidden
+                 accept=".txt,.md,.csv,.pdf,.docx"
+                 (change)="onFileSelected($event)" />
+          @if (attachments().length > 0) {
+            <div class="attachment-chips">
+              @for (att of attachments(); track att.id) {
+                <div class="chip">
+                  <span class="chip-name" [title]="att.filename">📎 {{ att.filename }}</span>
+                  <button class="chip-remove" type="button" (click)="removeAttachment(att.id)" title="Remover">✕</button>
+                </div>
+              }
+            </div>
+          }
+          <div class="input-row">
+            <button class="attach-btn" type="button"
+                    (click)="fileInput.click()"
+                    [disabled]="uploading() || sending()"
+                    title="Anexar arquivo">
+              {{ uploading() ? '⏳' : '📎' }}
+            </button>
+            <textarea [(ngModel)]="inputText"
+                      (keydown)="onKeydown($event)"
+                      [disabled]="sending()"
+                      placeholder="Mensagem... (Enter envia, Shift+Enter nova linha)"
+                      rows="3"></textarea>
+            <button (click)="send()" [disabled]="sending() || !inputText.trim()">
+              {{ sending() ? '...' : 'Enviar' }}
+            </button>
+          </div>
         </div>
       </main>
     </div>
@@ -237,13 +265,23 @@ function genId(): string {
     .action-btn.confirm:hover { background:#22c55e22; }
     .action-btn:disabled { opacity:0.4; cursor:not-allowed; }
     /* Input area */
-    .input-area { padding:1rem 1.5rem; border-top:1px solid #2a2a2a; display:flex; gap:10px; align-items:flex-end; }
+    .input-area { padding:1rem 1.5rem; border-top:1px solid #2a2a2a; display:flex; flex-direction:column; gap:8px; }
+    .input-row { display:flex; gap:10px; align-items:flex-end; }
     textarea { flex:1; padding:10px 14px; border-radius:12px; border:1px solid #333; background:#1a1a1a; color:#fff; font-size:0.9rem; resize:none; font-family:inherit; line-height:1.5; }
     textarea:focus { outline:none; border-color:#2563eb; }
     textarea:disabled { opacity:0.5; }
     button { padding:10px 20px; border-radius:12px; background:#2563eb; color:#fff; border:none; cursor:pointer; font-size:0.9rem; font-weight:600; white-space:nowrap; }
     button:hover:not(:disabled) { background:#1d4ed8; }
     button:disabled { opacity:0.4; cursor:not-allowed; }
+    /* Attach button */
+    .attach-btn { padding:0; width:40px; height:40px; background:#1e1e1e; border:1px solid #333; border-radius:10px; font-size:1.05rem; flex-shrink:0; color:#888; }
+    .attach-btn:hover:not(:disabled) { background:#2a2a2a; border-color:#555; color:#fff; }
+    /* Attachment chips */
+    .attachment-chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .chip { display:flex; align-items:center; gap:4px; background:#1e3a5f; color:#93c5fd; border-radius:8px; padding:4px 10px; font-size:0.78rem; max-width:220px; }
+    .chip-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+    .chip-remove { background:none; border:none; cursor:pointer; color:#93c5fd; font-size:0.7rem; line-height:1; padding:0 0 0 2px; flex-shrink:0; }
+    .chip-remove:hover { color:#fff; }
   `]
 })
 export class ChatContainerComponent implements OnInit, AfterViewChecked {
@@ -269,6 +307,10 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   editText     = '';
   copiedMsgId  = signal<string | null>(null);
 
+  // File attachments
+  attachments = signal<Attachment[]>([]);
+  uploading   = signal(false);
+
   private scrollNeeded = false;
 
   ngOnInit() { this.loadRecentChats(); }
@@ -288,6 +330,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   selectChat(id: string) {
     this.activeChatId.set(id);
     this.messages.set([]);
+    this.attachments.set([]);
     this.cancelEdit();
     const chat = this.recentChats().find(c => c.id === id);
     this.currentTitle.set(chat?.title || 'Conversa');
@@ -299,6 +342,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   newChat() {
     this.activeChatId.set(null);
     this.messages.set([]);
+    this.attachments.set([]);
     this.currentTitle.set('Nova conversa');
     this.cancelEdit();
     this.cancelRename();
@@ -430,6 +474,45 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.messages.update(list => list.filter(m => m.id !== msg.id && m.id !== prevMsg.id));
     this.inputText = prevMsg.content;
     this.send();
+  }
+
+  // ── File attachments ──
+
+  async onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = input.files;
+    if (!files || files.length === 0) return;
+
+    const chatId = this.activeChatId();
+    if (!chatId) {
+      alert('Selecione ou inicie uma conversa antes de anexar arquivos.');
+      input.value = '';
+      return;
+    }
+
+    this.uploading.set(true);
+    for (const file of Array.from(files)) {
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const att = await firstValueFrom(
+          this.http.post<Attachment>(`/api/v1/chats/${chatId}/attachments`, form)
+        );
+        this.attachments.update(list => [...list, att]);
+      } catch {
+        console.error('Erro ao enviar arquivo:', file.name);
+      }
+    }
+    this.uploading.set(false);
+    input.value = '';
+  }
+
+  removeAttachment(id: string) {
+    const chatId = this.activeChatId();
+    if (!chatId) return;
+    this.http.delete(`/api/v1/chats/${chatId}/attachments/${id}`).subscribe({
+      next: () => this.attachments.update(list => list.filter(a => a.id !== id)),
+    });
   }
 
   // ── Send message ──
