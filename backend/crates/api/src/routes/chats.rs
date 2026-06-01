@@ -66,7 +66,7 @@ async fn list(
          FROM chats c
          LEFT JOIN projects p ON p.id = c.project_id
          WHERE c.workspace_id=$1 AND c.created_by=$2
-         ORDER BY c.updated_at DESC",
+         ORDER BY c.is_pinned DESC, c.updated_at DESC",
     )
     .bind(auth.workspace_id)
     .bind(auth.user_id)
@@ -670,27 +670,43 @@ async fn build_instructions_suffix(db: &sqlx::PgPool, project_id: Option<Uuid>) 
     format!("\n\n## Instruções do projeto\n{}", lines)
 }
 
-// -- Rename chat
+// -- Update chat (rename e/ou pin)
 
+/// Atualização parcial de um chat. Os campos são independentes: enviar apenas
+/// `title` renomeia sem tocar no pin, e enviar apenas `is_pinned` (des)fixa sem
+/// alterar o título.
 #[derive(serde::Deserialize)]
-struct RenameChatDto {
-    title: String,
+struct UpdateChatDto {
+    title: Option<String>,
+    is_pinned: Option<bool>,
 }
 
 async fn rename(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(dto): Json<RenameChatDto>,
+    Json(dto): Json<UpdateChatDto>,
 ) -> Result<Json<Chat>, AppError> {
-    if dto.title.trim().is_empty() {
-        return Err(AppError::bad_request("Título não pode ser vazio"));
+    if dto.title.is_none() && dto.is_pinned.is_none() {
+        return Err(AppError::bad_request("Nada para atualizar"));
     }
+    let title = match &dto.title {
+        Some(t) if t.trim().is_empty() => {
+            return Err(AppError::bad_request("Título não pode ser vazio"));
+        }
+        Some(t) => Some(t.trim().to_string()),
+        None => None,
+    };
     let row = sqlx::query_as::<_, Chat>(
-        "UPDATE chats SET title=$1, updated_at=NOW()
-         WHERE id=$2 AND workspace_id=$3 RETURNING *",
+        "UPDATE chats
+            SET title = COALESCE($1, title),
+                is_pinned = COALESCE($2, is_pinned),
+                updated_at = NOW()
+          WHERE id=$3 AND workspace_id=$4
+          RETURNING *",
     )
-    .bind(dto.title.trim())
+    .bind(title)
+    .bind(dto.is_pinned)
     .bind(id)
     .bind(auth.workspace_id)
     .fetch_one(&state.db)

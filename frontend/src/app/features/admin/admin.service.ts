@@ -4,7 +4,8 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/admin`;
-const API  = `${environment.apiUrl}/api/v1`;
+// environment.apiUrl já inclui o prefixo `/api/v1`; não duplicar o segmento aqui.
+const API  = environment.apiUrl;
 
 export interface AdminUser {
   id: string;
