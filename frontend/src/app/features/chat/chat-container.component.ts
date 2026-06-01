@@ -29,6 +29,13 @@ interface Attachment {
   size_bytes: number;
 }
 
+interface ModelItem {
+  id: string;
+  name: string;
+  size_gb: number;
+  is_default: boolean;
+}
+
 // Gera UUID sem depender de crypto.randomUUID (incompativel com HTTP)
 function genId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -100,7 +107,19 @@ function genId(): string {
       <main class="chat-main">
         <header class="chat-header">
           <span class="chat-title">{{ currentTitle() }}</span>
-          <span class="model-badge">Ollama</span>
+          @if (availableModels().length > 1) {
+            <select class="model-select"
+                    [value]="selectedModel()"
+                    (change)="onModelChange($any($event.target).value)">
+              @for (m of availableModels(); track m.id) {
+                <option [value]="m.id">
+                  {{ m.name }} ({{ m.size_gb.toFixed(1) }}GB){{ m.is_default ? ' ★' : '' }}
+                </option>
+              }
+            </select>
+          } @else {
+            <span class="model-badge">{{ selectedModel() || 'Ollama' }}</span>
+          }
         </header>
 
         <div class="messages-area" #msgArea>
@@ -231,6 +250,9 @@ function genId(): string {
     .chat-header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid #2a2a2a; }
     .chat-title { font-size:0.95rem; font-weight:500; }
     .model-badge { font-size:0.72rem; background:#1e3a5f; color:#60a5fa; padding:3px 10px; border-radius:999px; }
+    .model-select { background:#1e3a5f; color:#60a5fa; border:1px solid #2563eb33; border-radius:999px; font-size:0.72rem; padding:3px 10px; cursor:pointer; outline:none; }
+    .model-select:hover { background:#1e4a7f; }
+    .model-select option { background:#111; color:#f0f0f0; }
     .messages-area { flex:1; overflow-y:auto; padding:1.5rem; display:flex; flex-direction:column; gap:1rem; }
     .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#555; gap:8px; }
     .empty-hint { font-size:0.8rem; color:#444; }
@@ -311,9 +333,23 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   attachments = signal<Attachment[]>([]);
   uploading   = signal(false);
 
+  // Model selection
+  availableModels = signal<ModelItem[]>([]);
+  selectedModel   = signal<string>('');
+
   private scrollNeeded = false;
 
-  ngOnInit() { this.loadRecentChats(); }
+  ngOnInit() {
+    this.loadRecentChats();
+    const saved = localStorage.getItem('btv_selected_model');
+    if (saved) this.selectedModel.set(saved);
+    this.http.get<{ models: ModelItem[]; default_model: string }>('/api/v1/models').subscribe({
+      next: ({ models, default_model }) => {
+        this.availableModels.set(models);
+        if (!this.selectedModel()) this.selectedModel.set(default_model);
+      },
+    });
+  }
 
   ngAfterViewChecked() {
     if (this.scrollNeeded) { this.scrollToBottom(); this.scrollNeeded = false; }
@@ -346,6 +382,11 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.currentTitle.set('Nova conversa');
     this.cancelEdit();
     this.cancelRename();
+  }
+
+  onModelChange(modelId: string) {
+    this.selectedModel.set(modelId);
+    localStorage.setItem('btv_selected_model', modelId);
   }
 
   onKeydown(e: KeyboardEvent) {
@@ -550,7 +591,8 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
       }
     }
 
-    this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text })
+    const model = this.selectedModel() || undefined;
+    this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text, model })
       .pipe(timeout(this.LLM_TIMEOUT_MS))
       .subscribe({
         next: assistantMsg => {
