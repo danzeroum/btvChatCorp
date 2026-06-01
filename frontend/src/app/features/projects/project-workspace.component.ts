@@ -447,8 +447,18 @@ export class ProjectWorkspaceComponent implements OnInit {
   ];
 
   ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id') || '';
-    this.loadProject(id);
+    this.route.paramMap.subscribe(params => {
+      const id = params.get('id') || '';
+      this.loading.set(true);
+      this.project.set(null);
+      this.chats.set([]);
+      this.documents.set([]);
+      this.instructions.set([]);
+      this.members.set([]);
+      this.activeTab.set('overview');
+      this.editing.set(false);
+      this.loadProject(id);
+    });
     this.http.get<Project[]>('/api/v1/projects').subscribe(ps => this.allProjects.set(ps));
   }
 
