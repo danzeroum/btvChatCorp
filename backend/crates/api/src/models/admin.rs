@@ -6,6 +6,7 @@ use uuid::Uuid;
 // ── System Health ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemHealth {
     pub status: String,
     pub api: bool,
@@ -18,6 +19,7 @@ pub struct SystemHealth {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GpuInfo {
     pub model: String,
     pub utilization: i32,
@@ -34,6 +36,7 @@ pub struct GpuInfo {
 // ── Alerts ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AdminAlert {
     pub id: String,
     pub severity: String,
@@ -47,6 +50,7 @@ pub struct AdminAlert {
 // ── Metrics ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageMetricsRow {
     pub total_tokens_input: i64,
     pub total_tokens_output: i64,
@@ -84,6 +88,7 @@ impl UsageMetricsRow {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageMetrics {
     pub period: String,
     pub total_tokens_input: i64,
@@ -107,6 +112,7 @@ pub struct UsageMetrics {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EstimatedCost {
     pub gpu: f64,
     pub storage: f64,
@@ -116,6 +122,7 @@ pub struct EstimatedCost {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectUsage {
     pub project_id: String,
     pub project_name: String,
@@ -125,6 +132,7 @@ pub struct ProjectUsage {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserUsage {
     pub user_id: String,
     pub user_name: String,
@@ -133,6 +141,7 @@ pub struct UserUsage {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct DailyMetric {
     pub date: DateTime<Utc>,
     pub messages: i64,
@@ -142,6 +151,7 @@ pub struct DailyMetric {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectMetric {
     pub id: Uuid,
     pub name: String,
@@ -154,6 +164,7 @@ pub struct ProjectMetric {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct UserMetric {
     pub id: Uuid,
     pub name: String,
@@ -165,6 +176,7 @@ pub struct UserMetric {
 // ── Users ──────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceUserRow {
     pub id: Uuid,
     pub email: String,
@@ -178,6 +190,7 @@ pub struct WorkspaceUserRow {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct RoleRow {
     pub id: Uuid,
     pub name: String,
@@ -190,6 +203,7 @@ pub struct RoleRow {
 // ── Sessions ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRow {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -204,6 +218,7 @@ pub struct SessionRow {
 // ── Audit ──────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditLogRow {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
@@ -218,6 +233,7 @@ pub struct AuditLogRow {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditPage {
     pub entries: Vec<AuditLogRow>,
     pub total: i64,
@@ -255,6 +271,7 @@ impl From<super::super::routes::admin::AuditQuery> for AuditFiltersQuery {
 // ── Compliance ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComplianceReport {
     pub generated_at: String,
     pub overall_score: i32,
@@ -262,6 +279,7 @@ pub struct ComplianceReport {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessStats {
     pub total_users: i64,
     pub mfa_enabled: i64,
@@ -273,6 +291,7 @@ pub struct AccessStats {
 // ── AI Models ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct AiModelConfig {
     pub id: String,
     pub display_name: String,
@@ -289,6 +308,7 @@ pub struct AiModelConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct LoraAdapter {
     pub version: String,
     pub path: String,
@@ -302,6 +322,7 @@ pub struct LoraAdapter {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct TrainingBatch {
     pub id: Uuid,
     pub status: String,
@@ -319,6 +340,7 @@ pub struct TrainingBatch {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct RagConfig {
     pub top_k: i32,
     pub chunk_size: i32,
@@ -329,6 +351,7 @@ pub struct RagConfig {
 // ── API Keys ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiKeyRow {
     pub id: Uuid,
     pub name: String,
@@ -349,6 +372,7 @@ pub struct ApiKeyRow {
 // ── Webhooks ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct WebhookRow {
     pub id: Uuid,
     pub name: String,
@@ -368,6 +392,7 @@ pub struct WebhookRow {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct WebhookDelivery {
     pub id: Uuid,
     pub webhook_id: Uuid,
@@ -389,6 +414,7 @@ pub struct WebhookDelivery {
 // ── Resource Limits ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceLimitRow {
     pub id: Uuid,
     pub r#type: String,
@@ -408,6 +434,7 @@ pub struct ResourceLimitRow {
 // ── Settings ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceSettings {
     pub name: String,
     pub slug: String,
@@ -426,6 +453,7 @@ pub struct WorkspaceSettings {
 // ── Branding ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct BrandingConfig {
     pub product_name: String,
     pub tagline: String,
@@ -451,6 +479,7 @@ pub struct BrandingConfig {
 // ── Retention ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct RetentionPolicy {
     pub data_type: String,
     pub retention_days: Option<i32>,
@@ -463,6 +492,7 @@ pub struct RetentionPolicy {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct DeletionRequest {
     pub id: Uuid,
     pub r#type: String,
@@ -477,6 +507,7 @@ pub struct DeletionRequest {
 // ── API Docs ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiEndpointDoc {
     pub method: String,
     pub path: String,

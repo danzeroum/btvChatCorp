@@ -7,27 +7,50 @@ const BASE = `${environment.apiUrl}/admin`;
 // environment.apiUrl já inclui o prefixo `/api/v1`; não duplicar o segmento aqui.
 const API  = environment.apiUrl;
 
+// Espelha WorkspaceUserRow (backend, serializado em camelCase).
 export interface AdminUser {
   id: string;
   name: string;
   email: string;
-  role: string;
-  status: 'active' | 'suspended' | 'pending';
+  roleName: string;
+  status: string; // 'active' | 'suspended' | 'invited' | ...
   lastLoginAt?: string;
-  createdAt: string;
+  lastLoginIp?: string;
   mfaEnabled: boolean;
+  createdAt: string;
+  // Campo transitório só de UI para o <select> de role (id da role atual).
+  roleId?: string;
 }
 
+// Espelha RoleRow (backend).
+export interface AdminRole {
+  id: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  permissions: any;
+  userCount?: number;
+}
+
+// Espelha AuditLogRow (backend).
 export interface AuditEntry {
   id: string;
-  userId: string;
-  userEmail: string;
-  action: string;
-  resource: string;
-  severity: 'info' | 'warning' | 'critical';
-  details: any;
-  ipAddress: string;
   createdAt: string;
+  userId?: string;
+  userName: string;
+  userIp?: string;
+  action: string;
+  resourceName: string;
+  severity: 'info' | 'warning' | 'critical';
+  category: string;
+  details?: any;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  total: number;
+  page: number;
+  perPage: number;
 }
 
 export interface SystemHealth {
@@ -41,17 +64,22 @@ export interface SystemHealth {
   avgLatencyMs: number;
 }
 
+// Espelha ApiKeyRow (backend, camelCase).
 export interface ApiKeyAdmin {
   id: string;
   name: string;
-  keyPrefix: string;
-  permissions: any[];
-  status: 'active' | 'revoked' | 'expired';
-  rateLimitRpm: number;
-  lastUsedAt?: string;
-  requestCount: number;
+  prefix: string;
+  maskedKey: string;
+  permissions: any;
+  rateLimit: number;
   expiresAt?: string;
+  lastUsedAt?: string;
+  usageToday?: number;
+  usageTotal?: number;
+  status: 'active' | 'revoked' | 'expired';
   createdAt: string;
+  createdBy?: string;
+  revokedAt?: string;
 }
 
 export interface SsoConfig {
@@ -107,19 +135,21 @@ export class AdminService {
     return this.http.get<SystemHealth>(`${BASE}/health`);
   }
 
-  // Users
-  listUsers(page = 1, perPage = 20, search?: string): Observable<{ users: AdminUser[]; total: number }> {
-    let params = new HttpParams().set('page', page).set('perPage', perPage);
-    if (search) params = params.set('search', search);
-    return this.http.get<{ users: AdminUser[]; total: number }>(`${BASE}/users`, { params });
+  // Users — o backend retorna um array simples (sem envelope) e ignora paginação.
+  listUsers(): Observable<AdminUser[]> {
+    return this.http.get<AdminUser[]>(`${BASE}/users`);
   }
 
-  inviteUser(email: string, role: string): Observable<void> {
-    return this.http.post<void>(`${BASE}/users`, { email, role });
+  listRoles(): Observable<AdminRole[]> {
+    return this.http.get<AdminRole[]>(`${BASE}/roles`);
   }
 
-  updateUserRole(userId: string, role: string): Observable<void> {
-    return this.http.put<void>(`${BASE}/users/${userId}`, { role });
+  inviteUser(email: string, roleId: string, projectIds: string[] = []): Observable<unknown> {
+    return this.http.post(`${BASE}/users`, { email, role_id: roleId, project_ids: projectIds });
+  }
+
+  updateUserRole(userId: string, roleId: string): Observable<unknown> {
+    return this.http.put(`${BASE}/users/${userId}`, { role_id: roleId });
   }
 
   suspendUser(userId: string): Observable<void> {
@@ -130,16 +160,15 @@ export class AdminService {
     return this.http.post<void>(`${BASE}/users/${userId}/activate`, {});
   }
 
-  // Audit
+  // Audit — o backend filtra por category, severity e user_id (snake_case).
   queryAuditLogs(
     page = 1, perPage = 50,
-    severity?: string, action?: string, since?: string,
-  ): Observable<{ entries: AuditEntry[]; total: number }> {
-    let params = new HttpParams().set('page', page).set('perPage', perPage);
+    severity?: string, category?: string,
+  ): Observable<AuditPage> {
+    let params = new HttpParams().set('page', page).set('per_page', perPage);
     if (severity) params = params.set('severity', severity);
-    if (action)   params = params.set('action', action);
-    if (since)    params = params.set('since', since);
-    return this.http.get<{ entries: AuditEntry[]; total: number }>(`${BASE}/audit`, { params });
+    if (category) params = params.set('category', category);
+    return this.http.get<AuditPage>(`${BASE}/audit`, { params });
   }
 
   exportAuditCsv(since: string, until: string): Observable<Blob> {
@@ -153,16 +182,20 @@ export class AdminService {
     return this.http.get<ApiKeyAdmin[]>(`${BASE}/api-keys`);
   }
 
-  createApiKey(payload: Partial<ApiKeyAdmin>): Observable<{ key: string; id: string }> {
-    return this.http.post<{ key: string; id: string }>(`${BASE}/api-keys`, payload);
+  createApiKey(payload: {
+    name: string; rateLimit: number; permissions: string[]; expiresAt?: string;
+  }): Observable<{ key: string; id: string }> {
+    return this.http.post<{ key: string; id: string }>(`${BASE}/api-keys`, {
+      name: payload.name,
+      permissions: payload.permissions,
+      rate_limit: payload.rateLimit,
+      expires_at: payload.expiresAt,
+    });
   }
 
-  revokeApiKey(id: string): Observable<void> {
-    return this.http.post<void>(`${BASE}/api-keys/${id}/revoke`, {});
-  }
-
-  rotateApiKey(id: string): Observable<{ key: string }> {
-    return this.http.post<{ key: string }>(`${BASE}/api-keys/${id}/rotate`, {});
+  // Backend expõe revogação como PATCH /api-keys/:id/revoke.
+  revokeApiKey(id: string): Observable<unknown> {
+    return this.http.patch(`${BASE}/api-keys/${id}/revoke`, {});
   }
 
   // SSO
