@@ -32,7 +32,7 @@ import { AdminService, ApiKeyAdmin } from '../admin.service';
           </div>
           <div class="form-group">
             <label>Rate limit (req/min)</label>
-            <input type="number" [(ngModel)]="newKey.rateLimitRpm" min="1" max="1000">
+            <input type="number" [(ngModel)]="newKey.rateLimit" min="1" max="1000">
           </div>
           <div class="form-group">
             <label>Permissões</label>
@@ -58,18 +58,17 @@ import { AdminService, ApiKeyAdmin } from '../admin.service';
           <div class="key-header">
             <div>
               <strong>{{ key.name }}</strong>
-              <code class="prefix">{{ key.keyPrefix }}...</code>
+              <code class="prefix">{{ key.prefix }}...</code>
             </div>
             <span class="status-badge" [class]="'s-' + key.status">{{ key.status }}</span>
           </div>
           <div class="key-meta">
-            <span>{{ key.rateLimitRpm }} req/min</span>
+            <span>{{ key.rateLimit }} req/min</span>
             <span>Último uso: {{ key.lastUsedAt ? (key.lastUsedAt | date:'dd/MM/yyyy') : 'nunca' }}</span>
-            <span>{{ key.requestCount | number }} requests</span>
+            <span>{{ (key.usageTotal ?? 0) | number }} requests</span>
             <span *ngIf="key.expiresAt">Expira: {{ key.expiresAt | date:'dd/MM/yyyy' }}</span>
           </div>
           <div class="key-actions" *ngIf="key.status === 'active'">
-            <button (click)="rotate(key)">Rotacionar</button>
             <button class="danger" (click)="revoke(key)">Revogar</button>
           </div>
         </div>
@@ -92,8 +91,8 @@ export class ApiKeysComponent implements OnInit {
   newKeyValue: string | null = null;
   swaggerUrl = `${window.location.origin}/api-docs`;
   resources = ['chat', 'documents', 'search', 'training', 'webhooks', 'usage'];
-  newKey: Partial<ApiKeyAdmin> & { selectedResources: string[] } = {
-    name: '', rateLimitRpm: 60, selectedResources: ['chat', 'search'],
+  newKey: { name: string; rateLimit: number; selectedResources: string[] } = {
+    name: '', rateLimit: 60, selectedResources: ['chat', 'search'],
   };
 
   ngOnInit() { this.loadKeys(); }
@@ -113,10 +112,11 @@ export class ApiKeysComponent implements OnInit {
   }
 
   createKey() {
-    const permissions = this.newKey.selectedResources!.map((r) => ({
-      resource: r, actions: ['read', 'write'],
-    }));
-    this.adminService.createApiKey({ ...this.newKey, permissions }).subscribe(({ key }) => {
+    this.adminService.createApiKey({
+      name: this.newKey.name,
+      rateLimit: this.newKey.rateLimit,
+      permissions: this.newKey.selectedResources,
+    }).subscribe(({ key }) => {
       this.newKeyValue = key;
       this.showCreate = false;
       this.loadKeys();
@@ -126,13 +126,6 @@ export class ApiKeysComponent implements OnInit {
   revoke(key: ApiKeyAdmin) {
     if (!confirm(`Revogar "${key.name}"? Esta ação não pode ser desfeita.`)) return;
     this.adminService.revokeApiKey(key.id).subscribe(() => (key.status = 'revoked'));
-  }
-
-  rotate(key: ApiKeyAdmin) {
-    if (!confirm(`Rotacionar "${key.name}"? A chave atual será invalidada.`)) return;
-    this.adminService.rotateApiKey(key.id).subscribe(({ key: newVal }) => {
-      this.newKeyValue = newVal;
-    });
   }
 
   copyKey(value: string) {

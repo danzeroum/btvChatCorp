@@ -133,7 +133,7 @@ export class WebhookLogsComponent implements OnInit {
 
   webhookId = '';
 
-  statusTabs = [
+  statusTabs: { value: 'all' | 'success' | 'failed' | 'retrying'; label: string }[] = [
     { value: 'all',      label: 'Todas' },
     { value: 'success',  label: '✅ Sucesso' },
     { value: 'failed',   label: '❌ Falha' },
@@ -155,7 +155,7 @@ export class WebhookLogsComponent implements OnInit {
 
   load(): void {
     this.loading.set(true);
-    const params = `?page=${this.page()}&perPage=${this.perPage}&status=${this.filterStatus()}`;
+    const params = `?page=${this.page()}&per_page=${this.perPage}&status=${this.filterStatus()}`;
     this.http.get<WebhookDelivery[]>(`/api/v1/admin/webhooks/${this.webhookId}/deliveries${params}`).subscribe({
       next: (data) => { this.deliveries.set(data); this.loading.set(false); },
       error: () => this.loading.set(false),
