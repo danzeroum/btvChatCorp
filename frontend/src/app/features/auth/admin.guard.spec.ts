@@ -57,4 +57,9 @@ describe('adminGuard (autorização verificada no servidor)', () => {
     auth.session = user(['super_admin']);
     expect(await firstValueFrom(run())).toBeTrue();
   });
+
+  it('role owner -> permite acesso', async () => {
+    auth.session = user(['owner']);
+    expect(await firstValueFrom(run())).toBeTrue();
+  });
 });

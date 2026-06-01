@@ -18,9 +18,9 @@ pub struct WorkspaceContext {
 
 impl WorkspaceContext {
     /// Deriva permissões a partir do role JWT.
-    /// role "admin" recebe `workspace:manage`; demais roles recebem vazio.
+    /// roles "owner" e "admin" recebem `workspace:manage`; demais recebem vazio.
     pub fn from_role(user_id: Uuid, workspace_id: Uuid, role: &str) -> Self {
-        let permissions = if role == "admin" {
+        let permissions = if role == "admin" || role == "owner" {
             vec![Permission {
                 resource: "workspace".to_string(),
                 actions: vec!["manage".to_string()],
@@ -33,5 +33,41 @@ impl WorkspaceContext {
             workspace_id,
             permissions,
         }
+    }
+}
+
+#[cfg(test)]
+mod extractors_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn has_manage(ctx: &WorkspaceContext) -> bool {
+        ctx.permissions
+            .iter()
+            .any(|p| p.resource == "workspace" && p.actions.contains(&"manage".to_string()))
+    }
+
+    #[test]
+    fn owner_recebe_workspace_manage() {
+        let ctx = WorkspaceContext::from_role(Uuid::new_v4(), Uuid::new_v4(), "owner");
+        assert!(has_manage(&ctx), "owner deve ter workspace:manage");
+    }
+
+    #[test]
+    fn admin_recebe_workspace_manage() {
+        let ctx = WorkspaceContext::from_role(Uuid::new_v4(), Uuid::new_v4(), "admin");
+        assert!(has_manage(&ctx), "admin deve ter workspace:manage");
+    }
+
+    #[test]
+    fn member_nao_recebe_workspace_manage() {
+        let ctx = WorkspaceContext::from_role(Uuid::new_v4(), Uuid::new_v4(), "member");
+        assert!(!has_manage(&ctx), "member nao deve ter workspace:manage");
+    }
+
+    #[test]
+    fn viewer_nao_recebe_workspace_manage() {
+        let ctx = WorkspaceContext::from_role(Uuid::new_v4(), Uuid::new_v4(), "viewer");
+        assert!(!has_manage(&ctx));
     }
 }

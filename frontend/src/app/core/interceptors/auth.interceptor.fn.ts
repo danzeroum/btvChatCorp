@@ -73,22 +73,21 @@ function withAuth(req: Parameters<HttpInterceptorFn>[0], token: string | null) {
   return req.clone({ setHeaders: headers });
 }
 
-/** Renova o token usando o refresh_token separado (não o access token).
+/** Renova o token enviando o jwt_token atual ao endpoint POST /auth/refresh.
+ *  O backend valida o token (mesmo que próximo de expirar) e devolve { token }.
  *  Concorrentes compartilham o mesmo Observable em andamento. */
 function refreshToken(http: HttpClient): Observable<string | null> {
   if (refreshInFlight$) return refreshInFlight$;
 
-  const refreshTok = localStorage.getItem('refresh_token');
-  if (!refreshTok) return of(null);
+  const currentToken = localStorage.getItem('jwt_token');
+  if (!currentToken) return of(null);
 
   refreshInFlight$ = http
-    .post<{ access_token: string }>('/api/v1/auth/refresh', { refresh_token: refreshTok }, {
-      withCredentials: true,
-    })
+    .post<{ token: string }>('/api/v1/auth/refresh', { token: currentToken })
     .pipe(
       map((res) => {
-        localStorage.setItem('jwt_token', res.access_token);
-        return res.access_token;
+        localStorage.setItem('jwt_token', res.token);
+        return res.token;
       }),
       catchError(() => of(null)),
       finalize(() => {
