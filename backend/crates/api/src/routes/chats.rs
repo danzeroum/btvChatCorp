@@ -5,7 +5,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse,
     },
-    routing::{get, post},
+    routing::{get, patch, post},
     Extension, Json, Router,
 };
 use futures::{channel::mpsc, StreamExt};
@@ -25,6 +25,7 @@ pub fn routes() -> Router<AppState> {
         .route("/chats/:id", get(get_one).delete(remove))
         .route("/chats/:id/messages", get(get_messages).post(send_message))
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
+        .route("/chats/:id/project", patch(transfer_to_project))
         .route("/chat/stream", post(stream_message))
 }
 
@@ -185,12 +186,14 @@ async fn send_message(
     Path(chat_id): Path<Uuid>,
     Json(dto): Json<SendMessageDto>,
 ) -> Result<Json<Message>, AppError> {
-    sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
-        .bind(chat_id)
-        .bind(auth.workspace_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
+    let (project_id,): (Option<Uuid>,) = sqlx::query_as(
+        "SELECT project_id FROM chats WHERE id=$1 AND workspace_id=$2",
+    )
+    .bind(chat_id)
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
 
     sqlx::query_as::<_, Message>(
         "INSERT INTO messages (chat_id,role,content) VALUES ($1,'user',$2) RETURNING *",
@@ -214,6 +217,9 @@ async fn send_message(
     let rag_context = build_rag_context(&rag_chunks);
     let sources_json = build_sources_json(&rag_chunks);
 
+    let instructions_suffix =
+        build_instructions_suffix(&state.db, project_id).await;
+
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
     )
@@ -226,14 +232,16 @@ async fn send_message(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
              Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
-             {}",
-            ctx
+             {}{}",
+            ctx, instructions_suffix
         )
     } else {
-        "Você é um assistente especializado da empresa. \
-         Responda sempre em português, seja preciso e conciso. \
-         Se não souber a resposta, diga que não tem essa informação disponível."
-            .to_string()
+        format!(
+            "Você é um assistente especializado da empresa. \
+             Responda sempre em português, seja preciso e conciso. \
+             Se não souber a resposta, diga que não tem essa informação disponível.{}",
+            instructions_suffix
+        )
     };
 
     let mut messages: Vec<serde_json::Value> =
@@ -394,6 +402,16 @@ async fn stream_message(
         .execute(&state.db)
         .await;
 
+    // Fetch project_id from chat for instruction injection
+    let stream_project_id: Option<Uuid> = sqlx::query_as::<_, (Option<Uuid>,)>(
+        "SELECT project_id FROM chats WHERE id=$1",
+    )
+    .bind(chat_id)
+    .fetch_one(&state.db)
+    .await
+    .ok()
+    .and_then(|(pid,)| pid);
+
     // 3. RAG
     let rag_chunks = search_rag(
         &state.qdrant_url,
@@ -407,6 +425,9 @@ async fn stream_message(
     .unwrap_or_default();
     let rag_context = build_rag_context(&rag_chunks);
     let sources_json = build_sources_json(&rag_chunks);
+
+    let stream_instructions_suffix =
+        build_instructions_suffix(&state.db, stream_project_id).await;
 
     // 4. Histórico (últimas 20 mensagens)
     let history: Vec<(String, String)> = sqlx::query_as(
@@ -422,14 +443,16 @@ async fn stream_message(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
              Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
-             {}",
-            ctx
+             {}{}",
+            ctx, stream_instructions_suffix
         )
     } else {
-        "Você é um assistente especializado da empresa. \
-         Responda sempre em português, seja preciso e conciso. \
-         Se não souber a resposta, diga que não tem essa informação disponível."
-            .to_string()
+        format!(
+            "Você é um assistente especializado da empresa. \
+             Responda sempre em português, seja preciso e conciso. \
+             Se não souber a resposta, diga que não tem essa informação disponível.{}",
+            stream_instructions_suffix
+        )
     };
 
     let mut messages: Vec<serde_json::Value> =
@@ -546,6 +569,61 @@ async fn stream_message(
     });
 
     Sse::new(rx)
+}
+
+// -- Helpers
+
+async fn build_instructions_suffix(db: &sqlx::PgPool, project_id: Option<Uuid>) -> String {
+    let Some(pid) = project_id else {
+        return String::new();
+    };
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, content FROM project_instructions
+         WHERE project_id=$1 AND is_active=true AND trigger_mode='always'
+         ORDER BY created_at",
+    )
+    .bind(pid)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    if rows.is_empty() {
+        return String::new();
+    }
+    let lines = rows
+        .iter()
+        .map(|(n, c)| format!("- **{}**: {}", n, c))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("\n\n## Instruções do projeto\n{}", lines)
+}
+
+// -- Transfer chat to another project
+
+#[derive(Debug, serde::Deserialize)]
+struct TransferChatDto {
+    project_id: Option<Uuid>,
+}
+
+async fn transfer_to_project(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(chat_id): Path<Uuid>,
+    Json(dto): Json<TransferChatDto>,
+) -> Result<StatusCode, AppError> {
+    let r = sqlx::query(
+        "UPDATE chats SET project_id=$1, updated_at=NOW() WHERE id=$2 AND workspace_id=$3",
+    )
+    .bind(dto.project_id)
+    .bind(chat_id)
+    .bind(auth.workspace_id)
+    .execute(&state.db)
+    .await
+    .map_err(AppError::from)?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Chat nao encontrado"));
+    }
+    Ok(StatusCode::OK)
 }
 
 // -- LLM client
