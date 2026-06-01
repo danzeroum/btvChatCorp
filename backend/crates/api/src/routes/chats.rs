@@ -1,9 +1,14 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Extension, Json, Router,
 };
+use futures::{channel::mpsc, StreamExt};
 use uuid::Uuid;
 
 use crate::{
@@ -20,6 +25,7 @@ pub fn routes() -> Router<AppState> {
         .route("/chats/:id", get(get_one).delete(remove))
         .route("/chats/:id/messages", get(get_messages).post(send_message))
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
+        .route("/chat/stream", post(stream_message))
 }
 
 #[utoipa::path(
@@ -322,6 +328,224 @@ async fn feedback(
         .await
         .map_err(AppError::from)?;
     Ok(StatusCode::OK)
+}
+
+// -- Streaming endpoint
+
+#[derive(Debug, serde::Deserialize)]
+struct ChatStreamRequest {
+    message: String,
+    chat_id: Option<Uuid>,
+    project_id: Option<Uuid>,
+    // Campos opcionais aceitos pelo frontend; reservados para uso futuro
+    #[serde(default)]
+    #[allow(dead_code)]
+    classification: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    eligible_for_training: Option<bool>,
+}
+
+async fn stream_message(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Json(dto): Json<ChatStreamRequest>,
+) -> impl IntoResponse {
+    // 1. Resolve ou cria o chat_id
+    let chat_id = if let Some(id) = dto.chat_id {
+        let exists = sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
+            .bind(id)
+            .bind(auth.workspace_id)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
+        if exists.is_none() {
+            let _ = sqlx::query(
+                "INSERT INTO chats (id, workspace_id, project_id, title, created_by)
+                 VALUES ($1, $2, $3, 'Nova conversa', $4)
+                 ON CONFLICT (id) DO NOTHING",
+            )
+            .bind(id)
+            .bind(auth.workspace_id)
+            .bind(dto.project_id)
+            .bind(auth.user_id)
+            .execute(&state.db)
+            .await;
+        }
+        id
+    } else {
+        sqlx::query_as::<_, Chat>(
+            "INSERT INTO chats (workspace_id, project_id, title, created_by)
+             VALUES ($1, $2, 'Nova conversa', $3) RETURNING *",
+        )
+        .bind(auth.workspace_id)
+        .bind(dto.project_id)
+        .bind(auth.user_id)
+        .fetch_one(&state.db)
+        .await
+        .map(|c| c.id)
+        .unwrap_or_else(|_| Uuid::new_v4())
+    };
+
+    // 2. Salva mensagem do usuário
+    let _ = sqlx::query("INSERT INTO messages (chat_id, role, content) VALUES ($1, 'user', $2)")
+        .bind(chat_id)
+        .bind(&dto.message)
+        .execute(&state.db)
+        .await;
+
+    // 3. RAG
+    let rag_chunks = search_rag(
+        &state.qdrant_url,
+        &state.embedding_url,
+        &auth.workspace_id.to_string(),
+        &dto.message,
+        5,
+        0.35,
+    )
+    .await
+    .unwrap_or_default();
+    let rag_context = build_rag_context(&rag_chunks);
+    let sources_json = build_sources_json(&rag_chunks);
+
+    // 4. Histórico (últimas 20 mensagens)
+    let history: Vec<(String, String)> = sqlx::query_as(
+        "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
+    )
+    .bind(chat_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let system_content = if let Some(ctx) = rag_context {
+        format!(
+            "Você é um assistente especializado da empresa. \
+             Responda sempre em português, seja preciso e conciso. \
+             Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
+             {}",
+            ctx
+        )
+    } else {
+        "Você é um assistente especializado da empresa. \
+         Responda sempre em português, seja preciso e conciso. \
+         Se não souber a resposta, diga que não tem essa informação disponível."
+            .to_string()
+    };
+
+    let mut messages: Vec<serde_json::Value> =
+        vec![serde_json::json!({ "role": "system", "content": system_content })];
+    messages.extend(
+        history
+            .into_iter()
+            .rev()
+            .map(|(role, content)| serde_json::json!({ "role": role, "content": content })),
+    );
+
+    // 5. Canal SSE — usa futures::channel::mpsc (já dependência do workspace)
+    let (tx, rx) = mpsc::unbounded::<Result<Event, std::convert::Infallible>>();
+
+    let ollama_url = state.ollama_url.clone();
+    let model = state.ollama_model.clone();
+    let auth_cfg = state.ollama_auth.clone();
+    let db = state.db.clone();
+    let src = sources_json.clone();
+
+    tokio::spawn(async move {
+        // Mock para CI (OLLAMA_MOCK=true)
+        if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
+            let tokens = ["[mock] ", "Resposta ", "de ", "streaming ", "OK"];
+            let mut full = String::new();
+            for t in &tokens {
+                full.push_str(t);
+                let _ = tx.unbounded_send(Ok(Event::default()
+                    .data(serde_json::json!({ "content": t }).to_string())));
+                tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+            }
+            let _ = sqlx::query(
+                "INSERT INTO messages (chat_id, role, content, sources) VALUES ($1, 'assistant', $2, $3)",
+            )
+            .bind(chat_id)
+            .bind(&full)
+            .bind(&src)
+            .execute(&db)
+            .await;
+            let _ = sqlx::query("UPDATE chats SET updated_at=NOW() WHERE id=$1")
+                .bind(chat_id)
+                .execute(&db)
+                .await;
+            let _ = tx.unbounded_send(Ok(Event::default()
+                .data(serde_json::json!({ "type": "sources", "data": src }).to_string())));
+            let _ = tx.unbounded_send(Ok(Event::default().data("[DONE]")));
+            return;
+        }
+
+        // Chamada real ao Ollama com stream=true
+        let client = reqwest::Client::new();
+        let mut req = client
+            .post(format!("{}/v1/chat/completions", ollama_url))
+            .json(&serde_json::json!({
+                "model":    model,
+                "messages": messages,
+                "stream":   true,
+            }));
+        if let Some(auth) = auth_cfg {
+            let mut parts = auth.splitn(2, ':');
+            req = req.basic_auth(
+                parts.next().unwrap_or(""),
+                Some(parts.next().unwrap_or("")),
+            );
+        }
+        let resp = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.unbounded_send(Ok(Event::default()
+                    .data(serde_json::json!({ "type": "error", "data": e.to_string() }).to_string())));
+                return;
+            }
+        };
+        let mut stream = resp.bytes_stream();
+        let mut full_content = String::new();
+        while let Some(Ok(chunk)) = stream.next().await {
+            for line in chunk.split(|&b| b == b'\n') {
+                let line = String::from_utf8_lossy(line);
+                let line = line.trim();
+                if !line.starts_with("data: ") {
+                    continue;
+                }
+                let raw = line.trim_start_matches("data: ").trim();
+                if raw == "[DONE]" {
+                    break;
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+                    if let Some(token) = v["choices"][0]["delta"]["content"].as_str() {
+                        if token.is_empty() {
+                            continue;
+                        }
+                        full_content.push_str(token);
+                        let _ = tx.unbounded_send(Ok(Event::default()
+                            .data(serde_json::json!({ "content": token }).to_string())));
+                    }
+                }
+            }
+        }
+        let _ = sqlx::query(
+            "INSERT INTO messages (chat_id, role, content, sources) VALUES ($1, 'assistant', $2, $3)",
+        )
+        .bind(chat_id)
+        .bind(&full_content)
+        .bind(&src)
+        .execute(&db)
+        .await;
+        let _ = sqlx::query("UPDATE chats SET updated_at=NOW() WHERE id=$1")
+            .bind(chat_id)
+            .execute(&db)
+            .await;
+        let _ = tx.unbounded_send(Ok(Event::default()
+            .data(serde_json::json!({ "type": "sources", "data": src }).to_string())));
+        let _ = tx.unbounded_send(Ok(Event::default().data("[DONE]")));
+    });
+
+    Sse::new(rx)
 }
 
 // -- LLM client
