@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AdminService, AdminUser } from '../admin.service';
+import { AdminService, AdminUser, AdminRole } from '../admin.service';
 
 @Component({
   selector: 'app-user-management',
@@ -24,10 +24,9 @@ import { AdminService, AdminUser } from '../admin.service';
           </div>
           <div class="form-group">
             <label>Role</label>
-            <select [(ngModel)]="inviteRole">
-              <option value="member">Membro</option>
-              <option value="curator">Curador de dados</option>
-              <option value="admin">Administrador</option>
+            <select [(ngModel)]="inviteRoleId">
+              <option value="" disabled>Selecione...</option>
+              <option *ngFor="let r of roles" [value]="r.id">{{ r.name }}</option>
             </select>
           </div>
           <div class="modal-actions">
@@ -59,11 +58,9 @@ import { AdminService, AdminUser } from '../admin.service';
               </div>
             </td>
             <td>
-              <select [(ngModel)]="user.role" (change)="updateRole(user)"
+              <select [(ngModel)]="user.roleId" (change)="updateRole(user)"
                 [disabled]="user.status === 'suspended'">
-                <option value="member">Membro</option>
-                <option value="curator">Curador</option>
-                <option value="admin">Admin</option>
+                <option *ngFor="let r of roles" [value]="r.id">{{ r.name }}</option>
               </select>
             </td>
             <td><span class="status-badge" [class]="'s-' + user.status">{{ user.status }}</span></td>
@@ -86,24 +83,46 @@ import { AdminService, AdminUser } from '../admin.service';
 })
 export class UserManagementComponent implements OnInit {
   private adminService = inject(AdminService);
+  private allUsers: AdminUser[] = [];
   users: AdminUser[] = [];
+  roles: AdminRole[] = [];
   search = '';
   showInvite = false;
   inviteEmail = '';
-  inviteRole = 'member';
+  inviteRoleId = '';
 
-  ngOnInit() { this.loadUsers(); }
-
-  loadUsers() {
-    this.adminService.listUsers(1, 50, this.search || undefined).subscribe(
-      ({ users }) => (this.users = users),
-    );
+  ngOnInit() {
+    this.adminService.listRoles().subscribe((roles) => {
+      this.roles = roles;
+      if (!this.inviteRoleId && roles.length) this.inviteRoleId = roles[0].id;
+      this.loadUsers();
+    });
   }
 
-  onSearch() { this.loadUsers(); }
+  loadUsers() {
+    this.adminService.listUsers().subscribe((users) => {
+      // Mapeia a role atual (nome) para o id, para o <select> da tabela.
+      this.allUsers = users.map((u) => ({
+        ...u,
+        roleId: this.roles.find((r) => r.name === u.roleName)?.id,
+      }));
+      this.applyFilter();
+    });
+  }
+
+  applyFilter() {
+    const q = this.search.trim().toLowerCase();
+    this.users = q
+      ? this.allUsers.filter((u) =>
+          u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      : this.allUsers;
+  }
+
+  onSearch() { this.applyFilter(); }
 
   sendInvite() {
-    this.adminService.inviteUser(this.inviteEmail, this.inviteRole).subscribe(() => {
+    if (!this.inviteEmail || !this.inviteRoleId) return;
+    this.adminService.inviteUser(this.inviteEmail, this.inviteRoleId).subscribe(() => {
       this.showInvite = false;
       this.inviteEmail = '';
       this.loadUsers();
@@ -111,7 +130,8 @@ export class UserManagementComponent implements OnInit {
   }
 
   updateRole(user: AdminUser) {
-    this.adminService.updateUserRole(user.id, user.role).subscribe();
+    if (!user.roleId) return;
+    this.adminService.updateUserRole(user.id, user.roleId).subscribe();
   }
 
   suspend(user: AdminUser) {

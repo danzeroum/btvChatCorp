@@ -14,29 +14,22 @@ import { AdminService, AuditEntry } from '../admin.service';
         <button class="btn-secondary" (click)="exportCsv()">Exportar CSV</button>
       </div>
 
-      <!-- Filtros -->
+      <!-- Filtros (severity e category são os honrados pelo backend) -->
       <div class="filters">
-        <select [(ngModel)]="severityFilter" (change)="loadLogs()">
+        <select [(ngModel)]="severityFilter" (change)="reload()">
           <option value="">Todas as severidades</option>
           <option value="info">Info</option>
           <option value="warning">Warning</option>
           <option value="critical">Critical</option>
         </select>
-        <select [(ngModel)]="actionFilter" (change)="loadLogs()">
-          <option value="">Todas as ações</option>
-          <option value="login">Login</option>
-          <option value="access_denied">Acesso negado</option>
-          <option value="document_upload">Upload de documento</option>
-          <option value="training_triggered">Treino iniciado</option>
-          <option value="lora_deployed">LoRA deploy</option>
-          <option value="api_key_created">API key criada</option>
-          <option value="api_key_revoked">API key revogada</option>
-        </select>
-        <select [(ngModel)]="sinceFilter" (change)="loadLogs()">
-          <option value="1d">Últimas 24h</option>
-          <option value="7d">Últimos 7 dias</option>
-          <option value="30d">Últimos 30 dias</option>
-          <option value="90d">Últimos 90 dias</option>
+        <select [(ngModel)]="categoryFilter" (change)="reload()">
+          <option value="">Todas as categorias</option>
+          <option value="auth">Autenticação</option>
+          <option value="user">Usuários</option>
+          <option value="data">Dados</option>
+          <option value="security">Segurança</option>
+          <option value="training">Treinamento</option>
+          <option value="system">Sistema</option>
         </select>
       </div>
 
@@ -48,11 +41,11 @@ import { AdminService, AuditEntry } from '../admin.service';
         <tbody>
           <tr *ngFor="let entry of entries" [class]="'row-' + entry.severity">
             <td class="timestamp">{{ entry.createdAt | date:'dd/MM HH:mm:ss' }}</td>
-            <td>{{ entry.userEmail }}</td>
+            <td>{{ entry.userName }}</td>
             <td><code>{{ entry.action }}</code></td>
-            <td>{{ entry.resource }}</td>
+            <td>{{ entry.resourceName }}</td>
             <td><span class="sev-badge" [class]="'sev-' + entry.severity">{{ entry.severity }}</span></td>
-            <td class="ip">{{ entry.ipAddress }}</td>
+            <td class="ip">{{ entry.userIp }}</td>
           </tr>
         </tbody>
       </table>
@@ -71,31 +64,30 @@ export class AuditLogViewerComponent implements OnInit {
   private adminService = inject(AdminService);
   entries: AuditEntry[] = [];
   total = 0; page = 1; perPage = 50;
-  severityFilter = ''; actionFilter = ''; sinceFilter = '7d';
+  severityFilter = ''; categoryFilter = '';
 
   get totalPages() { return Math.ceil(this.total / this.perPage); }
 
   ngOnInit() { this.loadLogs(); }
 
   loadLogs() {
-    const since = this.sinceFilter ? new Date(Date.now() - this.parseDays(this.sinceFilter)).toISOString() : undefined;
-    this.adminService.queryAuditLogs(this.page, this.perPage, this.severityFilter || undefined, this.actionFilter || undefined, since)
-      .subscribe(({ entries, total }) => { this.entries = entries; this.total = total; });
+    this.adminService.queryAuditLogs(
+      this.page, this.perPage,
+      this.severityFilter || undefined, this.categoryFilter || undefined,
+    ).subscribe((res) => { this.entries = res.entries; this.total = res.total; });
   }
 
+  reload() { this.page = 1; this.loadLogs(); }
+
   exportCsv() {
-    const since = new Date(Date.now() - this.parseDays(this.sinceFilter)).toISOString();
     const until = new Date().toISOString();
+    const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
     this.adminService.exportAuditCsv(since, until).subscribe((blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `audit_${since.slice(0,10)}_${until.slice(0,10)}.csv`; a.click();
       URL.revokeObjectURL(url);
     });
-  }
-
-  parseDays(s: string): number {
-    return parseInt(s) * 24 * 3600 * 1000;
   }
 
   prevPage() { this.page--; this.loadLogs(); }

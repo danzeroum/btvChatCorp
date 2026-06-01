@@ -27,6 +27,18 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
         </div>
       </div>
 
+      <!-- Navegação do admin -->
+      <nav class="admin-nav">
+        <a routerLink="../users" routerLinkActive="active">&#128101; Usuários</a>
+        <a routerLink="../audit" routerLinkActive="active">&#128220; Auditoria</a>
+        <a routerLink="../api-keys" routerLinkActive="active">&#128273; API Keys</a>
+        <a routerLink="../integrations/webhooks" routerLinkActive="active">&#128279; Webhooks</a>
+        <a routerLink="../ai-config" routerLinkActive="active">&#129302; IA</a>
+        <a routerLink="../sso" routerLinkActive="active">&#128272; SSO</a>
+        <a routerLink="../branding" routerLinkActive="active">&#127912; Marca</a>
+        <a routerLink="../settings" routerLinkActive="active">&#9881;&#65039; Config</a>
+      </nav>
+
       <!-- Status Cards -->
       <div class="status-grid">
 
@@ -219,7 +231,14 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
         </div>
       }
     </div>
-  `
+  `,
+  styles: [`
+    .admin-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 18px; }
+    .admin-nav a { padding:7px 14px; border-radius:8px; background:#1e1e1e; border:1px solid #2a2a2a;
+                   color:#bbb; text-decoration:none; font-size:0.82rem; transition:background .12s; }
+    .admin-nav a:hover { background:#262626; color:#fff; }
+    .admin-nav a.active { background:#6366f1; border-color:#6366f1; color:#fff; }
+  `]
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);

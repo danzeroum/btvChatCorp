@@ -7,7 +7,7 @@ export const ADMIN_ROUTES: Routes = [
     path: 'dashboard',
     canActivate: [adminGuard],
     loadComponent: () =>
-      import('./dashboard/admin-dashboard.component').then(m => m.AdminDashboardComponent),
+      import('./overview/admin-dashboard.component').then(m => m.AdminDashboardComponent),
   },
   {
     path: 'users',
@@ -44,6 +44,18 @@ export const ADMIN_ROUTES: Routes = [
     canActivate: [adminGuard],
     loadComponent: () =>
       import('./ai-config/model-manager.component').then(m => m.ModelManagerComponent),
+  },
+  {
+    path: 'integrations/webhooks',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./integrations/webhooks-config.component').then(m => m.WebhooksConfigComponent),
+  },
+  {
+    path: 'integrations/webhooks/:webhookId/logs',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./integrations/webhook-logs.component').then(m => m.WebhookLogsComponent),
   },
   {
     path: 'branding',
