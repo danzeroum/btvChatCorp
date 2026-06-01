@@ -4,7 +4,8 @@ import { Observable, interval, Subject } from 'rxjs';
 import { switchMap, takeUntil, shareReplay } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
-const BASE = `${environment.apiUrl}/api/v1`;
+// environment.apiUrl já inclui o prefixo `/api/v1`; não duplicar o segmento aqui.
+const BASE = environment.apiUrl;
 
 // ─── Models (espelham os structs do backend) ────────────────────────────────────
 

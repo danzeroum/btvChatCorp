@@ -149,14 +149,14 @@ export class WebhookLogsComponent implements OnInit {
   }
 
   loadWebhookInfo(): void {
-    this.http.get<{ name: string }>(`/api/admin/webhooks/${this.webhookId}`)
+    this.http.get<{ name: string }>(`/api/v1/admin/webhooks/${this.webhookId}`)
       .subscribe((wh) => this.webhookName.set(wh.name));
   }
 
   load(): void {
     this.loading.set(true);
     const params = `?page=${this.page()}&perPage=${this.perPage}&status=${this.filterStatus()}`;
-    this.http.get<WebhookDelivery[]>(`/api/admin/webhooks/${this.webhookId}/deliveries${params}`).subscribe({
+    this.http.get<WebhookDelivery[]>(`/api/v1/admin/webhooks/${this.webhookId}/deliveries${params}`).subscribe({
       next: (data) => { this.deliveries.set(data); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -168,7 +168,7 @@ export class WebhookLogsComponent implements OnInit {
 
   retryDelivery(d: WebhookDelivery): void {
     this.retrying.set(d.id);
-    this.http.post(`/api/admin/webhooks/${this.webhookId}/deliveries/${d.id}/retry`, {}).subscribe({
+    this.http.post(`/api/v1/admin/webhooks/${this.webhookId}/deliveries/${d.id}/retry`, {}).subscribe({
       next: () => { this.retrying.set(null); this.load(); },
       error: () => this.retrying.set(null),
     });
