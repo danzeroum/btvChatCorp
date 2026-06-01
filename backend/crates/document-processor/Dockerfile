@@ -1,5 +1,5 @@
 # ── Build stage ────────────────────────────────────────────────────────────
-FROM rust:1.85-slim AS builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
@@ -9,11 +9,10 @@ RUN apt-get update && apt-get install -y \
     libpoppler-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# context = ./backend, então os paths são relativos a backend/
+# context = ./backend
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-# Build do binário do worker
 RUN cargo build --release --bin rag-worker
 
 # ── Runtime stage ───────────────────────────────────────────────────────────
