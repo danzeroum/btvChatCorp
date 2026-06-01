@@ -276,6 +276,8 @@ async fn send_message(
             .map(|(role, content)| serde_json::json!({ "role": role, "content": content })),
     );
 
+    let effective_model = dto.model.as_deref().unwrap_or(&state.ollama_model);
+
     let llm_resp = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
         let mock_info = if rag_chunks.is_empty() {
             "[sem contexto RAG]".to_string()
@@ -297,7 +299,7 @@ async fn send_message(
     } else {
         call_llm(
             &state.ollama_url,
-            &state.ollama_model,
+            effective_model,
             state.ollama_auth.as_deref(),
             &messages,
             dto.temperature.unwrap_or(0.7),
@@ -392,6 +394,7 @@ struct ChatStreamRequest {
     message: String,
     chat_id: Option<Uuid>,
     project_id: Option<Uuid>,
+    model: Option<String>,
     // Campos opcionais aceitos pelo frontend; reservados para uso futuro
     #[serde(default)]
     #[allow(dead_code)]
@@ -517,7 +520,7 @@ async fn stream_message(
     let (tx, rx) = mpsc::unbounded::<Result<Event, std::convert::Infallible>>();
 
     let ollama_url = state.ollama_url.clone();
-    let model = state.ollama_model.clone();
+    let model = dto.model.clone().unwrap_or_else(|| state.ollama_model.clone());
     let auth_cfg = state.ollama_auth.clone();
     let db = state.db.clone();
     let src = sources_json.clone();

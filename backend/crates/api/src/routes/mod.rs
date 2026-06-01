@@ -4,6 +4,7 @@ pub mod auth;
 pub mod branding;
 pub mod chats;
 pub mod documents;
+pub mod models;
 pub mod onboarding;
 pub mod projects;
 pub mod training;
@@ -113,6 +114,7 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(auth::protected_routes())
         .merge(chats::routes())
         .merge(attachments::routes())
+        .merge(models::routes())
         .merge(documents::routes())
         .merge(projects::routes())
         .merge(training::routes())
