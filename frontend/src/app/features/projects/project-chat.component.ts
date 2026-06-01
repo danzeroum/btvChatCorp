@@ -96,9 +96,15 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
   private shouldScrollToBottom = false;
 
   ngOnInit() {
-    this.projectId.set(this.route.snapshot.paramMap.get('id') || '');
-    this.chatId.set(this.route.snapshot.paramMap.get('chatId') || '');
-    this.loadHistory();
+    this.route.paramMap.subscribe(params => {
+      this.projectId.set(params.get('id') || '');
+      this.chatId.set(params.get('chatId') || '');
+      this.messages.set([]);
+      this.chatTitle.set('Nova Conversa');
+      this.streaming.set(false);
+      this.streamBuffer.set('');
+      this.loadHistory();
+    });
   }
 
   ngAfterViewChecked() {
@@ -112,10 +118,12 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
     const cid = this.chatId();
     if (!cid) return;
     this.loadingHistory.set(true);
-    this.http.get<{ messages: Message[]; title: string }>(`/api/v1/chats/${cid}/messages`).subscribe({
-      next: res => {
-        this.messages.set(res.messages ?? []);
-        if (res.title) this.chatTitle.set(res.title);
+    this.http.get<{ id: string; title: string }>(`/api/v1/chats/${cid}`).subscribe({
+      next: chat => { if (chat.title) this.chatTitle.set(chat.title); }
+    });
+    this.http.get<Message[]>(`/api/v1/chats/${cid}/messages`).subscribe({
+      next: msgs => {
+        this.messages.set(msgs ?? []);
         this.loadingHistory.set(false);
         this.shouldScrollToBottom = true;
       },
@@ -183,13 +191,13 @@ export class ProjectChatComponent implements OnInit, AfterViewChecked {
 
   sendFeedback(msg: Message, rating: 'positive' | 'negative') {
     if (msg.feedback === rating) return;
+    const chatId = this.chatId();
+    if (!chatId) return;
     this.messages.update(msgs =>
       msgs.map(m => m.id === msg.id ? { ...m, feedback: rating } : m)
     );
-    this.http.post(`/api/v1/chats/feedback`, {
-      interaction_id: msg.id,
-      rating,
-    }).subscribe();
+    const value = rating === 'positive' ? 1 : -1;
+    this.http.post(`/api/v1/chats/${chatId}/messages/${msg.id}/feedback`, { feedback: value }).subscribe();
   }
 
   private scrollToBottom() {
