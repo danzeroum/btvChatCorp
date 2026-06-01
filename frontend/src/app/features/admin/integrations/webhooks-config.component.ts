@@ -207,7 +207,7 @@ export class WebhooksConfigComponent implements OnInit {
 
   loadWebhooks(): void {
     this.loading.set(true);
-    this.http.get<Webhook[]>('/api/admin/webhooks').subscribe({
+    this.http.get<Webhook[]>('/api/v1/admin/webhooks').subscribe({
       next: (data) => { this.webhooks.set(data); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
@@ -239,14 +239,14 @@ export class WebhooksConfigComponent implements OnInit {
     this.saving.set(true);
     const editing = this.editingWebhook();
     const req$ = editing
-      ? this.http.put(`/api/admin/webhooks/${editing.id}`, this.form)
-      : this.http.post('/api/admin/webhooks', this.form);
+      ? this.http.put(`/api/v1/admin/webhooks/${editing.id}`, this.form)
+      : this.http.post('/api/v1/admin/webhooks', this.form);
     req$.subscribe({ next: () => { this.loadWebhooks(); this.closeModal(); this.saving.set(false); }, error: () => this.saving.set(false) });
   }
 
   testWebhook(wh: Webhook): void {
     this.testing.set(wh.id);
-    this.http.post(`/api/admin/webhooks/${wh.id}/test`, {}).subscribe({
+    this.http.post(`/api/v1/admin/webhooks/${wh.id}/test`, {}).subscribe({
       next: () => { this.testing.set(null); alert('Entrega de teste enviada com sucesso!'); },
       error: () => { this.testing.set(null); alert('Falha ao enviar entrega de teste.'); },
     });
@@ -254,12 +254,12 @@ export class WebhooksConfigComponent implements OnInit {
 
   toggleStatus(wh: Webhook): void {
     const action = wh.status === 'active' ? 'pause' : 'activate';
-    this.http.patch(`/api/admin/webhooks/${wh.id}/${action}`, {}).subscribe(() => this.loadWebhooks());
+    this.http.patch(`/api/v1/admin/webhooks/${wh.id}/${action}`, {}).subscribe(() => this.loadWebhooks());
   }
 
   deleteWebhook(wh: Webhook): void {
     if (!confirm(`Excluir webhook "${wh.name}"?`)) return;
-    this.http.delete(`/api/admin/webhooks/${wh.id}`).subscribe(() => this.loadWebhooks());
+    this.http.delete(`/api/v1/admin/webhooks/${wh.id}`).subscribe(() => this.loadWebhooks());
   }
 
   private emptyForm(): Partial<Webhook> & { events: string[] } {
