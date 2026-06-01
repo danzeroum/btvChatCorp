@@ -55,8 +55,8 @@ services:
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-llama3.2:3b}
       EMBEDDING_URL: http://embedding:8001
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:?Erro: OLLAMA_AUTH_USER obrigatorio — defina no .env}
-      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:?Erro: OLLAMA_AUTH_PASS obrigatorio — defina no .env}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS}
       ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-https://chatcorp.buildtovalue.cloud}
       JWT_SECRET:       ${JWT_SECRET}
       UPLOAD_DIR:       /uploads
