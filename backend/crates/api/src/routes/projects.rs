@@ -13,6 +13,9 @@ use crate::{
     state::AppState,
 };
 
+type ChatRow = (Uuid, String, Option<bool>, Option<chrono::DateTime<chrono::Utc>>, i64);
+type MemberRow = (Uuid, String, String, String);
+
 type InstructionRow = (
     Uuid,
     String,
@@ -36,6 +39,8 @@ pub fn routes() -> Router<AppState> {
             put(update_instruction).delete(delete_instruction),
         )
         .route("/projects/:id/stats", get(stats))
+        .route("/projects/:id/chats", get(list_chats))
+        .route("/projects/:id/members", get(list_members))
 }
 
 #[utoipa::path(
@@ -340,4 +345,101 @@ async fn delete_instruction(
         .await
         .map_err(AppError::from)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/projects/{id}/chats",
+    tag = "Projects",
+    security(("BearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "ID do projeto")),
+    responses(
+        (status = 200, description = "Chats do projeto"),
+        (status = 404, description = "Projeto nao encontrado"),
+    )
+)]
+async fn list_chats(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    sqlx::query("SELECT id FROM projects WHERE id=$1 AND workspace_id=$2")
+        .bind(id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
+
+    let rows: Vec<ChatRow> = sqlx::query_as(
+        "SELECT c.id, c.title, c.is_pinned, c.updated_at,
+                COALESCE((SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id), 0)
+         FROM chats c
+         WHERE c.project_id=$1 AND c.workspace_id=$2
+         ORDER BY c.updated_at DESC NULLS LAST",
+    )
+    .bind(id)
+    .bind(auth.workspace_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|(chat_id, title, is_pinned, last_msg_at, msg_count)| {
+                serde_json::json!({
+                    "id": chat_id,
+                    "title": title,
+                    "is_pinned": is_pinned.unwrap_or(false),
+                    "last_message_at": last_msg_at.map(|d| d.to_rfc3339()),
+                    "message_count": msg_count,
+                })
+            })
+            .collect(),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/projects/{id}/members",
+    tag = "Projects",
+    security(("BearerAuth" = [])),
+    params(("id" = Uuid, Path, description = "ID do projeto")),
+    responses(
+        (status = 200, description = "Membros do projeto"),
+        (status = 404, description = "Projeto nao encontrado"),
+    )
+)]
+async fn list_members(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    sqlx::query("SELECT id FROM projects WHERE id=$1 AND workspace_id=$2")
+        .bind(id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
+
+    let rows: Vec<MemberRow> = sqlx::query_as(
+        "SELECT u.id, u.name, u.email, pm.role
+         FROM project_members pm
+         JOIN users u ON u.id = pm.user_id
+         WHERE pm.project_id=$1",
+    )
+    .bind(id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|(user_id, name, email, role)| {
+                serde_json::json!({
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role": role,
+                })
+            })
+            .collect(),
+    ))
 }

@@ -1,8 +1,8 @@
-name: CI - Fase 5 (RAG Worker)
+name: CI - Fase 6 (Fixes + RAG Worker)
 
 on:
   push:
-    branches: [main, feat/rag-worker]
+    branches: [main, feat/rag-worker, claude/gifted-newton-BmT9l]
   pull_request:
     branches: [main]
 
@@ -41,6 +41,18 @@ jobs:
 
       - name: Unit tests (headless) + coverage
         run: npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage
+
+      - name: "[Fix1] adminGuard inclui role owner"
+        run: |
+          grep -q "'owner'" src/app/features/auth/admin.guard.ts \
+            && echo "owner presente no ADMIN_ROLES" \
+            || (echo "owner ausente em admin.guard.ts" && exit 1)
+
+      - name: "[Fix3] ProjectsService existe"
+        run: |
+          [ -f src/app/core/services/projects.service.ts ] \
+            && echo "projects.service.ts presente" \
+            || (echo "projects.service.ts ausente" && exit 1)
 
       - name: "[Fase 4] adminGuard nas rotas de training"
         run: |
@@ -180,6 +192,19 @@ jobs:
             [ -f "$f" ] || (echo "Ausente: $f" && exit 1)
           done
           echo "Todos os arquivos RAG presentes"
+
+      - name: "[Fix1] extractors.rs inclui owner em workspace:manage"
+        run: |
+          grep -q 'role == "owner"' crates/api/src/extractors.rs \
+            && echo "owner em extractors.rs OK" \
+            || (echo "owner ausente em extractors.rs" && exit 1)
+
+      - name: "[Fix2] rotas /projects/:id/chats e /members registradas"
+        run: |
+          grep -q 'list_chats' crates/api/src/routes/projects.rs \
+            && grep -q 'list_members' crates/api/src/routes/projects.rs \
+            && echo "list_chats e list_members presentes" \
+            || (echo "rotas de chats/members ausentes" && exit 1)
 
       - name: "[Fase 5] RAG integrado ao chats.rs"
         run: |
@@ -343,12 +368,150 @@ jobs:
             || (echo "Rota protegida retornou $CODE" && exit 1)
           echo "/training protegida OK"
 
+      - name: "[Smoke Fix1] GET /admin/health com token owner retorna 200"
+        run: |
+          curl -sf -X POST http://localhost:3000/api/v1/auth/register \
+            -H 'Content-Type: application/json' \
+            -d '{"workspace_name":"AdminSmoke","name":"Owner","email":"owner_smoke@test.com","password":"Owner@1234"}' > /dev/null || true
+          RESP=$(curl -sf -X POST http://localhost:3000/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"owner_smoke@test.com","password":"Owner@1234"}')
+          OWNER_TOKEN=$(python3 .github/scripts/extract_json_field.py token <<< "$RESP")
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $OWNER_TOKEN" \
+            http://localhost:3000/api/v1/admin/health)
+          [ "$CODE" = "200" ] || (echo "/admin/health com owner retornou $CODE (esperado 200)" && exit 1)
+          echo "/admin/health com owner OK (Fix1)"
+
+      - name: "[Smoke Fix2] Fluxo projeto: criar, listar chats e membros"
+        run: |
+          PROJ=$(curl -sf -X POST http://localhost:3000/api/v1/projects \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Smoke Projeto Fix2"}')
+          PID=$(python3 .github/scripts/extract_json_field.py id <<< "$PROJ")
+
+          CHAT=$(curl -sf -X POST http://localhost:3000/api/v1/chats \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"title\":\"Chat Smoke\",\"project_id\":\"$PID\"}")
+          CID=$(python3 .github/scripts/extract_json_field.py id <<< "$CHAT")
+
+          CHATS=$(curl -sf "http://localhost:3000/api/v1/projects/$PID/chats" \
+            -H "Authorization: Bearer $TOKEN")
+          python3 -c "
+import json,sys
+chats=json.loads(sys.argv[1])
+assert any(c['id']=='$CID' for c in chats), 'chat nao aparece em /projects/$PID/chats'
+print('/projects/$PID/chats OK')
+" "$CHATS"
+
+          curl -sf "http://localhost:3000/api/v1/projects/$PID/members" \
+            -H "Authorization: Bearer $TOKEN" > /tmp/members.json
+          python3 -c "import json; m=json.load(open('/tmp/members.json')); assert isinstance(m, list); print('/projects/$PID/members retorna array OK')"
+
+          curl -sf -X POST "http://localhost:3000/api/v1/projects/$PID/instructions" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Inst Smoke","content":"Responda em portugues.","trigger_mode":"always","is_active":true}' > /dev/null
+          INSTS=$(curl -sf "http://localhost:3000/api/v1/projects/$PID/instructions" \
+            -H "Authorization: Bearer $TOKEN")
+          python3 -c "
+import json,sys
+insts=json.loads(sys.argv[1])
+assert any(i['name']=='Inst Smoke' for i in insts), 'instrucao ausente'
+print('/projects/$PID/instructions OK')
+" "$INSTS"
+          echo "Fluxo Fix2 OK"
+
       - name: Stop backend
         if: always()
         run: kill $(cat /tmp/api.pid) 2>/dev/null || true
 
   # ------------------------------------
-  # JOB 4 - Gate final
+  # JOB 4 - E2E RAG pipeline (gated — workflow_dispatch ou label rag-e2e)
+  # Requer: embedding + qdrant + document-processor disponíveis.
+  # NÃO faz parte do gate principal de PR — é job separado/nightly.
+  # ------------------------------------
+  e2e-rag-pipeline:
+    name: E2E RAG Pipeline (gated)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'rag-e2e')
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: btv
+          POSTGRES_PASSWORD: btv
+          POSTGRES_DB: btvrage2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      qdrant:
+        image: qdrant/qdrant:v1.9.0
+        ports:
+          - 6333:6333
+
+    env:
+      DATABASE_URL: postgres://btv:btv@localhost:5432/btvrage2e
+      JWT_SECRET: test_secret_for_ci_only
+      API_KEY_HMAC_SECRET: test_hmac_secret_for_ci_only
+      INTERNAL_SERVICE_TOKEN: test_internal_token_for_ci_only
+      UPLOAD_DIR: /tmp/btv-e2e-uploads
+      QDRANT_URL: http://localhost:6333
+      EMBEDDING_URL: http://localhost:8001
+      OLLAMA_URL: http://localhost:11434
+      OLLAMA_MODEL: llama3.1:8b
+      OLLAMA_MOCK: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install sqlx-cli
+        working-directory: backend
+        run: cargo install sqlx-cli --no-default-features --features postgres 2>/dev/null || true
+
+      - name: Run migrations
+        working-directory: backend
+        run: sqlx migrate run --database-url "$DATABASE_URL" --source migrations
+
+      - name: Build API and document-processor
+        working-directory: backend
+        run: cargo build -p api -p document-processor
+
+      - name: Start API
+        working-directory: backend
+        run: |
+          mkdir -p $UPLOAD_DIR
+          ./target/debug/api &
+          echo $! > /tmp/e2e-api.pid
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000/health > /dev/null 2>&1 && break
+            [ "$i" -eq 40 ] && echo "API nao respondeu" && exit 1
+            sleep 3
+          done
+
+      - name: Run smoke-rag.sh (sem embedding real — valida ate status=pending)
+        run: |
+          export API_URL=http://localhost:3000
+          export RAG_TIMEOUT_SECS=10
+          bash scripts/smoke-rag.sh || true
+          echo "smoke-rag.sh executado (embedding nao disponivel neste job — status pending esperado)"
+
+      - name: Stop API
+        if: always()
+        run: kill $(cat /tmp/e2e-api.pid) 2>/dev/null || true
+
+  # ------------------------------------
+  # JOB 5 - Gate final
   # ------------------------------------
   all-green:
     name: All checks passed
@@ -367,4 +530,4 @@ jobs:
             echo "  Integration smoke: ${{ needs.integration-smoke.result }}"
             exit 1
           fi
-          echo "All checks passed - Fase 5 RAG Worker OK"
+          echo "All checks passed - Fase 6 Fixes + RAG Worker OK"

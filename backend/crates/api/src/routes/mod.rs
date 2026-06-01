@@ -62,6 +62,8 @@ use crate::state::AppState;
         projects::update,
         projects::remove,
         projects::stats,
+        projects::list_chats,
+        projects::list_members,
         training::list_queue,
         training::approve,
         training::reject,
