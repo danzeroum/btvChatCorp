@@ -60,14 +60,31 @@ export interface Project {
 
         <!-- Header do projeto -->
         <div class="ws-header">
-          <div class="ws-title">
-            <span class="proj-icon" [style.background]="project()!.color + '22'">{{ project()!.icon || '📁' }}</span>
-            <div>
-              <h1>{{ project()!.name }}</h1>
-              <p>{{ project()!.description }}</p>
+          @if (!editing()) {
+            <div class="ws-title">
+              <span class="proj-icon" [style.background]="project()!.color + '22'">{{ project()!.icon || '📁' }}</span>
+              <div>
+                <h1>{{ project()!.name }}</h1>
+                <p>{{ project()!.description }}</p>
+              </div>
             </div>
-          </div>
-          <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
+            <div class="header-actions">
+              <button class="btn-secondary" (click)="startEdit()">✏️ Editar</button>
+              <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
+            </div>
+          } @else {
+            <div class="edit-project-form">
+              <input [(ngModel)]="editName" placeholder="Nome do projeto" class="inst-input" />
+              <input [(ngModel)]="editDesc" placeholder="Descrição" class="inst-input" />
+              <div class="inst-form-actions">
+                <button class="btn-secondary" (click)="cancelEdit()">Cancelar</button>
+                <button class="btn-primary" [disabled]="!editName.trim() || savingProject()"
+                        (click)="saveProject()">
+                  {{ savingProject() ? 'Salvando...' : 'Salvar' }}
+                </button>
+              </div>
+            </div>
+          }
         </div>
 
         <!-- Tabs -->
@@ -148,16 +165,19 @@ export interface Project {
             } @else {
               <div class="chat-list">
                 @for (chat of filteredChats(); track chat.id) {
-                  <a [routerLink]="['/projects', project()!.id, 'chat', chat.id]" class="chat-item">
-                    <div class="chat-info">
-                      <h4>{{ chat.title || 'Conversa sem título' }}</h4>
-                      @if (chat.is_pinned) { <span class="pin">📌</span> }
-                    </div>
-                    <div class="chat-meta">
-                      <span>{{ chat.message_count }} mensagens</span>
-                      <span>{{ timeAgo(chat.last_message_at) }}</span>
-                    </div>
-                  </a>
+                  <div class="chat-item-wrapper">
+                    <a [routerLink]="['/projects', project()!.id, 'chat', chat.id]" class="chat-item">
+                      <div class="chat-info">
+                        <h4>{{ chat.title || 'Conversa sem título' }}</h4>
+                        @if (chat.is_pinned) { <span class="pin">📌</span> }
+                      </div>
+                      <div class="chat-meta">
+                        <span>{{ chat.message_count }} mensagens</span>
+                        <span>{{ timeAgo(chat.last_message_at) }}</span>
+                      </div>
+                    </a>
+                    <button class="icon-btn" title="Transferir para outro projeto" (click)="openTransfer(chat.id)">↗️</button>
+                  </div>
                 }
               </div>
             }
@@ -225,21 +245,64 @@ export interface Project {
               <p class="empty-hint">Nenhuma instrução cadastrada.</p>
             } @else {
               @for (inst of instructions(); track inst.id) {
-                <div class="instruction-card" [class.inactive]="!inst.is_active">
-                  <div class="inst-header">
-                    <span class="inst-name">{{ inst.name }}</span>
-                    <div class="inst-controls">
-                      <span class="mode-badge">{{ inst.trigger_mode }}</span>
-                      <span class="active-badge" [class.on]="inst.is_active">{{ inst.is_active ? 'Ativo' : 'Inativo' }}</span>
+                @if (editingInstructionId() === inst.id) {
+                  <div class="instruction-form">
+                    <input [(ngModel)]="instrName" placeholder="Nome da instrução" class="inst-input" />
+                    <textarea [(ngModel)]="instrContent" rows="3" placeholder="Conteúdo da instrução..." class="inst-textarea"></textarea>
+                    <div class="inst-form-row">
+                      <select [(ngModel)]="instrTrigger" class="inst-select">
+                        <option value="always">Sempre (always)</option>
+                        <option value="manual">Manual</option>
+                      </select>
+                      <div class="inst-form-actions">
+                        <button class="btn-secondary" (click)="cancelEditInstruction()">Cancelar</button>
+                        <button class="btn-primary" [disabled]="!instrName.trim() || !instrContent.trim() || savingInstruction()"
+                                (click)="updateInstruction()">
+                          {{ savingInstruction() ? 'Salvando...' : 'Atualizar' }}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <p class="inst-content">{{ inst.content }}</p>
-                </div>
+                } @else {
+                  <div class="instruction-card" [class.inactive]="!inst.is_active">
+                    <div class="inst-header">
+                      <span class="inst-name">{{ inst.name }}</span>
+                      <div class="inst-controls">
+                        <span class="mode-badge">{{ inst.trigger_mode }}</span>
+                        <span class="active-badge" [class.on]="inst.is_active">{{ inst.is_active ? 'Ativo' : 'Inativo' }}</span>
+                        <button class="icon-btn" title="Editar instrução" (click)="startEditInstruction(inst)">✏️</button>
+                        <button class="icon-btn danger" title="Remover instrução" (click)="deleteInstruction(inst.id)">🗑️</button>
+                      </div>
+                    </div>
+                    <p class="inst-content">{{ inst.content }}</p>
+                  </div>
+                }
               }
             }
           }
 
         </div>
+
+        <!-- Modal de transferência de chat -->
+        @if (showTransferModal()) {
+          <div class="modal-overlay" (click)="closeTransfer()">
+            <div class="modal-box" (click)="$event.stopPropagation()">
+              <h3>Transferir Conversa</h3>
+              <label>Mover para projeto:</label>
+              <select [(ngModel)]="transferProjectId" class="inst-select" style="width:100%;margin:8px 0 16px;">
+                <option value="">Sem projeto</option>
+                @for (p of allProjects(); track p.id) {
+                  <option [value]="p.id">{{ p.name }}</option>
+                }
+              </select>
+              <div class="inst-form-actions" style="justify-content:flex-end;">
+                <button class="btn-secondary" (click)="closeTransfer()">Cancelar</button>
+                <button class="btn-primary" (click)="doTransfer()">Transferir</button>
+              </div>
+            </div>
+          </div>
+        }
+
       } @else {
         <div class="empty-state">Projeto não encontrado.</div>
       }
@@ -253,8 +316,11 @@ export interface Project {
     .proj-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
     .ws-title h1 { margin: 0 0 4px; font-size: 1.25rem; }
     .ws-title p { margin: 0; color: #888; font-size: 0.85rem; }
+    .header-actions { display: flex; gap: 8px; }
+    .edit-project-form { display: flex; flex-direction: column; gap: 8px; flex: 1; max-width: 500px; }
     .btn-primary { background: #6366f1; color: #fff; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; text-decoration: none; }
     .btn-secondary { background: #2a2a2a; color: #ccc; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; }
+    .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
     .ws-tabs { display: flex; gap: 4px; padding: 0 2rem; border-bottom: 1px solid #2a2a2a; }
     .tab-btn { background: none; border: none; color: #888; padding: 12px 16px; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: color 0.15s; }
     .tab-btn:hover { color: #ccc; }
@@ -280,6 +346,8 @@ export interface Project {
     .tab-toolbar h3 { margin: 0; font-size: 1rem; }
     .search-input { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 8px 14px; color: #f0f0f0; font-size: 0.85rem; }
     .chat-list { display: flex; flex-direction: column; gap: 8px; }
+    .chat-item-wrapper { display: flex; align-items: center; gap: 8px; }
+    .chat-item-wrapper .chat-item { flex: 1; }
     .chat-item { display: block; padding: 12px 16px; background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; text-decoration: none; color: inherit; transition: border-color 0.15s; }
     .chat-item:hover { border-color: #6366f1; }
     .chat-info { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
@@ -299,11 +367,14 @@ export interface Project {
     .instruction-card.inactive { opacity: 0.5; }
     .inst-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .inst-name { font-weight: 500; font-size: 0.9rem; }
-    .inst-controls { display: flex; gap: 8px; }
+    .inst-controls { display: flex; gap: 8px; align-items: center; }
     .mode-badge { font-size: 0.75rem; background: #2a2a2a; padding: 2px 8px; border-radius: 10px; color: #aaa; }
     .active-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #444; color: #888; }
     .active-badge.on { background: #22c55e22; color: #22c55e; }
     .inst-content { font-size: 0.85rem; color: #999; margin: 0; }
+    .icon-btn { background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 1rem; border-radius: 4px; line-height: 1; }
+    .icon-btn:hover { background: #2a2a2a; }
+    .icon-btn.danger:hover { background: #ef444422; }
     .instruction-form { background: #1a1a2e; border: 1px solid #6366f133; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 8px; }
     .inst-input { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 8px 12px; color: #f0f0f0; font-size: 0.9rem; }
     .inst-textarea { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 8px 12px; color: #f0f0f0; font-size: 0.85rem; resize: vertical; }
@@ -311,6 +382,10 @@ export interface Project {
     .inst-form-row { display: flex; justify-content: space-between; align-items: center; }
     .inst-form-actions { display: flex; gap: 8px; }
     .error-hint { color: #ef4444; font-size: 0.85rem; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 1.5rem; min-width: 300px; max-width: 420px; }
+    .modal-box h3 { margin: 0 0 1rem; }
+    .modal-box label { font-size: 0.85rem; color: #aaa; }
   `]
 })
 export class ProjectWorkspaceComponent implements OnInit {
@@ -329,16 +404,32 @@ export class ProjectWorkspaceComponent implements OnInit {
   activeTab = signal<string>('overview');
   chatSearch = '';
 
+  // Edit project
+  editing = signal(false);
+  editName = '';
+  editDesc = '';
+  savingProject = signal(false);
+
+  // Upload
   uploading = signal(false);
   uploadError = signal('');
 
+  // Create instruction
   showInstructionForm = signal(false);
   instrName = '';
   instrContent = '';
   instrTrigger = 'always';
   savingInstruction = signal(false);
 
-  // Filtros como computed — sem arrow functions no template
+  // Edit instruction
+  editingInstructionId = signal<string | null>(null);
+
+  // Transfer chat
+  showTransferModal = signal(false);
+  transferChatId = '';
+  transferProjectId = '';
+  allProjects = signal<Project[]>([]);
+
   activeInstructions = computed(() => this.instructions().filter(i => i.is_active));
   filteredChats = computed(() => {
     const q = this.chatSearch.toLowerCase();
@@ -355,6 +446,7 @@ export class ProjectWorkspaceComponent implements OnInit {
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id') || '';
     this.loadProject(id);
+    this.http.get<Project[]>('/api/v1/projects').subscribe(ps => this.allProjects.set(ps));
   }
 
   loadProject(id: string) {
@@ -382,6 +474,39 @@ export class ProjectWorkspaceComponent implements OnInit {
       next: res => this.router.navigate(['/projects', pid, 'chat', res.id]),
     });
   }
+
+  // -- Edit project
+
+  startEdit() {
+    const p = this.project();
+    if (!p) return;
+    this.editName = p.name;
+    this.editDesc = p.description;
+    this.editing.set(true);
+  }
+
+  cancelEdit() {
+    this.editing.set(false);
+  }
+
+  saveProject() {
+    const pid = this.project()?.id;
+    if (!pid || !this.editName.trim()) return;
+    this.savingProject.set(true);
+    this.http.put<Project>(`/api/v1/projects/${pid}`, {
+      name: this.editName.trim(),
+      description: this.editDesc.trim(),
+    }).subscribe({
+      next: p => {
+        this.project.set(p);
+        this.editing.set(false);
+        this.savingProject.set(false);
+      },
+      error: () => this.savingProject.set(false),
+    });
+  }
+
+  // -- Upload documents
 
   uploadDocs() {
     this.uploadError.set('');
@@ -421,10 +546,13 @@ export class ProjectWorkspaceComponent implements OnInit {
     });
   }
 
+  // -- Instructions (create)
+
   addInstruction() {
     this.instrName = '';
     this.instrContent = '';
     this.instrTrigger = 'always';
+    this.editingInstructionId.set(null);
     this.showInstructionForm.set(true);
   }
 
@@ -444,6 +572,73 @@ export class ProjectWorkspaceComponent implements OnInit {
         this.loadProjectData(pid);
       },
       error: () => this.savingInstruction.set(false),
+    });
+  }
+
+  // -- Instructions (edit/delete)
+
+  startEditInstruction(inst: ProjectInstruction) {
+    this.showInstructionForm.set(false);
+    this.instrName = inst.name;
+    this.instrContent = inst.content;
+    this.instrTrigger = inst.trigger_mode;
+    this.editingInstructionId.set(inst.id);
+  }
+
+  cancelEditInstruction() {
+    this.editingInstructionId.set(null);
+  }
+
+  updateInstruction() {
+    const pid = this.project()?.id;
+    const iid = this.editingInstructionId();
+    if (!pid || !iid || !this.instrName.trim() || !this.instrContent.trim()) return;
+    this.savingInstruction.set(true);
+    this.http.put(`/api/v1/projects/${pid}/instructions/${iid}`, {
+      name: this.instrName.trim(),
+      content: this.instrContent.trim(),
+      trigger_mode: this.instrTrigger,
+      is_active: true,
+    }).subscribe({
+      next: () => {
+        this.savingInstruction.set(false);
+        this.editingInstructionId.set(null);
+        this.loadProjectData(pid);
+      },
+      error: () => this.savingInstruction.set(false),
+    });
+  }
+
+  deleteInstruction(instId: string) {
+    const pid = this.project()?.id;
+    if (!pid) return;
+    if (!confirm('Remover esta instrução?')) return;
+    this.http.delete(`/api/v1/projects/${pid}/instructions/${instId}`).subscribe({
+      next: () => this.loadProjectData(pid),
+    });
+  }
+
+  // -- Chat transfer
+
+  openTransfer(chatId: string) {
+    this.transferChatId = chatId;
+    this.transferProjectId = this.project()?.id || '';
+    this.showTransferModal.set(true);
+  }
+
+  closeTransfer() {
+    this.showTransferModal.set(false);
+  }
+
+  doTransfer() {
+    if (!this.transferChatId) return;
+    const targetPid = this.transferProjectId || null;
+    this.http.patch(`/api/v1/chats/${this.transferChatId}/project`, { project_id: targetPid }).subscribe({
+      next: () => {
+        this.showTransferModal.set(false);
+        const pid = this.project()?.id;
+        if (pid) this.loadProjectData(pid);
+      },
     });
   }
 
