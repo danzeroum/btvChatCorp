@@ -33,6 +33,13 @@ interface Attachment {
   size_bytes: number;
 }
 
+interface ModelItem {
+  id: string;
+  name: string;
+  size_gb: number;
+  is_default: boolean;
+}
+
 // Gera UUID sem depender de crypto.randomUUID (incompativel com HTTP)
 function genId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -365,9 +372,23 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   attachments = signal<Attachment[]>([]);
   uploading   = signal(false);
 
+  // Model selection
+  availableModels = signal<ModelItem[]>([]);
+  selectedModel   = signal<string>('');
+
   private scrollNeeded = false;
 
-  ngOnInit() { this.loadRecentChats(); }
+  ngOnInit() {
+    this.loadRecentChats();
+    const saved = localStorage.getItem('btv_selected_model');
+    if (saved) this.selectedModel.set(saved);
+    this.http.get<{ models: ModelItem[]; default_model: string }>('/api/v1/models').subscribe({
+      next: ({ models, default_model }) => {
+        this.availableModels.set(models);
+        if (!this.selectedModel()) this.selectedModel.set(default_model);
+      },
+    });
+  }
 
   ngAfterViewChecked() {
     if (this.scrollNeeded) { this.scrollToBottom(); this.scrollNeeded = false; }
@@ -408,6 +429,11 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.currentTitle.set('Nova conversa');
     this.cancelEdit();
     this.cancelRename();
+  }
+
+  onModelChange(modelId: string) {
+    this.selectedModel.set(modelId);
+    localStorage.setItem('btv_selected_model', modelId);
   }
 
   onKeydown(e: KeyboardEvent) {
