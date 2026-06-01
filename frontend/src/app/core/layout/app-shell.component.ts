@@ -1,10 +1,11 @@
 // src/app/core/layout/app-shell.component.ts
 
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { WorkspaceContextService } from '../services/workspace-context.service';
 import { AuthService } from '../services/auth.service';
+import { ProjectsService } from '../services/projects.service';
 
 interface NavItem {
   label: string;
@@ -302,17 +303,31 @@ interface ProjectItem {
     }
   `]
 })
-export class AppShellComponent {
+export class AppShellComponent implements OnInit {
   private wsCtx = inject(WorkspaceContextService);
   private authService = inject(AuthService);
   private router = inject(Router);
+  private projectsService = inject(ProjectsService);
 
   collapsed = signal(false);
-  projects = signal<ProjectItem[]>([]);
   isAdmin = computed(() => {
     const roles = this.authService.user()?.roles ?? [];
     return roles.some(r => r === 'admin' || r === 'owner');
   });
+
+  projects = computed(() =>
+    this.projectsService.projects().map(p => ({
+      id: p.id,
+      name: p.name,
+      icon: p.icon || '📁',
+      color: p.color || '#6366f1',
+      unread: 0,
+    } as ProjectItem))
+  );
+
+  ngOnInit(): void {
+    this.projectsService.reload();
+  }
 
   mainNav: NavItem[] = [
     { label: 'Chat', icon: '💬', route: '/chat' },

@@ -3,8 +3,10 @@ import { CanActivateFn, Router } from '@angular/router';
 import { map } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 
-/** Roles com acesso ao painel /admin */
-const ADMIN_ROLES = ['admin', 'super_admin'];
+/** Roles com acesso ao painel /admin.
+ *  'owner' é o criador do workspace (registrado em migrations/001_core.sql).
+ *  'super_admin' é reservado para uso futuro (não consta em 001_core.sql ainda). */
+const ADMIN_ROLES = ['owner', 'admin', 'super_admin'];
 
 /**
  * Autorização de admin verificada NO SERVIDOR (GET /auth/me).
