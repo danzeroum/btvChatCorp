@@ -171,8 +171,8 @@ async fn upload(
         let row = sqlx::query_as::<_, Document>(
             r#"INSERT INTO documents
                 (workspace_id, filename, original_filename, mime_type,
-                 size_bytes, file_hash, storage_path, uploaded_by)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                 size_bytes, file_hash, storage_path, uploaded_by, processing_status)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
             RETURNING *"#,
         )
         .bind(auth.workspace_id)
