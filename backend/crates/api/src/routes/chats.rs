@@ -240,6 +240,8 @@ async fn send_message(
 
     let instructions_suffix =
         build_instructions_suffix(&state.db, project_id).await;
+    let attachment_suffix =
+        build_attachment_context(&state.db, chat_id).await;
 
     let history: Vec<(String, String)> = sqlx::query_as(
         "SELECT role, content FROM messages WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20",
@@ -253,15 +255,15 @@ async fn send_message(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
              Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
-             {}{}",
-            ctx, instructions_suffix
+             {}{}{}",
+            ctx, instructions_suffix, attachment_suffix
         )
     } else {
         format!(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
-             Se não souber a resposta, diga que não tem essa informação disponível.{}",
-            instructions_suffix
+             Se não souber a resposta, diga que não tem essa informação disponível.{}{}",
+            instructions_suffix, attachment_suffix
         )
     };
 
@@ -473,6 +475,8 @@ async fn stream_message(
 
     let stream_instructions_suffix =
         build_instructions_suffix(&state.db, stream_project_id).await;
+    let stream_attachment_suffix =
+        build_attachment_context(&state.db, chat_id).await;
 
     // 4. Histórico (últimas 20 mensagens)
     let history: Vec<(String, String)> = sqlx::query_as(
@@ -488,15 +492,15 @@ async fn stream_message(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
              Quando usar informações do contexto, cite a fonte entre parênteses.\n\n\
-             {}{}",
-            ctx, stream_instructions_suffix
+             {}{}{}",
+            ctx, stream_instructions_suffix, stream_attachment_suffix
         )
     } else {
         format!(
             "Você é um assistente especializado da empresa. \
              Responda sempre em português, seja preciso e conciso. \
-             Se não souber a resposta, diga que não tem essa informação disponível.{}",
-            stream_instructions_suffix
+             Se não souber a resposta, diga que não tem essa informação disponível.{}{}",
+            stream_instructions_suffix, stream_attachment_suffix
         )
     };
 
@@ -617,6 +621,29 @@ async fn stream_message(
 }
 
 // -- Helpers
+
+async fn build_attachment_context(db: &sqlx::PgPool, chat_id: Uuid) -> String {
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT filename, extracted_text FROM chat_attachments WHERE chat_id=$1 ORDER BY created_at",
+    )
+    .bind(chat_id)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    let sections: Vec<String> = rows
+        .into_iter()
+        .filter_map(|(name, text)| {
+            text.filter(|t| !t.is_empty())
+                .map(|t| format!("### {}\n{}", name, t))
+        })
+        .collect();
+
+    if sections.is_empty() {
+        return String::new();
+    }
+    format!("\n\n## Arquivos anexados\n{}", sections.join("\n\n"))
+}
 
 async fn build_instructions_suffix(db: &sqlx::PgPool, project_id: Option<Uuid>) -> String {
     let Some(pid) = project_id else {
