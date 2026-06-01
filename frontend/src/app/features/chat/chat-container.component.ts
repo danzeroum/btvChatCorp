@@ -1,10 +1,12 @@
-import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewChecked, signal } from '@angular/core';
+import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewChecked, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { timeout } from 'rxjs/operators';
 import { firstValueFrom } from 'rxjs';
+import { MarkdownRenderPipe } from '../../shared/pipes/markdown-render.pipe';
+import { ChatStreamService } from '../../core/services/chat-stream.service';
 
 interface ChatSummary {
   id: string;
@@ -12,6 +14,7 @@ interface ChatSummary {
   updated_at: string;
   project_id: string | null;
   project_name: string | null;
+  is_pinned?: boolean;
 }
 
 interface Message {
@@ -20,6 +23,7 @@ interface Message {
   content: string;
   created_at: string;
   feedback?: 1 | -1;
+  tokens_used?: number;
 }
 
 interface Attachment {
@@ -40,7 +44,7 @@ function genId(): string {
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, MarkdownRenderPipe],
   template: `
     <div class="chat-layout">
 
@@ -65,7 +69,9 @@ function genId(): string {
               } @else {
                 <button class="chat-item" [class.active]="activeChatId() === c.id"
                         (click)="selectChat(c.id)">
-                  <span class="chat-item-title">{{ c.title || 'Nova conversa' }}</span>
+                  <span class="chat-item-title">
+                    @if (c.is_pinned) { <span class="pin-indicator">📌</span> }{{ c.title || 'Nova conversa' }}
+                  </span>
                   @if (c.project_id) {
                     <a [routerLink]="['/projects', c.project_id]"
                        class="project-badge"
@@ -77,6 +83,9 @@ function genId(): string {
                   <span class="chat-item-date">{{ timeAgo(c.updated_at) }}</span>
                 </button>
                 <div class="chat-item-actions">
+                  <button class="chat-action-btn" [class.pinned]="c.is_pinned"
+                          [title]="c.is_pinned ? 'Desafixar' : 'Fixar no topo'"
+                          (click)="togglePin(c); $event.stopPropagation()">📌</button>
                   <button class="chat-action-btn" title="Renomear" (click)="startRename(c); $event.stopPropagation()">✏️</button>
                   <button class="chat-action-btn" title="Excluir" (click)="deleteChat(c.id); $event.stopPropagation()">🗑️</button>
                 </div>
@@ -100,7 +109,15 @@ function genId(): string {
       <main class="chat-main">
         <header class="chat-header">
           <span class="chat-title">{{ currentTitle() }}</span>
-          <span class="model-badge">Ollama</span>
+          <div class="header-right">
+            @if (totalTokens() > 0) {
+              <span class="token-badge" title="Tokens estimados usados nesta conversa">~{{ totalTokens() }} tokens</span>
+            }
+            @if (messages().length > 0) {
+              <button class="header-btn" (click)="exportConversation()" title="Exportar conversa (.txt)">⬇️ Exportar</button>
+            }
+            <span class="model-badge">Ollama</span>
+          </div>
         </header>
 
         <div class="messages-area" #msgArea>
@@ -128,7 +145,11 @@ function genId(): string {
                     </div>
                   </div>
                 } @else {
-                  <div class="bubble">{{ msg.content }}</div>
+                  @if (msg.role === 'assistant') {
+                    <div class="bubble markdown" [innerHTML]="msg.content | markdownRender"></div>
+                  } @else {
+                    <div class="bubble">{{ msg.content }}</div>
+                  }
                   <div class="msg-hover-actions" [class.right]="msg.role === 'user'">
                     <button class="msg-action-btn" title="Copiar" (click)="copyMessage(msg)">
                       {{ copiedMsgId() === msg.id ? '✅' : '📋' }}
@@ -157,9 +178,13 @@ function genId(): string {
             <div class="message assistant">
               <div class="avatar">🤖</div>
               <div class="msg-body">
-                <div class="bubble thinking">
-                  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                </div>
+                @if (streamBuffer()) {
+                  <div class="bubble streaming-bubble">{{ streamBuffer() }}<span class="cursor">▋</span></div>
+                } @else {
+                  <div class="bubble thinking">
+                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                  </div>
+                }
               </div>
             </div>
           }
@@ -230,7 +255,13 @@ function genId(): string {
     .chat-main { flex:1; display:flex; flex-direction:column; min-width:0; }
     .chat-header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid #2a2a2a; }
     .chat-title { font-size:0.95rem; font-weight:500; }
+    .header-right { display:flex; align-items:center; gap:10px; }
+    .token-badge { font-size:0.7rem; color:#888; background:#1a1a1a; border:1px solid #2a2a2a; padding:3px 8px; border-radius:999px; }
+    .header-btn { padding:5px 10px; border-radius:8px; background:#1e1e1e; border:1px solid #333; color:#aaa; cursor:pointer; font-size:0.75rem; font-weight:500; }
+    .header-btn:hover { background:#2a2a2a; color:#fff; }
     .model-badge { font-size:0.72rem; background:#1e3a5f; color:#60a5fa; padding:3px 10px; border-radius:999px; }
+    .pin-indicator { margin-right:3px; }
+    .chat-action-btn.pinned { color:#f59e0b; opacity:1; }
     .messages-area { flex:1; overflow-y:auto; padding:1.5rem; display:flex; flex-direction:column; gap:1rem; }
     .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#555; gap:8px; }
     .empty-hint { font-size:0.8rem; color:#444; }
@@ -242,6 +273,21 @@ function genId(): string {
     .bubble { padding:10px 14px; border-radius:14px; font-size:0.9rem; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
     .message.user .bubble { background:#2563eb; color:#fff; border-radius:14px 2px 14px 14px; }
     .message.assistant .bubble { background:#1e1e1e; border:1px solid #2a2a2a; border-radius:2px 14px 14px 14px; }
+    .streaming-bubble { background:#1e1e1e; border:1px solid #2a2a2a; border-radius:2px 14px 14px 14px; white-space:pre-wrap; word-break:break-word; }
+    .cursor { display:inline-block; animation:blink 1s step-end infinite; color:#60a5fa; margin-left:1px; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    /* Markdown rendering dentro das bolhas do assistente */
+    .bubble.markdown :first-child { margin-top:0; }
+    .bubble.markdown :last-child { margin-bottom:0; }
+    .bubble.markdown p { margin:0 0 0.6em; }
+    .bubble.markdown h1, .bubble.markdown h2, .bubble.markdown h3 { margin:0.6em 0 0.3em; line-height:1.3; }
+    .bubble.markdown h1 { font-size:1.15rem; } .bubble.markdown h2 { font-size:1.05rem; } .bubble.markdown h3 { font-size:0.98rem; }
+    .bubble.markdown ul { margin:0.3em 0; padding-left:1.3em; }
+    .bubble.markdown li { margin:0.15em 0; }
+    .bubble.markdown a { color:#60a5fa; }
+    .bubble.markdown code { background:#0d0d0d; border:1px solid #2a2a2a; border-radius:4px; padding:1px 5px; font-family:'SFMono-Regular',Consolas,monospace; font-size:0.85em; }
+    .bubble.markdown pre { background:#0d0d0d; border:1px solid #2a2a2a; border-radius:8px; padding:12px 14px; overflow-x:auto; margin:0.5em 0; }
+    .bubble.markdown pre code { background:none; border:none; padding:0; display:block; line-height:1.5; white-space:pre; }
     .thinking { display:flex; gap:5px; align-items:center; padding:14px 18px; }
     .dot { width:7px; height:7px; background:#555; border-radius:50%; animation:bounce 1.2s infinite; }
     .dot:nth-child(2) { animation-delay:.2s; } .dot:nth-child(3) { animation-delay:.4s; }
@@ -288,7 +334,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   @ViewChild('msgArea') private msgArea!: ElementRef<HTMLDivElement>;
 
   private http = inject(HttpClient);
-  private readonly LLM_TIMEOUT_MS = 180_000;
+  private chatStream = inject(ChatStreamService);
 
   messages     = signal<Message[]>([]);
   recentChats  = signal<ChatSummary[]>([]);
@@ -297,6 +343,14 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   sending      = signal(false);
   loadingChats = signal(false);
   inputText    = '';
+
+  // Streaming (SSE) da resposta do assistente
+  streamBuffer = signal('');
+
+  // Total estimado de tokens da conversa (soma de tokens_used das mensagens)
+  totalTokens = computed(() =>
+    this.messages().reduce((sum, m) => sum + (m.tokens_used ?? 0), 0)
+  );
 
   // Sidebar rename
   renamingChatId = signal<string | null>(null);
@@ -322,8 +376,16 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   loadRecentChats() {
     this.loadingChats.set(true);
     this.http.get<ChatSummary[]>('/api/v1/chats').subscribe({
-      next: chats => { this.recentChats.set(chats ?? []); this.loadingChats.set(false); },
+      next: chats => { this.recentChats.set(this.sortChats(chats ?? [])); this.loadingChats.set(false); },
       error: () => this.loadingChats.set(false),
+    });
+  }
+
+  /** Fixados primeiro, depois por data de atualização (espelha o ORDER BY do backend). */
+  private sortChats(list: ChatSummary[]): ChatSummary[] {
+    return [...list].sort((a, b) => {
+      if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }
 
@@ -391,6 +453,42 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
         }
       },
     });
+  }
+
+  // ── Pin / desafixar ──
+
+  togglePin(c: ChatSummary) {
+    const next = !c.is_pinned;
+    this.http.patch<ChatSummary>(`/api/v1/chats/${c.id}`, { is_pinned: next }).subscribe({
+      next: () => {
+        this.recentChats.update(list =>
+          this.sortChats(list.map(x => x.id === c.id ? { ...x, is_pinned: next } : x))
+        );
+      },
+    });
+  }
+
+  // ── Export da conversa (.txt) — sem chamada nova ao backend ──
+
+  exportConversation() {
+    const msgs = this.messages();
+    if (msgs.length === 0) return;
+    const title = this.currentTitle() || 'conversa';
+    const body = msgs.map(m => {
+      const who = m.role === 'user' ? 'Usuário' : 'Assistente';
+      const when = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+      return `### ${who}${when ? ' — ' + when : ''}\n${m.content}\n`;
+    }).join('\n');
+    const content = `# ${title}\nExportado em ${new Date().toLocaleString()}\n\n${body}`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(title.replace(/[^\w\-]+/g, '_').slice(0, 60)) || 'conversa'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // ── Per-message actions ──
@@ -550,30 +648,44 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
       }
     }
 
-    this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text })
-      .pipe(timeout(this.LLM_TIMEOUT_MS))
-      .subscribe({
-        next: assistantMsg => {
-          this.messages.update(m => [...m, assistantMsg]);
-          this.sending.set(false);
+    // Consome a resposta via SSE (POST /chat/stream) para exibir tokens em
+    // tempo real. O chat já foi criado acima, então sempre enviamos chat_id —
+    // o backend não devolve um id novo no stream.
+    this.streamBuffer.set('');
+    this.chatStream.sendAndStream({ message: text, chat_id: chatId }).subscribe({
+      next: chunk => {
+        if (chunk.type === 'token' && typeof chunk.data === 'string') {
+          this.streamBuffer.update(b => b + chunk.data);
           this.scrollNeeded = true;
-          this.recentChats.update(list =>
-            list.map(c => c.id === chatId
-              ? { ...c, updated_at: new Date().toISOString() } : c
-            )
-          );
-        },
-        error: err => {
-          const msg = err?.name === 'TimeoutError'
-            ? 'O modelo demorou muito para responder. Tente uma pergunta mais curta.'
-            : 'Erro ao obter resposta. Tente novamente.';
+        }
+      },
+      error: () => {
+        this.messages.update(m => [...m, {
+          id: genId(), role: 'assistant' as const,
+          content: 'Erro ao obter resposta. Tente novamente.',
+          created_at: new Date().toISOString(),
+        }]);
+        this.streamBuffer.set('');
+        this.sending.set(false);
+      },
+      complete: () => {
+        const content = this.streamBuffer().trim();
+        if (content) {
           this.messages.update(m => [...m, {
-            id: genId(), role: 'assistant' as const, content: msg,
+            id: genId(), role: 'assistant' as const, content,
             created_at: new Date().toISOString(),
           }]);
-          this.sending.set(false);
-        },
-      });
+        }
+        this.streamBuffer.set('');
+        this.sending.set(false);
+        this.scrollNeeded = true;
+        this.recentChats.update(list =>
+          this.sortChats(list.map(c => c.id === chatId
+            ? { ...c, updated_at: new Date().toISOString() } : c
+          ))
+        );
+      },
+    });
   }
 
   sendFeedback(msg: Message, value: 1 | -1) {

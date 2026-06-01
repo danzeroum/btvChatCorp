@@ -275,12 +275,12 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     this.loadAll();
     // Health check a cada 30s
     this.subs.push(
-      interval(30_000).pipe(switchMap(() => this.http.get<SystemHealth>('/api/admin/health')))
+      interval(30_000).pipe(switchMap(() => this.http.get<SystemHealth>('/api/v1/admin/health')))
         .subscribe((h) => this.systemHealth.set(h))
     );
     // GPU a cada 10s
     this.subs.push(
-      interval(10_000).pipe(switchMap(() => this.http.get<GpuInfo>('/api/admin/gpu-status')))
+      interval(10_000).pipe(switchMap(() => this.http.get<GpuInfo>('/api/v1/admin/gpu-status')))
         .subscribe((g) => this.gpuInfo.set(g))
     );
   }
@@ -289,13 +289,13 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
 
   loadAll(): void {
     forkJoin({
-      health:   this.http.get<SystemHealth>('/api/admin/health'),
-      gpu:      this.http.get<GpuInfo>('/api/admin/gpu-status'),
-      metrics:  this.http.get<UsageMetrics>(`/api/admin/metrics?period=${this.selectedPeriod}`),
-      projects: this.http.get<any[]>('/api/admin/metrics/top-projects?limit=5'),
-      users:    this.http.get<any[]>('/api/admin/metrics/top-users?limit=5'),
-      alerts:   this.http.get<AdminAlert[]>('/api/admin/alerts'),
-      workspace: this.http.get<any>('/api/admin/settings'),
+      health:   this.http.get<SystemHealth>('/api/v1/admin/health'),
+      gpu:      this.http.get<GpuInfo>('/api/v1/admin/gpu-status'),
+      metrics:  this.http.get<UsageMetrics>(`/api/v1/admin/metrics?period=${this.selectedPeriod}`),
+      projects: this.http.get<any[]>('/api/v1/admin/metrics/top-projects?limit=5'),
+      users:    this.http.get<any[]>('/api/v1/admin/metrics/top-users?limit=5'),
+      alerts:   this.http.get<AdminAlert[]>('/api/v1/admin/alerts'),
+      workspace: this.http.get<any>('/api/v1/admin/settings'),
     }).subscribe({
       next: (data) => {
         this.systemHealth.set(data.health);
@@ -310,12 +310,12 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   }
 
   loadMetrics(): void {
-    this.http.get<UsageMetrics>(`/api/admin/metrics?period=${this.selectedPeriod}`)
+    this.http.get<UsageMetrics>(`/api/v1/admin/metrics?period=${this.selectedPeriod}`)
       .subscribe((m) => this.metrics.set(m));
   }
 
   exportReport(): void {
-    window.open(`/api/admin/metrics/export?period=${this.selectedPeriod}`, '_blank');
+    window.open(`/api/v1/admin/metrics/export?period=${this.selectedPeriod}`, '_blank');
   }
 
   handleAlert(alert: AdminAlert): void {
