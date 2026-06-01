@@ -18,6 +18,10 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
           <p class="subtitle">{{ workspaceName() }} &mdash; <span class="plan-badge">Enterprise</span></p>
         </div>
         <div class="header-actions">
+          <span class="ollama-badge" [class]="ollamaStatus()" [title]="'Ollama ' + ollamaStatus()">
+            <span class="ollama-dot"></span>
+            {{ ollamaStatus() === 'online' ? 'Ollama online' : ollamaStatus() === 'offline' ? 'Ollama offline' : 'Ollama' }}
+          </span>
           <select [(ngModel)]="selectedPeriod" (ngModelChange)="loadMetrics()">
             <option value="7d">Últimos 7 dias</option>
             <option value="30d">Últimos 30 dias</option>
@@ -34,6 +38,7 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
         <a routerLink="../api-keys" routerLinkActive="active">&#128273; API Keys</a>
         <a routerLink="../integrations/webhooks" routerLinkActive="active">&#128279; Webhooks</a>
         <a routerLink="../ai-config" routerLinkActive="active">&#129302; IA</a>
+        <a routerLink="../rag-config" routerLinkActive="active">&#128269; RAG</a>
         <a routerLink="../sso" routerLinkActive="active">&#128272; SSO</a>
         <a routerLink="../branding" routerLinkActive="active">&#127912; Marca</a>
         <a routerLink="../settings" routerLinkActive="active">&#9881;&#65039; Config</a>
@@ -238,6 +243,12 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
                    color:#bbb; text-decoration:none; font-size:0.82rem; transition:background .12s; }
     .admin-nav a:hover { background:#262626; color:#fff; }
     .admin-nav a.active { background:#6366f1; border-color:#6366f1; color:#fff; }
+    .ollama-badge { display:inline-flex; align-items:center; gap:6px; font-size:0.78rem; padding:5px 12px; border-radius:999px; background:#1a1a1a; border:1px solid #2a2a2a; color:#999; }
+    .ollama-badge .ollama-dot { width:8px; height:8px; border-radius:50%; background:#666; }
+    .ollama-badge.online { color:#4ade80; border-color:#22c55e44; }
+    .ollama-badge.online .ollama-dot { background:#22c55e; }
+    .ollama-badge.offline { color:#f87171; border-color:#ef444444; }
+    .ollama-badge.offline .ollama-dot { background:#ef4444; }
   `]
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
@@ -269,6 +280,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   topProjects = signal<any[]>([]);
   topUsers    = signal<any[]>([]);
   alerts      = signal<AdminAlert[]>([]);
+  ollamaStatus = signal<'online' | 'offline' | 'unknown'>('unknown');
 
   costPerUser = computed(() => {
     const u = this.metrics().activeUsers;
@@ -302,6 +314,22 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
       interval(10_000).pipe(switchMap(() => this.http.get<GpuInfo>('/api/v1/admin/gpu-status')))
         .subscribe((g) => this.gpuInfo.set(g))
     );
+    // Status do Ollama a cada 30s
+    this.checkOllama();
+    this.subs.push(
+      interval(30_000).pipe(switchMap(() => this.http.get<{ status: string }>('/api/v1/health/ollama')))
+        .subscribe({
+          next: (r) => this.ollamaStatus.set(r.status === 'online' ? 'online' : 'offline'),
+          error: () => this.ollamaStatus.set('offline'),
+        })
+    );
+  }
+
+  checkOllama(): void {
+    this.http.get<{ status: string }>('/api/v1/health/ollama').subscribe({
+      next: (r) => this.ollamaStatus.set(r.status === 'online' ? 'online' : 'offline'),
+      error: () => this.ollamaStatus.set('offline'),
+    });
   }
 
   ngOnDestroy(): void { this.subs.forEach((s) => s.unsubscribe()); }
