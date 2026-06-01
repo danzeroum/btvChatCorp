@@ -44,11 +44,27 @@ function genId(): string {
 
         <div class="chat-list">
           @for (c of recentChats(); track c.id) {
-            <button class="chat-item" [class.active]="activeChatId() === c.id"
-                    (click)="selectChat(c.id)">
-              <span class="chat-item-title">{{ c.title || 'Nova conversa' }}</span>
-              <span class="chat-item-date">{{ timeAgo(c.updated_at) }}</span>
-            </button>
+            <div class="chat-row" [class.active]="activeChatId() === c.id">
+              @if (renamingChatId() === c.id) {
+                <div class="rename-form">
+                  <input class="rename-input" [(ngModel)]="renameText"
+                         (keydown.enter)="confirmRename(c.id)"
+                         (keydown.escape)="cancelRename()" />
+                  <button class="chat-action-btn confirm" title="Confirmar" (click)="confirmRename(c.id)">✓</button>
+                  <button class="chat-action-btn" title="Cancelar" (click)="cancelRename()">✕</button>
+                </div>
+              } @else {
+                <button class="chat-item" [class.active]="activeChatId() === c.id"
+                        (click)="selectChat(c.id)">
+                  <span class="chat-item-title">{{ c.title || 'Nova conversa' }}</span>
+                  <span class="chat-item-date">{{ timeAgo(c.updated_at) }}</span>
+                </button>
+                <div class="chat-item-actions">
+                  <button class="chat-action-btn" title="Renomear" (click)="startRename(c); $event.stopPropagation()">✏️</button>
+                  <button class="chat-action-btn" title="Excluir" (click)="deleteChat(c.id); $event.stopPropagation()">🗑️</button>
+                </div>
+              }
+            </div>
           }
           @if (recentChats().length === 0 && !loadingChats()) {
             <p class="no-chats">Nenhuma conversa ainda.</p>
@@ -127,10 +143,21 @@ function genId(): string {
     .logo { font-size:0.95rem; font-weight:600; }
     .new-btn { background:#6366f1; color:#fff; border:none; border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:1.1rem; line-height:1; }
     .chat-list { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:2px; }
-    .chat-item { background:none; border:none; text-align:left; padding:8px 10px; border-radius:8px; cursor:pointer; color:#ccc; width:100%; display:flex; flex-direction:column; gap:2px; transition:background 0.12s; }
+    .chat-row { position:relative; display:flex; align-items:center; border-radius:8px; }
+    .chat-row:hover .chat-item-actions { opacity:1; }
+    .chat-row.active .chat-item-actions { opacity:1; }
+    .chat-item { background:none; border:none; text-align:left; padding:8px 10px; border-radius:8px; cursor:pointer; color:#ccc; flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; transition:background 0.12s; }
     .chat-item:hover, .chat-item.active { background:#1e1e1e; color:#fff; }
     .chat-item-title { font-size:0.83rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .chat-item-date { font-size:0.7rem; color:#666; }
+    .chat-item-actions { display:flex; gap:2px; opacity:0; transition:opacity 0.15s; flex-shrink:0; padding-right:4px; }
+    .chat-action-btn { background:none; border:none; cursor:pointer; padding:3px 5px; font-size:0.8rem; border-radius:4px; color:#888; line-height:1; }
+    .chat-action-btn:hover { background:#2a2a2a; color:#fff; }
+    .chat-action-btn.confirm { color:#22c55e; }
+    .chat-action-btn.confirm:hover { background:#22c55e22; }
+    .rename-form { display:flex; align-items:center; gap:4px; padding:4px 6px; flex:1; min-width:0; }
+    .rename-input { flex:1; min-width:0; background:#1a1a1a; border:1px solid #555; border-radius:6px; color:#fff; font-size:0.8rem; padding:5px 8px; }
+    .rename-input:focus { outline:none; border-color:#6366f1; }
     .no-chats { color:#555; font-size:0.8rem; padding:12px 10px; }
     .sidebar-nav { border-top:1px solid #2a2a2a; padding:8px; display:flex; flex-direction:column; gap:2px; }
     .nav-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; color:#888; text-decoration:none; font-size:0.85rem; transition:background 0.12s; }
@@ -179,6 +206,10 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   sending      = signal(false);
   loadingChats = signal(false);
   inputText    = '';
+
+  renamingChatId = signal<string | null>(null);
+  renameText     = '';
+
   private scrollNeeded = false;
 
   ngOnInit() { this.loadRecentChats(); }
@@ -209,10 +240,54 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.activeChatId.set(null);
     this.messages.set([]);
     this.currentTitle.set('Nova conversa');
+    this.cancelRename();
   }
 
   onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
+  }
+
+  // -- Rename / delete chat
+
+  startRename(c: ChatSummary) {
+    this.renameText = c.title || '';
+    this.renamingChatId.set(c.id);
+  }
+
+  cancelRename() {
+    this.renamingChatId.set(null);
+    this.renameText = '';
+  }
+
+  confirmRename(id: string) {
+    const title = this.renameText.trim();
+    if (!title) { this.cancelRename(); return; }
+    this.http.patch<ChatSummary>(`/api/v1/chats/${id}`, { title }).subscribe({
+      next: updated => {
+        this.recentChats.update(list =>
+          list.map(c => c.id === id ? { ...c, title: updated.title } : c)
+        );
+        if (this.activeChatId() === id) {
+          this.currentTitle.set(updated.title);
+        }
+        this.cancelRename();
+      },
+      error: () => this.cancelRename(),
+    });
+  }
+
+  deleteChat(id: string) {
+    if (!confirm('Excluir esta conversa?')) return;
+    this.http.delete(`/api/v1/chats/${id}`).subscribe({
+      next: () => {
+        this.recentChats.update(list => list.filter(c => c.id !== id));
+        if (this.activeChatId() === id) {
+          this.activeChatId.set(null);
+          this.messages.set([]);
+          this.currentTitle.set('Nova conversa');
+        }
+      },
+    });
   }
 
   async send() {
