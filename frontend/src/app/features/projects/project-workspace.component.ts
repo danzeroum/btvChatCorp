@@ -70,6 +70,7 @@ export interface Project {
             </div>
             <div class="header-actions">
               <button class="btn-secondary" (click)="startEdit()">✏️ Editar</button>
+              <button class="btn-danger" (click)="deleteProject()">🗑️ Excluir</button>
               <button class="btn-primary" (click)="newChat()">+ Novo Chat</button>
             </div>
           } @else {
@@ -321,6 +322,8 @@ export interface Project {
     .btn-primary { background: #6366f1; color: #fff; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; text-decoration: none; }
     .btn-secondary { background: #2a2a2a; color: #ccc; padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; }
     .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: #ef444415; color: #ef4444; padding: 8px 18px; border-radius: 8px; border: 1px solid #ef444430; cursor: pointer; font-size: 0.9rem; }
+    .btn-danger:hover { background: #ef444425; }
     .ws-tabs { display: flex; gap: 4px; padding: 0 2rem; border-bottom: 1px solid #2a2a2a; }
     .tab-btn { background: none; border: none; color: #888; padding: 12px 16px; cursor: pointer; font-size: 0.9rem; border-bottom: 2px solid transparent; transition: color 0.15s; }
     .tab-btn:hover { color: #ccc; }
@@ -487,6 +490,15 @@ export class ProjectWorkspaceComponent implements OnInit {
 
   cancelEdit() {
     this.editing.set(false);
+  }
+
+  deleteProject() {
+    const p = this.project();
+    if (!p) return;
+    if (!confirm(`Excluir o projeto "${p.name}"?\n\nOs chats vinculados perderão o vínculo mas não serão excluídos.`)) return;
+    this.http.delete(`/api/v1/projects/${p.id}`).subscribe({
+      next: () => this.router.navigate(['/']),
+    });
   }
 
   saveProject() {

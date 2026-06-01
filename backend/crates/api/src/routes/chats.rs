@@ -22,7 +22,7 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/chats", get(list).post(create))
-        .route("/chats/:id", get(get_one).delete(remove))
+        .route("/chats/:id", get(get_one).delete(remove).patch(rename))
         .route("/chats/:id/messages", get(get_messages).post(send_message))
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
         .route("/chats/:id/project", patch(transfer_to_project))
@@ -596,6 +596,35 @@ async fn build_instructions_suffix(db: &sqlx::PgPool, project_id: Option<Uuid>) 
         .collect::<Vec<_>>()
         .join("\n");
     format!("\n\n## Instruções do projeto\n{}", lines)
+}
+
+// -- Rename chat
+
+#[derive(serde::Deserialize)]
+struct RenameChatDto {
+    title: String,
+}
+
+async fn rename(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(dto): Json<RenameChatDto>,
+) -> Result<Json<Chat>, AppError> {
+    if dto.title.trim().is_empty() {
+        return Err(AppError::bad_request("Título não pode ser vazio"));
+    }
+    let row = sqlx::query_as::<_, Chat>(
+        "UPDATE chats SET title=$1, updated_at=NOW()
+         WHERE id=$2 AND workspace_id=$3 RETURNING *",
+    )
+    .bind(dto.title.trim())
+    .bind(id)
+    .bind(auth.workspace_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
+    Ok(Json(row))
 }
 
 // -- Transfer chat to another project
