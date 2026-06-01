@@ -46,6 +46,12 @@ export const ADMIN_ROUTES: Routes = [
       import('./ai-config/model-manager.component').then(m => m.ModelManagerComponent),
   },
   {
+    path: 'rag-config',
+    canActivate: [adminGuard],
+    loadComponent: () =>
+      import('./ai-config/rag-config.component').then(m => m.RagConfigComponent),
+  },
+  {
     path: 'integrations/webhooks',
     canActivate: [adminGuard],
     loadComponent: () =>
