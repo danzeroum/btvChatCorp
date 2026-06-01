@@ -5,7 +5,7 @@ use axum::{
         sse::{Event, Sse},
         IntoResponse,
     },
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Extension, Json, Router,
 };
 use futures::{channel::mpsc, StreamExt};
@@ -24,9 +24,25 @@ pub fn routes() -> Router<AppState> {
         .route("/chats", get(list).post(create))
         .route("/chats/:id", get(get_one).delete(remove).patch(rename))
         .route("/chats/:id/messages", get(get_messages).post(send_message))
+        .route("/chats/:id/messages/:mid", delete(delete_message))
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
         .route("/chats/:id/project", patch(transfer_to_project))
         .route("/chat/stream", post(stream_message))
+}
+
+/// Versão estendida de Chat com o nome do projeto para uso na listagem.
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct ChatListItem {
+    id: Uuid,
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+    title: String,
+    summary: Option<String>,
+    is_pinned: Option<bool>,
+    created_by: Option<Uuid>,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    project_name: Option<String>,
 }
 
 #[utoipa::path(
@@ -35,17 +51,22 @@ pub fn routes() -> Router<AppState> {
     tag = "Chat",
     security(("BearerAuth" = [])),
     responses(
-        (status = 200, description = "Lista de chats", body = Vec<Chat>),
+        (status = 200, description = "Lista de chats com nome do projeto"),
         (status = 401, description = "Nao autenticado"),
     )
 )]
 async fn list(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
-) -> Result<Json<Vec<Chat>>, AppError> {
-    let rows = sqlx::query_as::<_, Chat>(
-        "SELECT id,workspace_id,project_id,title,summary,is_pinned,created_by,created_at,updated_at
-         FROM chats WHERE workspace_id=$1 AND created_by=$2 ORDER BY updated_at DESC",
+) -> Result<Json<Vec<ChatListItem>>, AppError> {
+    let rows = sqlx::query_as::<_, ChatListItem>(
+        "SELECT c.id, c.workspace_id, c.project_id, c.title, c.summary,
+                c.is_pinned, c.created_by, c.created_at, c.updated_at,
+                p.name AS project_name
+         FROM chats c
+         LEFT JOIN projects p ON p.id = c.project_id
+         WHERE c.workspace_id=$1 AND c.created_by=$2
+         ORDER BY c.updated_at DESC",
     )
     .bind(auth.workspace_id)
     .bind(auth.user_id)
@@ -336,6 +357,30 @@ async fn feedback(
         .await
         .map_err(AppError::from)?;
     Ok(StatusCode::OK)
+}
+
+// -- Delete message
+
+async fn delete_message(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path((chat_id, mid)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    sqlx::query("SELECT id FROM chats WHERE id=$1 AND workspace_id=$2")
+        .bind(chat_id)
+        .bind(auth.workspace_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| AppError::not_found("Chat nao encontrado"))?;
+    let r = sqlx::query("DELETE FROM messages WHERE id=$1 AND chat_id=$2")
+        .bind(mid)
+        .bind(chat_id)
+        .execute(&state.db)
+        .await?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::not_found("Mensagem nao encontrada"));
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // -- Streaming endpoint

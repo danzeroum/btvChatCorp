@@ -10,6 +10,8 @@ interface ChatSummary {
   id: string;
   title: string;
   updated_at: string;
+  project_id: string | null;
+  project_name: string | null;
 }
 
 interface Message {
@@ -57,6 +59,14 @@ function genId(): string {
                 <button class="chat-item" [class.active]="activeChatId() === c.id"
                         (click)="selectChat(c.id)">
                   <span class="chat-item-title">{{ c.title || 'Nova conversa' }}</span>
+                  @if (c.project_id) {
+                    <a [routerLink]="['/projects', c.project_id]"
+                       class="project-badge"
+                       title="Ir para o projeto"
+                       (click)="$event.stopPropagation()">
+                      📁 {{ c.project_name || 'Projeto' }}
+                    </a>
+                  }
                   <span class="chat-item-date">{{ timeAgo(c.updated_at) }}</span>
                 </button>
                 <div class="chat-item-actions">
@@ -98,15 +108,40 @@ function genId(): string {
             <div class="message" [class]="msg.role">
               <div class="avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
               <div class="msg-body">
-                <div class="bubble">{{ msg.content }}</div>
-                @if (msg.role === 'assistant') {
-                  <div class="msg-actions">
-                    <button (click)="sendFeedback(msg, 1)"
-                            [class.active]="msg.feedback === 1">👍</button>
-                    <button (click)="sendFeedback(msg, -1)"
-                            [class.active]="msg.feedback === -1">👎</button>
+
+                @if (msg.role === 'user' && editingMsgId() === msg.id) {
+                  <!-- Inline edit form -->
+                  <div class="edit-form">
+                    <textarea class="edit-input" [(ngModel)]="editText" rows="2"
+                              (keydown)="onEditKeydown($event, msg)"></textarea>
+                    <div class="edit-actions">
+                      <button class="action-btn" (click)="cancelEdit()">✕ Cancelar</button>
+                      <button class="action-btn confirm" [disabled]="!editText.trim()"
+                              (click)="confirmEdit(msg)">✓ Confirmar</button>
+                    </div>
+                  </div>
+                } @else {
+                  <div class="bubble">{{ msg.content }}</div>
+                  <div class="msg-hover-actions" [class.right]="msg.role === 'user'">
+                    <button class="msg-action-btn" title="Copiar" (click)="copyMessage(msg)">
+                      {{ copiedMsgId() === msg.id ? '✅' : '📋' }}
+                    </button>
+                    @if (msg.role === 'user') {
+                      <button class="msg-action-btn" title="Editar" (click)="startEdit(msg)">✏️</button>
+                      <button class="msg-action-btn danger" title="Apagar" (click)="deleteMessage(msg)">🗑️</button>
+                    }
+                    @if (msg.role === 'assistant') {
+                      <button class="msg-action-btn" title="Reenviar" (click)="resendFromAssistant(msg)">🔄</button>
+                      <button class="msg-action-btn" title="Positivo"
+                              [class.active]="msg.feedback === 1"
+                              (click)="sendFeedback(msg, 1)">👍</button>
+                      <button class="msg-action-btn" title="Negativo"
+                              [class.active]="msg.feedback === -1"
+                              (click)="sendFeedback(msg, -1)">👎</button>
+                    }
                   </div>
                 }
+
               </div>
             </div>
           }
@@ -150,6 +185,8 @@ function genId(): string {
     .chat-item:hover, .chat-item.active { background:#1e1e1e; color:#fff; }
     .chat-item-title { font-size:0.83rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .chat-item-date { font-size:0.7rem; color:#666; }
+    .project-badge { font-size:0.68rem; color:#818cf8; text-decoration:none; padding:1px 6px; background:#6366f115; border-radius:4px; display:inline-flex; align-items:center; gap:3px; width:fit-content; }
+    .project-badge:hover { background:#6366f130; }
     .chat-item-actions { display:flex; gap:2px; opacity:0; transition:opacity 0.15s; flex-shrink:0; padding-right:4px; }
     .chat-action-btn { background:none; border:none; cursor:pointer; padding:3px 5px; font-size:0.8rem; border-radius:4px; color:#888; line-height:1; }
     .chat-action-btn:hover { background:#2a2a2a; color:#fff; }
@@ -181,9 +218,25 @@ function genId(): string {
     .dot { width:7px; height:7px; background:#555; border-radius:50%; animation:bounce 1.2s infinite; }
     .dot:nth-child(2) { animation-delay:.2s; } .dot:nth-child(3) { animation-delay:.4s; }
     @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
-    .msg-actions { display:flex; gap:6px; }
-    .msg-actions button { background:none; border:none; cursor:pointer; font-size:0.85rem; opacity:0.4; transition:opacity 0.15s; padding:2px 4px; }
-    .msg-actions button:hover, .msg-actions button.active { opacity:1; }
+    /* Per-message hover actions */
+    .msg-hover-actions { display:flex; gap:3px; opacity:0; transition:opacity 0.15s; }
+    .msg-hover-actions.right { justify-content:flex-end; }
+    .message:hover .msg-hover-actions { opacity:1; }
+    .msg-action-btn { background:none; border:none; cursor:pointer; font-size:0.8rem; padding:2px 5px; border-radius:4px; color:#888; line-height:1; }
+    .msg-action-btn:hover { background:#2a2a2a; color:#ccc; }
+    .msg-action-btn.active { color:#22c55e; opacity:1; }
+    .msg-action-btn.danger:hover { background:#ef444422; color:#ef4444; }
+    /* Inline edit form */
+    .edit-form { display:flex; flex-direction:column; gap:6px; }
+    .edit-input { background:#1e1e1e; border:1px solid #6366f1; border-radius:10px; padding:8px 12px; color:#fff; font-size:0.9rem; resize:none; font-family:inherit; line-height:1.5; min-width:200px; }
+    .edit-input:focus { outline:none; }
+    .edit-actions { display:flex; gap:6px; justify-content:flex-end; }
+    .action-btn { padding:4px 10px; border-radius:6px; border:1px solid #444; background:none; color:#aaa; cursor:pointer; font-size:0.78rem; }
+    .action-btn:hover { background:#2a2a2a; }
+    .action-btn.confirm { border-color:#22c55e; color:#22c55e; }
+    .action-btn.confirm:hover { background:#22c55e22; }
+    .action-btn:disabled { opacity:0.4; cursor:not-allowed; }
+    /* Input area */
     .input-area { padding:1rem 1.5rem; border-top:1px solid #2a2a2a; display:flex; gap:10px; align-items:flex-end; }
     textarea { flex:1; padding:10px 14px; border-radius:12px; border:1px solid #333; background:#1a1a1a; color:#fff; font-size:0.9rem; resize:none; font-family:inherit; line-height:1.5; }
     textarea:focus { outline:none; border-color:#2563eb; }
@@ -207,8 +260,14 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   loadingChats = signal(false);
   inputText    = '';
 
+  // Sidebar rename
   renamingChatId = signal<string | null>(null);
   renameText     = '';
+
+  // Message edit / copy
+  editingMsgId = signal<string | null>(null);
+  editText     = '';
+  copiedMsgId  = signal<string | null>(null);
 
   private scrollNeeded = false;
 
@@ -221,7 +280,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   loadRecentChats() {
     this.loadingChats.set(true);
     this.http.get<ChatSummary[]>('/api/v1/chats').subscribe({
-      next: (chats: ChatSummary[]) => { this.recentChats.set(chats ?? []); this.loadingChats.set(false); },
+      next: chats => { this.recentChats.set(chats ?? []); this.loadingChats.set(false); },
       error: () => this.loadingChats.set(false),
     });
   }
@@ -229,10 +288,11 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   selectChat(id: string) {
     this.activeChatId.set(id);
     this.messages.set([]);
-    const chat = this.recentChats().find((c: ChatSummary) => c.id === id);
+    this.cancelEdit();
+    const chat = this.recentChats().find(c => c.id === id);
     this.currentTitle.set(chat?.title || 'Conversa');
     this.http.get<Message[]>(`/api/v1/chats/${id}/messages`).subscribe({
-      next: (msgs: Message[]) => { this.messages.set(msgs ?? []); this.scrollNeeded = true; },
+      next: msgs => { this.messages.set(msgs ?? []); this.scrollNeeded = true; },
     });
   }
 
@@ -240,6 +300,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.activeChatId.set(null);
     this.messages.set([]);
     this.currentTitle.set('Nova conversa');
+    this.cancelEdit();
     this.cancelRename();
   }
 
@@ -247,7 +308,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
   }
 
-  // -- Rename / delete chat
+  // ── Sidebar rename / delete ──
 
   startRename(c: ChatSummary) {
     this.renameText = c.title || '';
@@ -267,9 +328,7 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
         this.recentChats.update(list =>
           list.map(c => c.id === id ? { ...c, title: updated.title } : c)
         );
-        if (this.activeChatId() === id) {
-          this.currentTitle.set(updated.title);
-        }
+        if (this.activeChatId() === id) this.currentTitle.set(updated.title);
         this.cancelRename();
       },
       error: () => this.cancelRename(),
@@ -290,13 +349,98 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     });
   }
 
+  // ── Per-message actions ──
+
+  copyMessage(msg: Message) {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      this.copiedMsgId.set(msg.id);
+      setTimeout(() => this.copiedMsgId.set(null), 2000);
+    });
+  }
+
+  startEdit(msg: Message) {
+    this.editingMsgId.set(msg.id);
+    this.editText = msg.content;
+  }
+
+  cancelEdit() {
+    this.editingMsgId.set(null);
+    this.editText = '';
+  }
+
+  onEditKeydown(event: KeyboardEvent, msg: Message) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.confirmEdit(msg);
+    } else if (event.key === 'Escape') {
+      this.cancelEdit();
+    }
+  }
+
+  async confirmEdit(msg: Message) {
+    const text = this.editText.trim();
+    if (!text) { this.cancelEdit(); return; }
+    const chatId = this.activeChatId();
+    if (!chatId) { this.cancelEdit(); return; }
+
+    const msgs = this.messages();
+    const idx = msgs.findIndex(m => m.id === msg.id);
+    const nextMsg = idx >= 0 && idx < msgs.length - 1 ? msgs[idx + 1] : null;
+
+    await firstValueFrom(
+      this.http.delete(`/api/v1/chats/${chatId}/messages/${msg.id}`).pipe(timeout(5000))
+    ).catch(() => {});
+    if (nextMsg?.role === 'assistant') {
+      await firstValueFrom(
+        this.http.delete(`/api/v1/chats/${chatId}/messages/${nextMsg.id}`).pipe(timeout(5000))
+      ).catch(() => {});
+    }
+
+    const remove = new Set([msg.id, ...(nextMsg?.role === 'assistant' ? [nextMsg.id] : [])]);
+    this.messages.update(list => list.filter(m => !remove.has(m.id)));
+    this.cancelEdit();
+    this.inputText = text;
+    this.send();
+  }
+
+  deleteMessage(msg: Message) {
+    if (!confirm('Remover esta mensagem?')) return;
+    const chatId = this.activeChatId();
+    if (!chatId) return;
+    this.http.delete(`/api/v1/chats/${chatId}/messages/${msg.id}`).subscribe({
+      next: () => this.messages.update(list => list.filter(m => m.id !== msg.id)),
+    });
+  }
+
+  async resendFromAssistant(msg: Message) {
+    const chatId = this.activeChatId();
+    if (!chatId) return;
+    const msgs = this.messages();
+    const idx = msgs.findIndex(m => m.id === msg.id);
+    const prevMsg = idx > 0 ? msgs[idx - 1] : null;
+    if (!prevMsg || prevMsg.role !== 'user') return;
+
+    await firstValueFrom(
+      this.http.delete(`/api/v1/chats/${chatId}/messages/${msg.id}`).pipe(timeout(5000))
+    ).catch(() => {});
+    await firstValueFrom(
+      this.http.delete(`/api/v1/chats/${chatId}/messages/${prevMsg.id}`).pipe(timeout(5000))
+    ).catch(() => {});
+
+    this.messages.update(list => list.filter(m => m.id !== msg.id && m.id !== prevMsg.id));
+    this.inputText = prevMsg.content;
+    this.send();
+  }
+
+  // ── Send message ──
+
   async send() {
     const text = this.inputText.trim();
     if (!text || this.sending()) return;
     this.inputText = '';
     this.sending.set(true);
 
-    this.messages.update((m: Message[]) => [...m, {
+    this.messages.update(m => [...m, {
       id: genId(), role: 'user' as const, content: text,
       created_at: new Date().toISOString(),
     }]);
@@ -311,10 +455,10 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
         chatId = newChat!.id;
         this.activeChatId.set(chatId);
         this.currentTitle.set(newChat!.title || text.slice(0, 40));
-        this.recentChats.update((list: ChatSummary[]) => [newChat as ChatSummary, ...list]);
+        this.recentChats.update(list => [newChat as ChatSummary, ...list]);
       } catch {
         this.sending.set(false);
-        this.messages.update((m: Message[]) => [...m, {
+        this.messages.update(m => [...m, {
           id: genId(), role: 'assistant' as const,
           content: 'Erro ao criar conversa. Tente novamente.',
           created_at: new Date().toISOString(),
@@ -326,21 +470,21 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     this.http.post<Message>(`/api/v1/chats/${chatId}/messages`, { content: text })
       .pipe(timeout(this.LLM_TIMEOUT_MS))
       .subscribe({
-        next: (assistantMsg: Message) => {
-          this.messages.update((m: Message[]) => [...m, assistantMsg]);
+        next: assistantMsg => {
+          this.messages.update(m => [...m, assistantMsg]);
           this.sending.set(false);
           this.scrollNeeded = true;
-          this.recentChats.update((list: ChatSummary[]) =>
-            list.map((c: ChatSummary) => c.id === chatId
+          this.recentChats.update(list =>
+            list.map(c => c.id === chatId
               ? { ...c, updated_at: new Date().toISOString() } : c
             )
           );
         },
-        error: (err) => {
+        error: err => {
           const msg = err?.name === 'TimeoutError'
             ? 'O modelo demorou muito para responder. Tente uma pergunta mais curta.'
             : 'Erro ao obter resposta. Tente novamente.';
-          this.messages.update((m: Message[]) => [...m, {
+          this.messages.update(m => [...m, {
             id: genId(), role: 'assistant' as const, content: msg,
             created_at: new Date().toISOString(),
           }]);
@@ -353,8 +497,8 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
     if (msg.feedback === value) return;
     const chatId = this.activeChatId();
     if (!chatId) return;
-    this.messages.update((msgs: Message[]) =>
-      msgs.map((m: Message) => m.id === msg.id ? { ...m, feedback: value } : m)
+    this.messages.update(msgs =>
+      msgs.map(m => m.id === msg.id ? { ...m, feedback: value } : m)
     );
     this.http.post(`/api/v1/chats/${chatId}/messages/${msg.id}/feedback`, { feedback: value }).subscribe();
   }
