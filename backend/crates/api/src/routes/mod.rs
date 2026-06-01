@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod attachments;
 pub mod auth;
 pub mod branding;
 pub mod chats;
@@ -111,6 +112,7 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
     let protected = Router::new()
         .merge(auth::protected_routes())
         .merge(chats::routes())
+        .merge(attachments::routes())
         .merge(documents::routes())
         .merge(projects::routes())
         .merge(training::routes())
