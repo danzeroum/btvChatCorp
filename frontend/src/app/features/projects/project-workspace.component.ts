@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { Component, OnInit, signal, computed, inject, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -23,7 +23,7 @@ export interface ProjectDocument {
   id: string;
   filename: string;
   processing_status: string;
-  chunks_count: number;
+  chunk_count: number;
   size_bytes: number;
   linked_at: string;
 }
@@ -53,6 +53,10 @@ export interface Project {
       @if (loading()) {
         <div class="loading">Carregando projeto...</div>
       } @else if (project()) {
+
+        <!-- Input de arquivo oculto — fora dos blocos condicionais para garantir ViewChild -->
+        <input #fileInput type="file" accept=".pdf,.docx,.txt,.md" style="display:none"
+               (change)="onFileSelected($event)" />
 
         <!-- Header do projeto -->
         <div class="ws-header">
@@ -163,8 +167,13 @@ export interface Project {
           @if (activeTab() === 'documents') {
             <div class="tab-toolbar">
               <h3>Documentos vinculados</h3>
-              <button class="btn-secondary" (click)="uploadDocs()">📎 Adicionar Documentos</button>
+              <button class="btn-secondary" [disabled]="uploading()" (click)="uploadDocs()">
+                {{ uploading() ? 'Enviando...' : '📎 Adicionar Documentos' }}
+              </button>
             </div>
+            @if (uploadError()) {
+              <p class="error-hint">{{ uploadError() }}</p>
+            }
             @if (documents().length === 0) {
               <p class="empty-hint">Nenhum documento vinculado.</p>
             } @else {
@@ -175,7 +184,7 @@ export interface Project {
                     <tr>
                       <td class="doc-name-cell">{{ doc.filename }}</td>
                       <td><span class="status-badge" [class]="doc.processing_status">{{ doc.processing_status }}</span></td>
-                      <td>{{ doc.chunks_count }}</td>
+                      <td>{{ doc.chunk_count ?? '-' }}</td>
                       <td>{{ formatSize(doc.size_bytes) }}</td>
                       <td>{{ doc.linked_at | date:'dd/MM/yyyy' }}</td>
                     </tr>
@@ -191,7 +200,28 @@ export interface Project {
               <h3>Instruções do Projeto</h3>
               <button class="btn-primary" (click)="addInstruction()">+ Nova Instrução</button>
             </div>
-            @if (instructions().length === 0) {
+
+            @if (showInstructionForm()) {
+              <div class="instruction-form">
+                <input [(ngModel)]="instrName" placeholder="Nome da instrução" class="inst-input" />
+                <textarea [(ngModel)]="instrContent" rows="3" placeholder="Conteúdo da instrução..." class="inst-textarea"></textarea>
+                <div class="inst-form-row">
+                  <select [(ngModel)]="instrTrigger" class="inst-select">
+                    <option value="always">Sempre (always)</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  <div class="inst-form-actions">
+                    <button class="btn-secondary" (click)="showInstructionForm.set(false)">Cancelar</button>
+                    <button class="btn-primary" [disabled]="!instrName.trim() || !instrContent.trim() || savingInstruction()"
+                            (click)="saveInstruction()">
+                      {{ savingInstruction() ? 'Salvando...' : 'Salvar' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+
+            @if (instructions().length === 0 && !showInstructionForm()) {
               <p class="empty-hint">Nenhuma instrução cadastrada.</p>
             } @else {
               @for (inst of instructions(); track inst.id) {
@@ -274,9 +304,18 @@ export interface Project {
     .active-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #444; color: #888; }
     .active-badge.on { background: #22c55e22; color: #22c55e; }
     .inst-content { font-size: 0.85rem; color: #999; margin: 0; }
+    .instruction-form { background: #1a1a2e; border: 1px solid #6366f133; border-radius: 10px; padding: 1rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 8px; }
+    .inst-input { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 8px 12px; color: #f0f0f0; font-size: 0.9rem; }
+    .inst-textarea { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 8px 12px; color: #f0f0f0; font-size: 0.85rem; resize: vertical; }
+    .inst-select { background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 7px 10px; color: #f0f0f0; font-size: 0.85rem; }
+    .inst-form-row { display: flex; justify-content: space-between; align-items: center; }
+    .inst-form-actions { display: flex; gap: 8px; }
+    .error-hint { color: #ef4444; font-size: 0.85rem; }
   `]
 })
 export class ProjectWorkspaceComponent implements OnInit {
+  @ViewChild('fileInput') private fileInput!: ElementRef<HTMLInputElement>;
+
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private http = inject(HttpClient);
@@ -289,6 +328,15 @@ export class ProjectWorkspaceComponent implements OnInit {
   instructions = signal<ProjectInstruction[]>([]);
   activeTab = signal<string>('overview');
   chatSearch = '';
+
+  uploading = signal(false);
+  uploadError = signal('');
+
+  showInstructionForm = signal(false);
+  instrName = '';
+  instrContent = '';
+  instrTrigger = 'always';
+  savingInstruction = signal(false);
 
   // Filtros como computed — sem arrow functions no template
   activeInstructions = computed(() => this.instructions().filter(i => i.is_active));
@@ -321,22 +369,83 @@ export class ProjectWorkspaceComponent implements OnInit {
   }
 
   loadProjectData(id: string) {
-    this.http.get<{ members: ProjectMember[] }>(`/api/v1/projects/${id}/members`).subscribe(r => this.members.set(r.members));
-    this.http.get<{ chats: ProjectChat[] }>(`/api/v1/projects/${id}/chats`).subscribe(r => this.chats.set(r.chats));
-    this.http.get<{ documents: ProjectDocument[] }>(`/api/v1/projects/${id}/documents`).subscribe(r => this.documents.set(r.documents));
-    this.http.get<{ instructions: ProjectInstruction[] }>(`/api/v1/projects/${id}/instructions`).subscribe(r => this.instructions.set(r.instructions));
+    this.http.get<ProjectMember[]>(`/api/v1/projects/${id}/members`).subscribe(r => this.members.set(r));
+    this.http.get<ProjectChat[]>(`/api/v1/projects/${id}/chats`).subscribe(r => this.chats.set(r));
+    this.http.get<ProjectDocument[]>(`/api/v1/projects/${id}/documents`).subscribe(r => this.documents.set(r));
+    this.http.get<ProjectInstruction[]>(`/api/v1/projects/${id}/instructions`).subscribe(r => this.instructions.set(r));
   }
 
   newChat() {
     const pid = this.project()?.id;
     if (!pid) return;
-    this.http.post<{ id: string }>(`/api/v1/projects/${pid}/chats`, { title: 'Nova Conversa' }).subscribe({
+    this.http.post<{ id: string }>('/api/v1/chats', { project_id: pid, title: 'Nova Conversa' }).subscribe({
       next: res => this.router.navigate(['/projects', pid, 'chat', res.id]),
     });
   }
 
-  uploadDocs() { this.router.navigate(['/documents']); }
-  addInstruction() { /* TODO: modal */ }
+  uploadDocs() {
+    this.uploadError.set('');
+    this.fileInput.nativeElement.value = '';
+    this.fileInput.nativeElement.click();
+  }
+
+  onFileSelected(event: Event) {
+    const pid = this.project()?.id;
+    if (!pid) return;
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    this.uploading.set(true);
+    this.uploadError.set('');
+    const form = new FormData();
+    form.append('file', file);
+
+    this.http.post<{ id: string }>('/api/v1/documents', form).subscribe({
+      next: doc => {
+        this.http.post(`/api/v1/projects/${pid}/documents`, { document_id: doc.id }).subscribe({
+          next: () => {
+            this.uploading.set(false);
+            this.loadProjectData(pid);
+          },
+          error: () => {
+            this.uploading.set(false);
+            this.uploadError.set('Erro ao vincular documento ao projeto.');
+          }
+        });
+      },
+      error: () => {
+        this.uploading.set(false);
+        this.uploadError.set('Erro ao enviar arquivo.');
+      }
+    });
+  }
+
+  addInstruction() {
+    this.instrName = '';
+    this.instrContent = '';
+    this.instrTrigger = 'always';
+    this.showInstructionForm.set(true);
+  }
+
+  saveInstruction() {
+    const pid = this.project()?.id;
+    if (!pid || !this.instrName.trim() || !this.instrContent.trim()) return;
+    this.savingInstruction.set(true);
+    this.http.post(`/api/v1/projects/${pid}/instructions`, {
+      name: this.instrName.trim(),
+      content: this.instrContent.trim(),
+      trigger_mode: this.instrTrigger,
+      is_active: true,
+    }).subscribe({
+      next: () => {
+        this.savingInstruction.set(false);
+        this.showInstructionForm.set(false);
+        this.loadProjectData(pid);
+      },
+      error: () => this.savingInstruction.set(false),
+    });
+  }
 
   timeAgo(dateStr: string): string {
     if (!dateStr) return '';

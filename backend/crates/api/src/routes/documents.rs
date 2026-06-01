@@ -27,9 +27,31 @@ fn sanitize_filename(raw: &str) -> String {
         .collect()
 }
 
+use chrono::{DateTime, Utc};
+
 use crate::{
     errors::AppError, middleware::auth::AuthUser, models::document::Document, state::AppState,
 };
+
+/// Documento vinculado a um projeto — estende Document com `linked_at` da tabela project_documents.
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct ProjectDocumentView {
+    id: Uuid,
+    workspace_id: Uuid,
+    filename: String,
+    original_filename: String,
+    mime_type: String,
+    size_bytes: i64,
+    file_hash: String,
+    storage_path: String,
+    processing_status: Option<String>,
+    page_count: Option<i32>,
+    chunk_count: Option<i32>,
+    uploaded_by: Option<Uuid>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+    linked_at: Option<DateTime<Utc>>,
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -237,7 +259,7 @@ async fn list_for_project(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
-) -> Result<Json<Vec<Document>>, AppError> {
+) -> Result<Json<Vec<ProjectDocumentView>>, AppError> {
     sqlx::query("SELECT id FROM projects WHERE id=$1 AND workspace_id=$2")
         .bind(project_id)
         .bind(auth.workspace_id)
@@ -245,10 +267,11 @@ async fn list_for_project(
         .await
         .map_err(|_| AppError::not_found("Projeto nao encontrado"))?;
 
-    let rows = sqlx::query_as::<_, Document>(
+    let rows = sqlx::query_as::<_, ProjectDocumentView>(
         r#"SELECT d.id, d.workspace_id, d.filename, d.original_filename, d.mime_type,
                d.size_bytes, d.file_hash, d.storage_path, d.processing_status,
-               d.page_count, d.chunk_count, d.uploaded_by, d.created_at, d.updated_at
+               d.page_count, d.chunk_count, d.uploaded_by, d.created_at, d.updated_at,
+               pd.linked_at
         FROM documents d
         JOIN project_documents pd ON pd.document_id = d.id
         WHERE pd.project_id=$1 ORDER BY pd.linked_at DESC"#,

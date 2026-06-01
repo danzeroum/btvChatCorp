@@ -1,8 +1,9 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { ProjectsService } from '../../core/services/projects.service';
 
 const ICONS = ['📁','🚀','💡','🔬','📊','🏢','🎯','⚡','🌐','🔧','🎨','📱'];
 const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899','#14b8a6'];
@@ -94,7 +95,9 @@ export class ProjectCreateComponent {
   icons = ICONS;
   colors = COLORS;
 
-  constructor(private http: HttpClient, private router: Router) {}
+  private http = inject(HttpClient);
+  private router = inject(Router);
+  private projectsService = inject(ProjectsService);
 
   save() {
     if (!this.name.trim()) return;
@@ -106,7 +109,10 @@ export class ProjectCreateComponent {
       icon: this.icon,
       color: this.color,
     }).subscribe({
-      next: res => this.router.navigate(['/projects', res.id]),
+      next: res => {
+        this.projectsService.reload();
+        this.router.navigate(['/projects', res.id]);
+      },
       error: err => {
         this.error.set(err?.error?.detail || 'Erro ao criar projeto');
         this.saving.set(false);

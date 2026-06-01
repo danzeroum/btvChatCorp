@@ -7,6 +7,7 @@ volumes:
   postgres_data:
   qdrant_data:
   document_uploads:
+  embedding_cache:
 
 services:
 
@@ -52,7 +53,7 @@ services:
       DATABASE_URL:     postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
       OLLAMA_URL: http://172.24.0.1:11434
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-llama3.2:3b}
-      EMBEDDING_URL: http://btv_embedding:8001
+      EMBEDDING_URL: http://embedding:8001
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:?Erro: OLLAMA_AUTH_USER obrigatorio — defina no .env}
       OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:?Erro: OLLAMA_AUTH_PASS obrigatorio — defina no .env}
@@ -80,6 +81,57 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  embedding:
+    build:
+      context: ./backend/services/embedding
+    restart: always
+    volumes:
+      - embedding_cache:/root/.cache/huggingface
+    networks: [btv-net]
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  document-processor:
+    build:
+      context: ./backend
+      dockerfile: crates/document-processor/Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL:     postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
+      QDRANT_URL:       http://qdrant:6333
+      QDRANT_API_KEY:   ${QDRANT_API_KEY}
+      EMBEDDING_URL:    http://embedding:8001
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      STORAGE_PATH:     /uploads
+      POLL_INTERVAL_SECS: ${WORKER_POLL_INTERVAL_SECS:-5}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      MAX_RETRIES:      ${WORKER_MAX_RETRIES:-3}
+      RUST_LOG:         ${RUST_LOG:-info}
+    volumes:
+      - document_uploads:/uploads
+    networks: [btv-net]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '1.0'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      embedding:
+        condition: service_healthy
 
   frontend:
     build:
