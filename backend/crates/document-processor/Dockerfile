@@ -1,5 +1,5 @@
 # ── Build stage ────────────────────────────────────────────────────────────
-FROM rust:1.82-slim AS builder
+FROM rust:1.85-slim AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
-# Build do binário do worker (sem SQLX_OFFLINE — queries em runtime)
+# Build do binário do worker
 RUN cargo build --release --bin rag-worker
 
 # ── Runtime stage ───────────────────────────────────────────────────────────
