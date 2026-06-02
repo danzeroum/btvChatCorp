@@ -29,9 +29,15 @@ VALUES
   ('00000000-0000-0000-0000-000000000003', 'Membro',  'Usa chat e projetos atribuídos',  TRUE, '{"chat":["read","write"]}')
 ON CONFLICT (id) DO NOTHING;
 
-ALTER TABLE users
-  ADD CONSTRAINT IF NOT EXISTS fk_users_role_id
-  FOREIGN KEY (role_id) REFERENCES roles(id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_users_role_id' AND table_name = 'users'
+  ) THEN
+    ALTER TABLE users ADD CONSTRAINT fk_users_role_id FOREIGN KEY (role_id) REFERENCES roles(id);
+  END IF;
+END $$;
 
 UPDATE users u
    SET role_id = r.id
