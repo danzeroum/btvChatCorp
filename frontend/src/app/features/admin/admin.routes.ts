@@ -1,72 +1,65 @@
 import { Routes } from '@angular/router';
-import { adminGuard } from '../auth/admin.guard';
 
 export const ADMIN_ROUTES: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
   {
     path: 'dashboard',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./overview/admin-dashboard.component').then(m => m.AdminDashboardComponent),
   },
   {
     path: 'users',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./user-management/user-management.component').then(m => m.UserManagementComponent),
   },
   {
     path: 'audit',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./audit-log-viewer/audit-log-viewer.component').then(m => m.AuditLogViewerComponent),
   },
   {
     path: 'settings',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./workspace-settings/workspace-settings.component').then(m => m.WorkspaceSettingsComponent),
   },
   {
     path: 'api-keys',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./api-keys/api-keys.component').then(m => m.ApiKeysComponent),
   },
   {
     path: 'sso',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./sso-config/sso-config.component').then(m => m.SsoConfigComponent),
   },
   {
     path: 'ai-config',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./ai-config/model-manager.component').then(m => m.ModelManagerComponent),
   },
   {
     path: 'rag-config',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./ai-config/rag-config.component').then(m => m.RagConfigComponent),
   },
   {
     path: 'integrations/webhooks',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./integrations/webhooks-config.component').then(m => m.WebhooksConfigComponent),
   },
   {
     path: 'integrations/webhooks/:webhookId/logs',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./integrations/webhook-logs.component').then(m => m.WebhookLogsComponent),
   },
   {
     path: 'branding',
-    canActivate: [adminGuard],
     loadComponent: () =>
       import('./white-label/branding-admin-page.component').then(m => m.BrandingAdminPageComponent),
+  },
+  {
+    path: 'billing',
+    loadComponent: () =>
+      import('./billing/usage-overview.component').then(m => m.UsageOverviewComponent),
   },
 ];

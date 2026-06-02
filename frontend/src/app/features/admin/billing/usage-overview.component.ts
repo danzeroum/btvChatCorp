@@ -179,7 +179,7 @@ export class UsageOverviewComponent implements OnInit {
   });
   dailyUsage = signal<DailyUsage[]>([]);
 
-  chartTabs = [
+  chartTabs: { value: 'messages' | 'tokens' | 'users' | 'documents'; label: string }[] = [
     { value: 'messages',  label: 'Mensagens' },
     { value: 'tokens',    label: 'Tokens' },
     { value: 'users',     label: 'Usuários' },
