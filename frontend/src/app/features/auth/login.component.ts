@@ -130,7 +130,16 @@ export class LoginComponent {
       },
       error: (err) => {
         this.submitting.set(false);
-        const msg = err.error?.error?.message || err.error?.message || err.error?.detail || 'Email ou senha incorretos.';
+        let msg: string;
+        if (err.status === 0) {
+          msg = 'Sem conexão com o servidor. Verifique sua internet.';
+        } else if (err.status === 429) {
+          msg = err.error?.error?.message ?? 'Muitas tentativas. Aguarde 1 minuto antes de tentar novamente.';
+        } else if (err.status >= 500 || err.error instanceof SyntaxError) {
+          msg = err.error?.error?.message ?? 'Serviço temporariamente indisponível. Tente novamente em instantes.';
+        } else {
+          msg = err.error?.error?.message || err.error?.message || err.error?.detail || 'Email ou senha incorretos.';
+        }
         this.errorMessage.set(msg);
       }
     });
