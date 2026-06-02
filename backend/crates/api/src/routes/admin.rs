@@ -4,12 +4,12 @@ use axum::{
     middleware,
     response::Json,
     routing::{delete, get, patch, post, put},
-    Router,
+    Extension, Router,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{middleware::require_admin_role, models::admin::*, state::AppState};
+use crate::{extractors::WorkspaceContext, middleware::require_admin_role, models::admin::*, state::AppState};
 
 // ─── Router ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +111,19 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/admin/api-docs/openapi.json", get(openapi_spec))
         // Protege todas as rotas com middleware de admin
         .layer(middleware::from_fn(require_admin_role))
+        .layer(middleware::from_fn(inject_workspace))
+}
+
+/// No-op pass-through middleware that documents the expectation that
+/// WorkspaceContext (set by require_auth) is available on all admin routes.
+pub async fn inject_workspace(
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, StatusCode> {
+    // WorkspaceContext is already in extensions from require_auth.
+    // This middleware is a no-op pass-through; it exists as a clear documentation
+    // point that workspace context is expected on all admin routes.
+    Ok(next.run(request).await)
 }
 
 // ─── Params ────────────────────────────────────────────────────────────────────
@@ -166,10 +179,11 @@ pub async fn gpu_status(State(app): State<AppState>) -> Result<Json<GpuInfo>, St
 
 pub async fn pending_alerts(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<AdminAlert>>, StatusCode> {
     let alerts = app
         .admin_service
-        .get_pending_alerts()
+        .get_pending_alerts(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(alerts))
@@ -177,12 +191,13 @@ pub async fn pending_alerts(
 
 pub async fn usage_metrics(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<PeriodQuery>,
 ) -> Result<Json<UsageMetrics>, StatusCode> {
     let period = q.period.unwrap_or_else(|| "30d".to_string());
     let metrics = app
         .admin_service
-        .get_usage_metrics(&period)
+        .get_usage_metrics(ctx.workspace_id, &period)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(metrics))
@@ -190,12 +205,13 @@ pub async fn usage_metrics(
 
 pub async fn daily_metrics(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<PeriodQuery>,
 ) -> Result<Json<Vec<DailyMetric>>, StatusCode> {
     let period = q.period.unwrap_or_else(|| "30d".to_string());
     let data = app
         .admin_service
-        .get_daily_metrics(&period)
+        .get_daily_metrics(ctx.workspace_id, &period)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(data))
@@ -203,12 +219,13 @@ pub async fn daily_metrics(
 
 pub async fn top_projects(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<LimitQuery>,
 ) -> Result<Json<Vec<ProjectMetric>>, StatusCode> {
     let limit = q.limit.unwrap_or(5);
     let data = app
         .admin_service
-        .get_top_projects(limit)
+        .get_top_projects(ctx.workspace_id, limit)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(data))
@@ -216,12 +233,13 @@ pub async fn top_projects(
 
 pub async fn top_users(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<LimitQuery>,
 ) -> Result<Json<Vec<UserMetric>>, StatusCode> {
     let limit = q.limit.unwrap_or(5);
     let data = app
         .admin_service
-        .get_top_users(limit)
+        .get_top_users(ctx.workspace_id, limit)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(data))
@@ -229,12 +247,13 @@ pub async fn top_users(
 
 pub async fn export_metrics(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<PeriodQuery>,
 ) -> Result<String, StatusCode> {
     let period = q.period.unwrap_or_else(|| "30d".to_string());
     let csv = app
         .admin_service
-        .export_metrics_csv(&period)
+        .export_metrics_csv(ctx.workspace_id, &period)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(csv)
@@ -242,10 +261,11 @@ pub async fn export_metrics(
 
 pub async fn list_users(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<WorkspaceUserRow>>, StatusCode> {
     let users = app
         .admin_service
-        .list_users()
+        .list_users(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(users))
@@ -253,11 +273,12 @@ pub async fn list_users(
 
 pub async fn get_user(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<WorkspaceUserRow>, StatusCode> {
     let user = app
         .admin_service
-        .get_user(id)
+        .get_user(ctx.workspace_id, id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(user))
@@ -272,10 +293,11 @@ pub struct InviteUserBody {
 
 pub async fn invite_user(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<InviteUserBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .invite_user(&body.email, &body.role_id, &body.project_ids)
+        .invite_user(ctx.workspace_id, &body.email, &body.role_id, &body.project_ids)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -315,19 +337,25 @@ pub async fn activate_user(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-pub async fn export_users(State(app): State<AppState>) -> Result<String, StatusCode> {
+pub async fn export_users(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
+) -> Result<String, StatusCode> {
     let csv = app
         .admin_service
-        .export_users_csv()
+        .export_users_csv(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(csv)
 }
 
-pub async fn list_roles(State(app): State<AppState>) -> Result<Json<Vec<RoleRow>>, StatusCode> {
+pub async fn list_roles(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
+) -> Result<Json<Vec<RoleRow>>, StatusCode> {
     let roles = app
         .admin_service
-        .list_roles()
+        .list_roles(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(roles))
@@ -335,11 +363,12 @@ pub async fn list_roles(State(app): State<AppState>) -> Result<Json<Vec<RoleRow>
 
 pub async fn create_role(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<RoleRow>, StatusCode> {
     let role = app
         .admin_service
-        .create_role(body)
+        .create_role(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(role))
@@ -370,10 +399,11 @@ pub async fn delete_role(
 
 pub async fn list_sessions(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<SessionRow>>, StatusCode> {
     let sessions = app
         .admin_service
-        .list_active_sessions()
+        .list_active_sessions(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(sessions))
@@ -397,11 +427,12 @@ pub struct TerminateAllBody {
 
 pub async fn terminate_all_sessions(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<TerminateAllBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let count = app
         .admin_service
-        .terminate_all_sessions(body.except_session_id)
+        .terminate_all_sessions(ctx.workspace_id, body.except_session_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "terminated": count })))
@@ -409,11 +440,12 @@ pub async fn terminate_all_sessions(
 
 pub async fn query_audit_logs(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<AuditPage>, StatusCode> {
     let page = app
         .admin_service
-        .query_audit_logs(q.into())
+        .query_audit_logs(ctx.workspace_id, q.into())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(page))
@@ -421,11 +453,12 @@ pub async fn query_audit_logs(
 
 pub async fn export_audit_csv(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Query(q): Query<AuditQuery>,
 ) -> Result<String, StatusCode> {
     let csv = app
         .admin_service
-        .export_audit_csv(q.into())
+        .export_audit_csv(ctx.workspace_id, q.into())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(csv)
@@ -433,10 +466,11 @@ pub async fn export_audit_csv(
 
 pub async fn compliance_report(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<ComplianceReport>, StatusCode> {
     let report = app
         .admin_service
-        .generate_compliance_report()
+        .generate_compliance_report(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(report))
@@ -444,10 +478,11 @@ pub async fn compliance_report(
 
 pub async fn list_models(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<AiModelConfig>>, StatusCode> {
     let models = app
         .admin_service
-        .list_models()
+        .list_models(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(models))
@@ -467,10 +502,11 @@ pub async fn update_model_config(
 
 pub async fn list_lora_adapters(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<LoraAdapter>>, StatusCode> {
     let adapters = app
         .admin_service
-        .list_lora_adapters()
+        .list_lora_adapters(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(adapters))
@@ -478,10 +514,11 @@ pub async fn list_lora_adapters(
 
 pub async fn deploy_lora(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(version): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .deploy_lora(&version)
+        .deploy_lora(ctx.workspace_id, &version)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true, "version": version })))
@@ -489,10 +526,11 @@ pub async fn deploy_lora(
 
 pub async fn rollback_lora(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(version): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .rollback_lora(&version)
+        .rollback_lora(ctx.workspace_id, &version)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -500,10 +538,11 @@ pub async fn rollback_lora(
 
 pub async fn start_training(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<TrainingBatch>, StatusCode> {
     let batch = app
         .admin_service
-        .start_training_batch()
+        .start_training_batch(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(batch))
@@ -511,19 +550,23 @@ pub async fn start_training(
 
 pub async fn training_status(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<TrainingBatch>, StatusCode> {
     let batch = app
         .admin_service
-        .get_latest_training_batch()
+        .get_latest_training_batch(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(batch))
 }
 
-pub async fn get_rag_config(State(app): State<AppState>) -> Result<Json<RagConfig>, StatusCode> {
+pub async fn get_rag_config(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
+) -> Result<Json<RagConfig>, StatusCode> {
     let config = app
         .admin_service
-        .get_rag_config()
+        .get_rag_config(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(config))
@@ -531,10 +574,11 @@ pub async fn get_rag_config(State(app): State<AppState>) -> Result<Json<RagConfi
 
 pub async fn update_rag_config(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<RagConfig>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .update_rag_config(body)
+        .update_rag_config(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -542,10 +586,11 @@ pub async fn update_rag_config(
 
 pub async fn list_api_keys(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<ApiKeyRow>>, StatusCode> {
     let keys = app
         .admin_service
-        .list_api_keys()
+        .list_api_keys(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(keys))
@@ -561,11 +606,13 @@ pub struct CreateApiKeyBody {
 
 pub async fn create_api_key(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<CreateApiKeyBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let (key_row, raw_key) = app
         .admin_service
         .create_api_key(
+            ctx.workspace_id,
             &body.name,
             &body.permissions,
             body.rate_limit,
@@ -615,10 +662,11 @@ pub async fn revoke_api_key(
 
 pub async fn list_webhooks(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<WebhookRow>>, StatusCode> {
     let wh = app
         .admin_service
-        .list_webhooks()
+        .list_webhooks(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(wh))
@@ -638,11 +686,12 @@ pub async fn get_webhook(
 
 pub async fn create_webhook(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<WebhookRow>, StatusCode> {
     let wh = app
         .admin_service
-        .create_webhook(body)
+        .create_webhook(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(wh))
@@ -684,10 +733,11 @@ pub async fn test_webhook(
 
 pub async fn pause_webhook(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .set_webhook_status(id, "paused")
+        .set_webhook_status(ctx.workspace_id, id, "paused")
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -695,10 +745,11 @@ pub async fn pause_webhook(
 
 pub async fn activate_webhook(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .set_webhook_status(id, "active")
+        .set_webhook_status(ctx.workspace_id, id, "active")
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -735,10 +786,11 @@ pub async fn retry_delivery(
 
 pub async fn list_resource_limits(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<ResourceLimitRow>>, StatusCode> {
     let limits = app
         .admin_service
-        .list_resource_limits()
+        .list_resource_limits(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(limits))
@@ -746,11 +798,12 @@ pub async fn list_resource_limits(
 
 pub async fn create_resource_limit(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<ResourceLimitRow>, StatusCode> {
     let limit = app
         .admin_service
-        .create_resource_limit(body)
+        .create_resource_limit(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(limit))
@@ -781,10 +834,11 @@ pub async fn delete_resource_limit(
 
 pub async fn get_settings(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<WorkspaceSettings>, StatusCode> {
     let settings = app
         .admin_service
-        .get_settings()
+        .get_settings(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(settings))
@@ -792,19 +846,23 @@ pub async fn get_settings(
 
 pub async fn update_settings(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<WorkspaceSettings>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .update_settings(body)
+        .update_settings(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-pub async fn get_branding(State(app): State<AppState>) -> Result<Json<BrandingConfig>, StatusCode> {
+pub async fn get_branding(
+    State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
+) -> Result<Json<BrandingConfig>, StatusCode> {
     let branding = app
         .admin_service
-        .get_branding()
+        .get_branding(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(branding))
@@ -812,10 +870,11 @@ pub async fn get_branding(State(app): State<AppState>) -> Result<Json<BrandingCo
 
 pub async fn update_branding(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<BrandingConfig>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .update_branding(body)
+        .update_branding(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -828,11 +887,12 @@ pub struct VerifyDomainBody {
 
 pub async fn verify_domain(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<VerifyDomainBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let status = app
         .admin_service
-        .verify_domain(&body.domain)
+        .verify_domain(ctx.workspace_id, &body.domain)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "status": status })))
@@ -840,10 +900,11 @@ pub async fn verify_domain(
 
 pub async fn get_retention_policies(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<RetentionPolicy>>, StatusCode> {
     let policies = app
         .admin_service
-        .get_retention_policies()
+        .get_retention_policies(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(policies))
@@ -851,10 +912,11 @@ pub async fn get_retention_policies(
 
 pub async fn update_retention_policies(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<Vec<RetentionPolicy>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .update_retention_policies(body)
+        .update_retention_policies(ctx.workspace_id, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -862,11 +924,12 @@ pub async fn update_retention_policies(
 
 pub async fn manual_purge(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Path(data_type): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let count = app
         .admin_service
-        .manual_purge(&data_type)
+        .manual_purge(ctx.workspace_id, &data_type)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "deleted": count })))
@@ -874,10 +937,11 @@ pub async fn manual_purge(
 
 pub async fn list_deletion_requests(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
 ) -> Result<Json<Vec<DeletionRequest>>, StatusCode> {
     let requests = app
         .admin_service
-        .list_deletion_requests()
+        .list_deletion_requests(ctx.workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(requests))
@@ -891,10 +955,11 @@ pub struct CreateDeletionRequestBody {
 
 pub async fn create_deletion_request(
     State(app): State<AppState>,
+    Extension(ctx): Extension<WorkspaceContext>,
     Json(body): Json<CreateDeletionRequestBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     app.admin_service
-        .create_deletion_request(&body.target_name, &body.r#type)
+        .create_deletion_request(ctx.workspace_id, &body.target_name, &body.r#type)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "ok": true })))
