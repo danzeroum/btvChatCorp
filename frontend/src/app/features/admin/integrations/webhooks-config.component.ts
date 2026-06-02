@@ -175,7 +175,70 @@ export interface Webhook {
         </div>
       </div>
     }
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .webhooks-config { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-ghost { background:none; border:1px solid #e2e8f0; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px; color:#374151; }
+    .btn-sm { padding:5px 12px; font-size:12px; }
+    .events-reference { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 24px; margin-bottom:16px; }
+    .events-reference h3 { font-size:13px; font-weight:600; color:#0f172a; margin:0 0 10px; }
+    .events-chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .event-chip { background:#eef2ff; color:#4338ca; font-size:11px; padding:3px 10px; border-radius:20px; cursor:default; }
+    .webhooks-list { display:flex; flex-direction:column; gap:12px; }
+    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .webhook-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .webhook-card.failing { border-left:3px solid #ef4444; }
+    .webhook-card.paused { border-left:3px solid #f59e0b; opacity:0.8; }
+    .webhook-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+    .webhook-identity { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .webhook-name { font-size:14px; font-weight:600; color:#0f172a; }
+    .webhook-url { font-family:monospace; font-size:12px; color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:2px 8px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+    .status-badge.active { background:#dcfce7; color:#15803d; }
+    .status-badge.paused { background:#fef3c7; color:#92400e; }
+    .status-badge.failing { background:#fee2e2; color:#991b1b; }
+    .webhook-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .webhook-stats { display:flex; flex-wrap:wrap; gap:20px; }
+    .stat { display:flex; flex-direction:column; gap:4px; min-width:140px; }
+    .stat-label { font-size:11px; color:#94a3b8; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; }
+    .stat span:last-child { font-size:12px; color:#374151; }
+    .event-chips-sm { display:flex; flex-wrap:wrap; gap:4px; }
+    .event-chip-sm { background:#f1f5f9; color:#64748b; font-size:11px; padding:2px 6px; border-radius:4px; }
+    .success-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; }
+    .success-fill { height:100%; background:#16a34a; border-radius:3px; }
+    .success-fill.warn { background:#f59e0b; }
+    .success-fill.critical { background:#ef4444; }
+    .error { color:#ef4444; font-weight:500; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
+    .modal { background:#fff; border-radius:12px; padding:24px; width:540px; max-width:90vw; max-height:90vh; overflow-y:auto; }
+    .webhook-modal { width:600px; }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .modal-header h2 { font-size:16px; font-weight:600; color:#0f172a; margin:0; }
+    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color:#94a3b8; }
+    .modal-body { display:flex; flex-direction:column; gap:0; }
+    .modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    .form-group { display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }
+    .form-group label { font-size:12px; font-weight:500; color:#374151; }
+    .form-group input, .form-group select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; width:100%; box-sizing:border-box; margin-top:4px; }
+    .form-group input:focus, .form-group select:focus { outline:none; border-color:#6366f1; }
+    .secret-input { display:flex; gap:8px; align-items:center; margin-top:4px; }
+    .secret-input input { flex:1; margin:0; }
+    .secret-input button { padding:7px 12px; border:1px solid #e2e8f0; border-radius:8px; background:#f1f5f9; cursor:pointer; font-size:12px; white-space:nowrap; }
+    .events-checkboxes { display:flex; flex-direction:column; gap:6px; margin-top:6px; max-height:200px; overflow-y:auto; }
+    .checkbox-label { display:flex; align-items:flex-start; gap:6px; font-size:13px; color:#374151; cursor:pointer; font-weight:normal; padding:2px 0; }
+    .checkbox-label input[type="checkbox"] { cursor:pointer; margin-top:2px; flex-shrink:0; }
+    .evt-desc { font-size:11px; color:#94a3b8; display:block; }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  `]
 })
 export class WebhooksConfigComponent implements OnInit {
   private http = inject(HttpClient);
