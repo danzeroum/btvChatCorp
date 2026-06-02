@@ -5,6 +5,12 @@ use uuid::Uuid;
 
 use crate::chunker::Chunk;
 
+/// Remove bytes nulos (`\x00`) — o Postgres rejeita NUL em colunas `text`
+/// (alguns PDFs deixam `\x00` no texto extraído). Aplicado antes de persistir.
+fn sanitize_pg(s: &str) -> String {
+    s.replace('\u{0}', "")
+}
+
 /// Respons\u{e1}vel por persistir chunks no PostgreSQL e vetores no Qdrant.
 pub struct Indexer {
     qdrant_url: String,
@@ -37,6 +43,8 @@ impl Indexer {
         // 1. Persiste no PostgreSQL
         for (chunk, _embedding) in chunks.iter().zip(embeddings.iter()) {
             let point_id = Uuid::new_v4().to_string();
+            let section = sanitize_pg(&chunk.section);
+            let content = sanitize_pg(&chunk.content);
             sqlx::query(
                 r#"
                 INSERT INTO document_chunks
@@ -55,8 +63,8 @@ impl Indexer {
             .bind(doc_id)
             .bind(workspace_id)
             .bind(chunk.index as i32)
-            .bind(&chunk.section)
-            .bind(&chunk.content)
+            .bind(&section)
+            .bind(&content)
             .bind(chunk.tokens as i32)
             .bind(&point_id)
             .execute(db)
@@ -78,9 +86,9 @@ impl Indexer {
                         "doc_id":       doc_id.to_string(),
                         "workspace_id": workspace_id.to_string(),
                         "filename":     filename,
-                        "section":      &chunk.section,
+                        "section":      sanitize_pg(&chunk.section),
                         "chunk_index":  chunk.index,
-                        "content":      &chunk.content,
+                        "content":      sanitize_pg(&chunk.content),
                     }
                 })
             })
