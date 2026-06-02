@@ -102,7 +102,9 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
         <div class="kpi-card">
           <span class="kpi-label">Conversas · {{ selectedPeriod }}</span>
           <span class="kpi-value">{{ metrics().totalChatRequests | number }}</span>
-          <span class="kpi-trend up">↑ 6%</span>
+          @if (metrics().chatsTrendPercent) {
+            <span class="kpi-trend up">↑ {{ metrics().chatsTrendPercent | number:'1.0-0' }}%</span>
+          }
         </div>
         <div class="kpi-card gpu-kpi-card">
           <span class="kpi-label">
@@ -684,23 +686,23 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
 
   systemHealth = signal<SystemHealth>({
     status: 'healthy', api: true, database: true, vectorDb: true, gpu: true,
-    embedding: true, uptimePercent: 99.98, avgLatencyMs: 240
+    embedding: true, uptimePercent: 0, avgLatencyMs: 0
   });
 
   gpuInfo = signal<GpuInfo>({
-    model: 'A100', utilization: 73, vramUsed: 58, vramTotal: 80,
-    vramPercent: 72.5, temperature: 68, requestsPerMin: 42,
-    activeModel: 'Llama 3.3 70B', activeLoraVersion: '', provider: 'Local'
+    model: '—', utilization: 0, vramUsed: 0, vramTotal: 0,
+    vramPercent: 0, temperature: 0, requestsPerMin: 0,
+    activeModel: '—', activeLoraVersion: '', provider: '—'
   });
 
   metrics = signal<UsageMetrics>({
-    period: '30d', totalTokensInput: 5_200_000, totalTokensOutput: 2_300_000,
-    totalTokensEmbedding: 0, totalChatRequests: 2447, totalRagQueries: 0,
+    period: '30d', totalTokensInput: 0, totalTokensOutput: 0,
+    totalTokensEmbedding: 0, totalChatRequests: 0, totalRagQueries: 0,
     totalDocumentsProcessed: 0, totalTrainingRuns: 0, gpuHoursInference: 0,
     gpuHoursTraining: 0, gpuHoursEmbedding: 0, storageDocumentsGb: 0,
     storageVectorDbGb: 0, storageModelsGb: 0,
-    estimatedCost: { gpu: 3180, storage: 640, network: 390, total: 4210, currency: 'BRL' },
-    byProject: [], byUser: [], activeUsers: 342, chatsTrendPercent: 18
+    estimatedCost: { gpu: 0, storage: 0, network: 0, total: 0, currency: 'BRL' },
+    byProject: [], byUser: [], activeUsers: 0, chatsTrendPercent: 0
   });
 
   topProjects = signal<any[]>([]);
@@ -749,7 +751,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   adminAreas = [
     {
       title: 'Usuários & papéis',
-      desc: '342 membros · 3 papéis',
+      desc: 'Gerencie membros, convites e permissões',
       route: '/admin/users',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/>
@@ -760,7 +762,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     },
     {
       title: 'Auditoria',
-      desc: '1.204 eventos · 30d',
+      desc: 'Histórico de ações e eventos de segurança',
       route: '/admin/audit',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <rect x="2" y="1" width="11" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
@@ -769,15 +771,15 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     },
     {
       title: 'Compliance LGPD',
-      desc: 'Score 92 · 1 pendência',
+      desc: 'Retenção de dados e exclusão sob demanda',
       route: '/admin/settings',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M9 1.5L3 4.5V9c0 4 3 7 6 8 3-1 6-4 6-8V4.5L9 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
       </svg>`,
     },
     {
-      title: 'Modelos & LoRA',
-      desc: 'Llama 3.3 70B ativo',
+      title: 'Modelos & IA',
+      desc: 'Modelos de inferência e treinamento automático',
       route: '/admin/ai-config',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <path d="M9 2L16 6V12L9 16L2 12V6L9 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -786,7 +788,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     },
     {
       title: 'Uso & custos',
-      desc: 'R$ 4.210 · 30d',
+      desc: 'Tokens, GPU e custo estimado',
       route: '/admin/billing',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <rect x="1.5" y="5" width="15" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
@@ -796,7 +798,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     },
     {
       title: 'API Keys',
-      desc: '3 chaves ativas',
+      desc: 'Gerencie chaves de acesso à API',
       route: '/admin/api-keys',
       icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <circle cx="6" cy="8" r="3.5" stroke="currentColor" stroke-width="1.5"/>
