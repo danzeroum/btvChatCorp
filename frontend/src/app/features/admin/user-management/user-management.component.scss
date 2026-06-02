@@ -471,3 +471,13 @@
 }
 .form-group input:focus, .form-group select:focus { outline: none; border-color: #6366f1; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+.invite-toast {
+  padding: 12px 18px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  color: #15803d;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
