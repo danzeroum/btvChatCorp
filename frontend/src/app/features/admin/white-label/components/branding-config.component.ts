@@ -2,6 +2,16 @@ import { Component, OnInit, ViewChild, ElementRef, inject, signal } from '@angul
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService, AdminBrandingConfig } from '../../admin.service';
+import { BrandTheme, FeatureFlags, DEFAULT_THEME } from '../../../white-label/models/branding.model';
+
+type ThemeColorKey = 'primary' | 'secondary' | 'background' | 'surface' | 'textPrimary' | 'border';
+
+const FONT_PRESETS = [
+  { label: 'Inter (padrão)', value: 'Inter, system-ui, sans-serif' },
+  { label: 'Roboto', value: 'Roboto, sans-serif' },
+  { label: 'Poppins', value: 'Poppins, sans-serif' },
+  { label: 'DM Sans', value: 'DM Sans, sans-serif' },
+];
 
 @Component({
   selector: 'app-branding-config',
@@ -36,8 +46,13 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
             <h2>&#127970; Identidade</h2>
             <div class="form-grid">
               <div class="form-group">
-                <label>Nome do produto
-                  <input [(ngModel)]="form.productName" placeholder="Minha Plataforma AI" />
+                <label>Nome da plataforma
+                  <input [(ngModel)]="form.platformName" placeholder="Minha Plataforma AI" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Nome da empresa
+                  <input [(ngModel)]="form.companyName" placeholder="Acme Corp" />
                 </label>
               </div>
               <div class="form-group">
@@ -45,11 +60,16 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
                   <input [(ngModel)]="form.tagline" placeholder="Inteligência artificial para sua empresa" />
                 </label>
               </div>
+              <div class="form-group">
+                <label>Subdomínio
+                  <input [(ngModel)]="form.subdomain" placeholder="acme" />
+                </label>
+              </div>
             </div>
 
             <div class="upload-row">
               <div class="upload-group">
-                <label>Logo (PNG/SVG, 200×60px recomendado)</label>
+                <label>Logo principal (PNG/SVG, 200×60px)</label>
                 <div class="upload-area" (click)="uploadLogo()">
                   @if (form.logoUrl) {
                     <img [src]="form.logoUrl" alt="Logo" class="logo-preview" />
@@ -81,8 +101,8 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
                 <div class="color-field">
                   <label>{{ col.label }}</label>
                   <div class="color-input-row">
-                    <input type="color" [(ngModel)]="form[col.key]" />
-                    <input type="text" [(ngModel)]="form[col.key]" placeholder="#6366f1" maxlength="7" />
+                    <input type="color" [ngModel]="form.theme[col.key]" (ngModelChange)="form.theme[col.key] = $event" />
+                    <input type="text" [ngModel]="form.theme[col.key]" (ngModelChange)="form.theme[col.key] = $event" placeholder="#6366f1" maxlength="7" />
                   </div>
                 </div>
               }
@@ -103,21 +123,60 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
             <h2>&#128295; Tipografia</h2>
             <div class="form-group">
               <label>Família tipográfica
-                <select [(ngModel)]="form.fontFamily">
-                  <option value="inter">Inter (padrão)</option>
-                  <option value="roboto">Roboto</option>
-                  <option value="poppins">Poppins</option>
-                  <option value="custom">Personalizada (URL)</option>
+                <select [ngModel]="selectedFont()" (ngModelChange)="onFontChange($event)">
+                  @for (f of fontPresets; track f.value) {
+                    <option [value]="f.value">{{ f.label }}</option>
+                  }
+                  <option value="__custom__">Personalizada (URL)</option>
                 </select>
               </label>
             </div>
-            @if (form.fontFamily === 'custom') {
+            @if (selectedFont() === '__custom__') {
               <div class="form-group" style="margin-top:12px">
-                <label>URL da fonte (Google Fonts ou CDN)
-                  <input [(ngModel)]="form.customFontUrl" placeholder="https://fonts.googleapis.com/css2?family=..." />
+                <label>Fonte personalizada (CSS font-family ou URL Google Fonts)
+                  <input [(ngModel)]="form.theme.fontFamily" placeholder="'MyFont', sans-serif" />
                 </label>
               </div>
             }
+          </section>
+
+          <!-- Chat -->
+          <section class="settings-section">
+            <h2>&#128172; Personalização do Chat</h2>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Nome do assistente
+                  <input [(ngModel)]="form.chatBotName" placeholder="Assistente" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Mensagem de boas-vindas
+                  <input [(ngModel)]="form.chatWelcomeMessage" placeholder="Olá! Como posso ajudar?" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Placeholder do campo de mensagem
+                  <input [(ngModel)]="form.chatPlaceholder" placeholder="Digite sua mensagem..." />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- Email -->
+          <section class="settings-section">
+            <h2>&#128231; Email Transacional</h2>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Nome do remetente
+                  <input [(ngModel)]="form.emailFromName" placeholder="Suporte Acme" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Email do remetente
+                  <input type="email" [(ngModel)]="form.emailFromAddress" placeholder="no-reply@acme.com" />
+                </label>
+              </div>
+            </div>
           </section>
 
           <!-- Domínio -->
@@ -148,6 +207,28 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
             }
           </section>
 
+          <!-- Página de Login -->
+          <section class="settings-section">
+            <h2>&#128274; Página de Login</h2>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Título da página
+                  <input [(ngModel)]="form.loginPageTitle" placeholder="Bem-vindo de volta!" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Subtítulo
+                  <input [(ngModel)]="form.loginPageSubtitle" placeholder="Acesse seu workspace" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>URL da imagem de fundo
+                  <input type="url" [(ngModel)]="form.loginBackgroundUrl" placeholder="https://..." />
+                </label>
+              </div>
+            </div>
+          </section>
+
           <!-- Legais e suporte -->
           <section class="settings-section">
             <h2>&#128196; Links Legais e Suporte</h2>
@@ -167,27 +248,26 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
                   <input type="email" [(ngModel)]="form.supportEmail" placeholder="suporte@empresa.com" />
                 </label>
               </div>
+              <div class="form-group">
+                <label>URL de suporte
+                  <input type="url" [(ngModel)]="form.supportUrl" placeholder="https://suporte.empresa.com" />
+                </label>
+              </div>
             </div>
-            <label class="toggle-label" style="margin-top:16px">
-              <div>
-                <span>Exibir "Powered by BTV Chat"</span>
-                <span class="hint">Desative para white-label completo</span>
-              </div>
-              <div class="toggle-switch" [class.on]="form.showPoweredBy" (click)="form.showPoweredBy = !form.showPoweredBy">
-                <div class="toggle-knob"></div>
-              </div>
-            </label>
           </section>
 
           <!-- Features visíveis -->
           <section class="settings-section">
-            <h2>&#128270; Seções Visíveis</h2>
-            <p class="hint" style="margin-bottom:12px">Controle quais seções do admin ficam visíveis para os administradores dos workspaces revendidos.</p>
+            <h2>&#128270; Funcionalidades Visíveis</h2>
+            <p class="hint" style="margin-bottom:12px">Controle quais seções e funcionalidades ficam disponíveis no workspace.</p>
             <div class="toggle-group">
               @for (feat of featureToggles; track feat.key) {
                 <label class="toggle-label">
-                  <span>{{ feat.label }}</span>
-                  <div class="toggle-switch" [class.on]="form.features?.[feat.key]" (click)="toggleFeature(feat.key)">
+                  <div>
+                    <span>{{ feat.label }}</span>
+                    @if (feat.hint) { <span class="hint">{{ feat.hint }}</span> }
+                  </div>
+                  <div class="toggle-switch" [class.on]="form.featureFlags[feat.key]" (click)="toggleFeature(feat.key)">
                     <div class="toggle-knob"></div>
                   </div>
                 </label>
@@ -203,7 +283,7 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
               @if (form.logoUrl) {
                 <img [src]="form.logoUrl" alt="Logo" class="preview-logo" />
               } @else {
-                <span class="preview-product-name">{{ form.productName || 'Seu Produto' }}</span>
+                <span class="preview-product-name">{{ form.platformName || 'Sua Plataforma' }}</span>
               }
             </div>
             <div class="preview-body">
@@ -220,7 +300,7 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
               </div>
             </div>
             <div class="preview-footer">
-              @if (form.showPoweredBy) {
+              @if (form.featureFlags.showPoweredBy) {
                 <span>Powered by BTV Chat</span>
               }
             </div>
@@ -256,9 +336,9 @@ import { AdminService, AdminBrandingConfig } from '../../admin.service';
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 12px; font-weight: 500; color: #374151; }
-    .form-group input, .form-group select { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #1e293b; width: 100%; box-sizing: border-box; margin-top: 4px; }
-    .form-group input:focus, .form-group select:focus { outline: none; border-color: #6366f1; }
+    .form-group label { font-size: 12px; font-weight: 500; color: #374151; display: flex; flex-direction: column; gap: 4px; }
+    .form-group input, .form-group select { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #1e293b; width: 100%; box-sizing: border-box; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
 
     .upload-row { display: flex; gap: 20px; margin-top: 16px; }
     .upload-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
@@ -332,42 +412,74 @@ export class BrandingConfigComponent implements OnInit {
   previewMode = signal(false);
   verifying   = signal(false);
 
+  readonly fontPresets = FONT_PRESETS;
+
   form: AdminBrandingConfig = {
-    productName: '', tagline: '', logoUrl: null, faviconUrl: null,
-    primaryColor: '#6366f1', secondaryColor: '#8b5cf6', accentColor: '#06b6d4',
-    bgColor: '#0f172a', surfaceColor: '#1e293b', textColor: '#f1f5f9',
-    fontFamily: 'inter', customFontUrl: '',
-    customDomain: null, customDomainStatus: null,
-    showPoweredBy: true, termsUrl: '', privacyUrl: '', supportEmail: '',
-    features: { showTrainingSection: true, showBillingSection: true, showApiKeys: true, showAuditLog: true },
+    platformName: '', tagline: '', companyName: '',
+    logoUrl: null, logoMarkUrl: null, logoDarkUrl: null, faviconUrl: null,
+    theme: {
+      ...DEFAULT_THEME,
+      primary: '#6366f1', primaryHover: '#4f46e5', primaryLight: '#e0e7ff',
+      secondary: '#8b5cf6',
+      background: '#0f172a', surface: '#1e293b', surfaceHover: '#334155',
+      sidebarBg: '#0f172a', sidebarText: '#e2e8f0', sidebarActiveItem: '#6366f1',
+      textPrimary: '#f1f5f9', textSecondary: '#94a3b8', textOnPrimary: '#ffffff',
+      border: '#334155', borderFocus: '#6366f1',
+      success: '#22c55e', warning: '#f59e0b', error: '#ef4444', info: '#3b82f6',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontFamilyMono: 'JetBrains Mono, monospace',
+      borderRadius: '8px', borderRadiusLg: '12px', borderRadiusFull: '9999px',
+      customCss: '',
+    },
+    subdomain: '', customDomain: null, customDomainStatus: null,
+    emailFromName: '', emailFromAddress: null,
+    chatWelcomeMessage: 'Olá! Como posso ajudar?',
+    chatPlaceholder: 'Digite sua mensagem...',
+    chatBotName: 'Assistente', chatBotAvatar: null,
+    loginPageTitle: null, loginPageSubtitle: null, loginBackgroundUrl: null,
+    termsUrl: null, privacyUrl: null, supportEmail: null, supportUrl: null,
+    featureFlags: {
+      showPoweredBy: true,
+      showDocumentation: true,
+      showChangelog: true,
+      showSupportChat: false,
+      allowUserRegistration: false,
+    },
   };
 
-  colorFields: { key: keyof AdminBrandingConfig; label: string }[] = [
-    { key: 'primaryColor',   label: 'Cor primária' },
-    { key: 'secondaryColor', label: 'Cor secundária' },
-    { key: 'accentColor',    label: 'Destaque' },
-    { key: 'bgColor',        label: 'Background' },
-    { key: 'surfaceColor',   label: 'Surface/Cards' },
-    { key: 'textColor',      label: 'Texto' },
+  colorFields: { key: ThemeColorKey; label: string }[] = [
+    { key: 'primary',     label: 'Cor primária' },
+    { key: 'secondary',   label: 'Cor secundária' },
+    { key: 'background',  label: 'Background' },
+    { key: 'surface',     label: 'Surface/Cards' },
+    { key: 'textPrimary', label: 'Texto' },
+    { key: 'border',      label: 'Bordas' },
   ];
 
   colorPresets = [
-    { name: 'BTV Dark',   primary: '#6366f1', secondary: '#8b5cf6', accent: '#06b6d4', bg: '#0f172a', surface: '#1e293b', text: '#f1f5f9' },
-    { name: 'Ocean',      primary: '#0ea5e9', secondary: '#06b6d4', accent: '#10b981', bg: '#0c1a2e', surface: '#1a2d4a', text: '#e0f2fe' },
-    { name: 'Forest',     primary: '#16a34a', secondary: '#15803d', accent: '#84cc16', bg: '#0a1a0f', surface: '#14291c', text: '#dcfce7' },
-    { name: 'Sunset',     primary: '#f97316', secondary: '#ef4444', accent: '#fbbf24', bg: '#1a0a00', surface: '#2d1500', text: '#fff7ed' },
-    { name: 'Light',      primary: '#6366f1', secondary: '#8b5cf6', accent: '#06b6d4', bg: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
+    { name: 'BTV Dark',   primary: '#6366f1', secondary: '#8b5cf6', background: '#0f172a', surface: '#1e293b', textPrimary: '#f1f5f9' },
+    { name: 'Ocean',      primary: '#0ea5e9', secondary: '#06b6d4', background: '#0c1a2e', surface: '#1a2d4a', textPrimary: '#e0f2fe' },
+    { name: 'Forest',     primary: '#16a34a', secondary: '#15803d', background: '#0a1a0f', surface: '#14291c', textPrimary: '#dcfce7' },
+    { name: 'Sunset',     primary: '#f97316', secondary: '#ef4444', background: '#1a0a00', surface: '#2d1500', textPrimary: '#fff7ed' },
+    { name: 'Light',      primary: '#6366f1', secondary: '#8b5cf6', background: '#f8fafc', surface: '#ffffff', textPrimary: '#0f172a' },
   ];
 
-  featureToggles: { key: keyof AdminBrandingConfig['features']; label: string }[] = [
-    { key: 'showTrainingSection', label: 'Seção de Treinamento de IA' },
-    { key: 'showBillingSection',  label: 'Seção de Billing e Custos' },
-    { key: 'showApiKeys',         label: 'Gerenciamento de API Keys' },
-    { key: 'showAuditLog',        label: 'Logs de Auditoria' },
+  featureToggles: { key: keyof FeatureFlags; label: string; hint?: string }[] = [
+    { key: 'showPoweredBy',         label: 'Exibir "Powered by BTV Chat"', hint: 'Desative para white-label completo' },
+    { key: 'showDocumentation',     label: 'Link de Documentação' },
+    { key: 'showChangelog',         label: 'Changelog / Novidades' },
+    { key: 'showSupportChat',       label: 'Chat de Suporte ao Vivo' },
+    { key: 'allowUserRegistration', label: 'Auto-cadastro de usuários' },
   ];
+
+  selectedFont = signal('Inter, system-ui, sans-serif');
 
   ngOnInit(): void {
-    this.adminService.getBranding().subscribe((b) => { this.form = { ...b }; });
+    this.adminService.getBranding().subscribe((b) => {
+      this.form = { ...b };
+      const preset = FONT_PRESETS.find(f => f.value === b.theme?.fontFamily);
+      this.selectedFont.set(preset ? preset.value : '__custom__');
+    });
   }
 
   save(): void {
@@ -379,16 +491,26 @@ export class BrandingConfigComponent implements OnInit {
   }
 
   applyPreset(preset: typeof this.colorPresets[0]): void {
-    this.form.primaryColor   = preset.primary;
-    this.form.secondaryColor = preset.secondary;
-    this.form.accentColor    = preset.accent;
-    this.form.bgColor        = preset.bg;
-    this.form.surfaceColor   = preset.surface;
-    this.form.textColor      = preset.text;
+    this.form.theme = {
+      ...this.form.theme,
+      primary: preset.primary,
+      secondary: preset.secondary,
+      background: preset.background,
+      surface: preset.surface,
+      textPrimary: preset.textPrimary,
+    };
+  }
+
+  onFontChange(value: string): void {
+    this.selectedFont.set(value);
+    if (value !== '__custom__') {
+      this.form.theme = { ...this.form.theme, fontFamily: value };
+    }
   }
 
   previewCssVars(): string {
-    return `--primary:${this.form.primaryColor};--secondary:${this.form.secondaryColor};--accent:${this.form.accentColor};--bg:${this.form.bgColor};--surface:${this.form.surfaceColor};--text:${this.form.textColor}`;
+    const t = this.form.theme;
+    return `--primary:${t.primary};--secondary:${t.secondary};--bg:${t.background};--surface:${t.surface};--text:${t.textPrimary}`;
   }
 
   uploadLogo():    void { this.logoInputEl?.nativeElement.click(); }
@@ -419,7 +541,9 @@ export class BrandingConfigComponent implements OnInit {
     });
   }
 
-  toggleFeature(key: keyof AdminBrandingConfig['features']): void {
-    if (this.form.features) this.form.features[key] = !this.form.features[key];
+  toggleFeature(key: keyof FeatureFlags): void {
+    if (this.form.featureFlags) {
+      this.form.featureFlags = { ...this.form.featureFlags, [key]: !this.form.featureFlags[key] };
+    }
   }
 }
