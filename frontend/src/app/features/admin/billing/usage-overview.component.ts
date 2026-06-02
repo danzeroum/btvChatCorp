@@ -162,7 +162,54 @@ interface DailyUsage {
         </div>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .usage-overview { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .header-actions { display:flex; gap:10px; align-items:center; }
+    .header-actions select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:7px 12px; font-size:13px; color:#1e293b; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; margin-bottom:16px; }
+    .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .kpi-icon { font-size:22px; }
+    .kpi-value { font-size:22px; font-weight:700; color:#0f172a; }
+    .kpi-label { font-size:12px; color:#64748b; text-align:center; }
+    .chart-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+    .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .chart-header h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0; }
+    .chart-tabs { display:flex; gap:6px; }
+    .chart-tabs button { padding:5px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#f1f5f9; color:#374151; font-size:12px; cursor:pointer; }
+    .chart-tabs button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .bar-chart { display:flex; align-items:flex-end; gap:4px; height:120px; padding-bottom:20px; position:relative; }
+    .bar-col { display:flex; flex-direction:column; align-items:center; flex:1; min-width:0; }
+    .bar-wrap { flex:1; display:flex; align-items:flex-end; width:100%; }
+    .bar-fill { width:100%; background:#6366f1; border-radius:3px 3px 0 0; min-height:2px; transition:height 0.3s; }
+    .bar-label { font-size:10px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .chart-empty { text-align:center; padding:40px; color:#94a3b8; font-size:14px; width:100%; }
+    .section-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    .table-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .table-card h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .table-card table { width:100%; border-collapse:collapse; }
+    .table-card th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
+    .table-card td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
+    .table-card tr:hover td { background:#f8fafc; }
+    .percent-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; display:inline-block; width:60px; margin-right:8px; vertical-align:middle; }
+    .percent-fill { height:100%; background:#6366f1; border-radius:3px; }
+    .avatar-xs { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:#e0e7ff; color:#4338ca; font-size:10px; font-weight:600; margin-right:6px; }
+    .storage-section { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+    .storage-section h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .storage-bars { display:flex; flex-direction:column; gap:12px; }
+    .storage-item { display:flex; align-items:center; gap:12px; font-size:13px; color:#374151; }
+    .storage-item > span:first-child { width:100px; flex-shrink:0; }
+    .storage-bar { flex:1; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
+    .storage-fill { height:100%; border-radius:4px; }
+    .storage-fill.docs { background:#6366f1; }
+    .storage-fill.vector { background:#10b981; }
+    .storage-fill.models { background:#f59e0b; }
+  `]
 })
 export class UsageOverviewComponent implements OnInit {
   private http = inject(HttpClient);

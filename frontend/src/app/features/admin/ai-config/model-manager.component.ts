@@ -153,6 +153,50 @@ import { AdminService, AiModel, LoraAdapter } from '../admin.service';
       </section>
     </div>
   `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .model-manager { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .subtitle { font-size:13px; color:#64748b; margin:0; }
+    .alert-error { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:8px; padding:10px 16px; margin-bottom:16px; font-size:13px; }
+    .section { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+    .section h2 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .loading { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .models-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; }
+    .model-card { border:1px solid #e2e8f0; border-radius:10px; padding:16px; background:#f8fafc; }
+    .model-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .model-name { font-size:14px; font-weight:600; color:#0f172a; }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+    .status-badge.active { background:#dcfce7; color:#15803d; }
+    .status-badge.inactive { background:#f1f5f9; color:#64748b; }
+    .status-badge.loading { background:#fef3c7; color:#92400e; }
+    .model-meta { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    .meta-item { font-size:12px; color:#64748b; background:#f1f5f9; border-radius:6px; padding:3px 8px; }
+    .lora-active { font-size:12px; color:#6366f1; background:#eef2ff; border-radius:6px; padding:4px 10px; margin-bottom:10px; }
+    .model-actions { display:flex; gap:8px; }
+    .btn-sm { padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; border:1px solid #e2e8f0; background:#f1f5f9; color:#374151; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-sm.btn-primary { padding:5px 12px; font-size:12px; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .adapters-table { width:100%; border-collapse:collapse; }
+    .adapters-table th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
+    .adapters-table td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
+    .adapters-table tr:hover td { background:#f8fafc; }
+    .lora-status { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+    .lora-status.pending { background:#fef3c7; color:#92400e; }
+    .lora-status.ready { background:#dcfce7; color:#15803d; }
+    .lora-status.active { background:#dbeafe; color:#1d4ed8; }
+    .lora-status.deprecated { background:#fee2e2; color:#991b1b; }
+    .positive { color:#15803d; font-weight:500; }
+    .negative { color:#991b1b; font-weight:500; }
+    .base { color:#94a3b8; }
+    .model-select { background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:4px 8px; font-size:12px; color:#1e293b; margin-right:6px; }
+    .active-indicator { font-size:12px; color:#15803d; }
+  `],
 })
 export class ModelManagerComponent implements OnInit, OnDestroy {
   private adminSvc  = inject(AdminService);

@@ -149,7 +149,45 @@ import { UsageMetrics } from '../../../core/models/admin.model';
         </table>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .cost-breakdown { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .header-actions select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:7px 12px; font-size:13px; color:#1e293b; }
+    .total-cost-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:24px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; }
+    .total-display { display:flex; flex-direction:column; gap:4px; }
+    .total-label { font-size:12px; color:#64748b; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; }
+    .total-value { font-size:32px; font-weight:700; color:#0f172a; }
+    .total-period { font-size:12px; color:#94a3b8; }
+    .cost-vs-month { display:flex; flex-direction:column; gap:4px; }
+    .cost-vs-month p { margin:0; font-size:13px; color:#64748b; }
+    .breakdown-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-bottom:16px; }
+    .breakdown-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .breakdown-card.gpu { border-left:3px solid #6366f1; }
+    .breakdown-card.storage { border-left:3px solid #10b981; }
+    .breakdown-card.network { border-left:3px solid #f59e0b; }
+    .breakdown-header { display:flex; align-items:flex-start; gap:12px; margin-bottom:16px; }
+    .breakdown-icon { font-size:22px; flex-shrink:0; }
+    .breakdown-header h3 { font-size:14px; font-weight:600; color:#0f172a; margin:0 0 2px; }
+    .breakdown-header p { font-size:12px; color:#64748b; margin:0; }
+    .breakdown-total { margin-left:auto; font-size:16px; font-weight:700; color:#0f172a; white-space:nowrap; }
+    .breakdown-items { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+    .breakdown-item { display:flex; justify-content:space-between; font-size:12px; color:#374151; }
+    .breakdown-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; margin-bottom:6px; }
+    .breakdown-fill { height:100%; background:#6366f1; border-radius:3px; }
+    .breakdown-percent { font-size:11px; color:#94a3b8; }
+    .table-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
+    .table-card h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .table-card table { width:100%; border-collapse:collapse; }
+    .table-card th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
+    .table-card td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
+    .table-card tr:hover td { background:#f8fafc; }
+    .percent-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; display:inline-block; width:60px; margin-right:8px; vertical-align:middle; }
+    .percent-fill { height:100%; background:#6366f1; border-radius:3px; }
+  `]
 })
 export class CostBreakdownComponent implements OnInit {
   private http = inject(HttpClient);
