@@ -159,7 +159,71 @@ interface ApiEndpoint {
         </div>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .api-docs { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .header-actions { display:flex; gap:10px; align-items:center; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; text-decoration:none; display:inline-flex; align-items:center; }
+    .api-info-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 24px; margin-bottom:16px; display:flex; flex-wrap:wrap; gap:20px; }
+    .info-item { display:flex; align-items:center; gap:8px; }
+    .info-label { font-size:12px; color:#64748b; font-weight:500; }
+    .info-item code { font-family:monospace; font-size:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:2px 8px; color:#1e293b; }
+    .docs-layout { display:flex; gap:16px; align-items:flex-start; }
+    .docs-nav { width:260px; flex-shrink:0; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; position:sticky; top:16px; max-height:80vh; overflow-y:auto; }
+    .docs-search { width:100%; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:7px 10px; font-size:12px; color:#1e293b; box-sizing:border-box; margin-bottom:12px; }
+    .docs-search:focus { outline:none; border-color:#6366f1; }
+    .nav-group { margin-bottom:4px; }
+    .nav-group-title { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; font-size:12px; font-weight:600; color:#0f172a; cursor:pointer; border-radius:6px; }
+    .nav-group-title:hover { background:#f8fafc; }
+    .nav-endpoint { display:flex; align-items:center; gap:6px; width:100%; background:none; border:none; cursor:pointer; padding:5px 8px; font-size:12px; color:#374151; border-radius:6px; text-align:left; }
+    .nav-endpoint:hover { background:#f8fafc; }
+    .nav-endpoint.active { background:#eef2ff; color:#6366f1; }
+    .docs-content { flex:1; min-width:0; }
+    .docs-welcome { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:40px 24px; text-align:center; }
+    .docs-welcome h2 { font-size:18px; font-weight:600; color:#0f172a; margin:0 0 8px; }
+    .docs-welcome p { font-size:13px; color:#64748b; margin:0 0 20px; }
+    .quick-stats { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+    .quick-stat { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 20px; text-align:center; }
+    .stat-count { font-size:20px; font-weight:700; color:#6366f1; display:block; }
+    .stat-tag { font-size:11px; color:#64748b; }
+    .endpoint-detail { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:24px; }
+    .endpoint-title { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+    .endpoint-path { font-family:monospace; font-size:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:4px 10px; color:#1e293b; }
+    .public-badge { background:#dcfce7; color:#15803d; font-size:11px; padding:2px 8px; border-radius:20px; font-weight:500; }
+    .endpoint-detail h2 { font-size:16px; font-weight:600; color:#0f172a; margin:0 0 8px; }
+    .endpoint-detail p { font-size:13px; color:#64748b; margin:0 0 16px; }
+    .method-badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+    .method-badge.get { background:#dbeafe; color:#1d4ed8; }
+    .method-badge.post { background:#dcfce7; color:#15803d; }
+    .method-badge.put { background:#fef3c7; color:#92400e; }
+    .method-badge.patch { background:#fce7f3; color:#9d174d; }
+    .method-badge.delete { background:#fee2e2; color:#991b1b; }
+    .method-badge.lg { font-size:13px; padding:5px 12px; }
+    .scopes-section, .code-section, .try-it-section { margin-top:16px; }
+    .scopes-section h4, .code-section h4, .try-it-section h4 { font-size:13px; font-weight:600; color:#0f172a; margin:0 0 8px; }
+    .scope-chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .scope-chip { background:#eef2ff; color:#4338ca; font-size:11px; padding:3px 10px; border-radius:20px; font-weight:500; }
+    pre { background:#1e293b; color:#e2e8f0; border-radius:8px; padding:14px 16px; font-size:12px; overflow:auto; margin:0; }
+    pre code { font-family:monospace; }
+    .try-it-section { border-top:1px solid #e2e8f0; padding-top:16px; }
+    .try-it-form { display:flex; flex-direction:column; gap:10px; }
+    .try-it-url, .try-it-auth { display:flex; align-items:center; gap:8px; }
+    .url-input, .apikey-input { flex:1; background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; font-family:monospace; }
+    .url-input:focus, .apikey-input:focus { outline:none; border-color:#6366f1; }
+    .try-it-form textarea { background:#1e293b; color:#e2e8f0; border:none; border-radius:8px; padding:12px; font-size:12px; font-family:monospace; resize:vertical; }
+    .try-it-response { margin-top:12px; border-radius:8px; overflow:hidden; }
+    .response-status { padding:6px 14px; font-size:12px; font-weight:600; }
+    .try-it-response.success .response-status { background:#dcfce7; color:#15803d; }
+    .try-it-response.error .response-status { background:#fee2e2; color:#991b1b; }
+    .try-it-response pre { border-radius:0 0 8px 8px; }
+  `]
 })
 export class ApiDocsViewerComponent implements OnInit {
   private http      = inject(HttpClient);
