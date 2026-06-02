@@ -1,41 +1,7 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
-
-interface BrandingConfig {
-  // Identidade visual
-  productName: string;
-  tagline: string;
-  logoUrl: string | null;
-  faviconUrl: string | null;
-  // Cores
-  primaryColor: string;      // hex
-  secondaryColor: string;
-  accentColor: string;
-  bgColor: string;
-  surfaceColor: string;
-  textColor: string;
-  // Tipografia
-  fontFamily: 'inter' | 'roboto' | 'poppins' | 'custom';
-  customFontUrl: string;
-  // Domínio
-  customDomain: string | null;
-  customDomainStatus: 'pending' | 'verified' | 'failed' | null;
-  // Footer / Legais
-  showPoweredBy: boolean;
-  termsUrl: string;
-  privacyUrl: string;
-  supportEmail: string;
-  // Funcionalidades visíveis
-  features: {
-    showTrainingSection: boolean;
-    showBillingSection: boolean;
-    showApiKeys: boolean;
-    showAuditLog: boolean;
-  };
-}
+import { AdminService, AdminBrandingConfig } from '../../admin.service';
 
 @Component({
   selector: 'app-branding-config',
@@ -121,7 +87,6 @@ interface BrandingConfig {
                 </div>
               }
             </div>
-            <!-- Presets -->
             <div class="color-presets">
               <span>Presets:</span>
               @for (preset of colorPresets; track preset.name) {
@@ -147,7 +112,7 @@ interface BrandingConfig {
               </label>
             </div>
             @if (form.fontFamily === 'custom') {
-              <div class="form-group">
+              <div class="form-group" style="margin-top:12px">
                 <label>URL da fonte (Google Fonts ou CDN)
                   <input [(ngModel)]="form.customFontUrl" placeholder="https://fonts.googleapis.com/css2?family=..." />
                 </label>
@@ -203,7 +168,7 @@ interface BrandingConfig {
                 </label>
               </div>
             </div>
-            <label class="toggle-label">
+            <label class="toggle-label" style="margin-top:16px">
               <div>
                 <span>Exibir "Powered by BTV Chat"</span>
                 <span class="hint">Desative para white-label completo</span>
@@ -217,7 +182,7 @@ interface BrandingConfig {
           <!-- Features visíveis -->
           <section class="settings-section">
             <h2>&#128270; Seções Visíveis</h2>
-            <p class="hint">Controle quais seções do admin ficam visíveis para os administradores dos workspaces revendidos.</p>
+            <p class="hint" style="margin-bottom:12px">Controle quais seções do admin ficam visíveis para os administradores dos workspaces revendidos.</p>
             <div class="toggle-group">
               @for (feat of featureToggles; track feat.key) {
                 <label class="toggle-label">
@@ -263,18 +228,111 @@ interface BrandingConfig {
         }
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display: block; font-family: Inter, system-ui, sans-serif; }
+    .branding-config { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .page-header h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+    .page-header p { font-size: 13px; color: #64748b; margin: 0; }
+    .header-actions { display: flex; gap: 10px; }
+
+    .btn-primary { padding: 8px 18px; background: #6366f1; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: 13px; }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .toast.success { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+
+    .branding-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .branding-layout.preview-open { grid-template-columns: 1fr 380px; align-items: start; }
+
+    .settings-section { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; }
+    .settings-section h2 { font-size: 15px; font-weight: 600; color: #0f172a; margin: 0 0 16px; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 12px; font-weight: 500; color: #374151; }
+    .form-group input, .form-group select { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #1e293b; width: 100%; box-sizing: border-box; margin-top: 4px; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #6366f1; }
+
+    .upload-row { display: flex; gap: 20px; margin-top: 16px; }
+    .upload-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .upload-group > label { font-size: 12px; font-weight: 500; color: #374151; }
+    .upload-area { border: 2px dashed #cbd5e1; border-radius: 10px; min-height: 80px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; color: #94a3b8; transition: border-color 0.15s; padding: 12px; text-align: center; }
+    .upload-area:hover { border-color: #6366f1; color: #6366f1; }
+    .favicon-area { min-height: 60px; max-width: 80px; }
+    .logo-preview { max-height: 56px; max-width: 100%; object-fit: contain; }
+    .favicon-preview { width: 32px; height: 32px; object-fit: contain; }
+    .hidden { display: none; }
+
+    .color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+    .color-field { display: flex; flex-direction: column; gap: 4px; }
+    .color-field > label { font-size: 12px; font-weight: 500; color: #374151; }
+    .color-input-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+    .color-input-row input[type="color"] { width: 36px; height: 32px; padding: 2px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+    .color-input-row input[type="text"] { flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: monospace; color: #1e293b; }
+    .color-input-row input[type="text"]:focus { outline: none; border-color: #6366f1; }
+
+    .color-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .color-presets > span { font-size: 12px; color: #94a3b8; font-weight: 500; }
+    .preset-btn { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #e2e8f0; border-radius: 20px; background: #f8fafc; font-size: 12px; color: #374151; cursor: pointer; }
+    .preset-btn:hover { border-color: #6366f1; color: #6366f1; }
+    .preset-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+    .domain-input { display: flex; gap: 8px; margin-top: 4px; }
+    .domain-input input { flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #1e293b; }
+    .domain-input input:focus { outline: none; border-color: #6366f1; }
+    .domain-status { padding: 8px 14px; border-radius: 8px; font-size: 13px; margin-top: 10px; }
+    .domain-status.verified { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+    .domain-status.pending { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .domain-status.failed { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    .dns-instructions { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-top: 10px; font-size: 12px; color: #374151; }
+    .dns-instructions p { margin: 0 0 8px; }
+    .dns-instructions code { display: block; background: #1e293b; color: #e2e8f0; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; }
+
+    .hint { font-size: 11px; color: #94a3b8; }
+    .toggle-group { display: flex; flex-direction: column; gap: 12px; }
+    .toggle-label { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
+    .toggle-label > div { display: flex; flex-direction: column; gap: 2px; }
+    .toggle-label > div span:first-child, .toggle-label > span { font-size: 13px; color: #0f172a; }
+    .toggle-switch { width: 40px; height: 22px; border-radius: 11px; background: #e2e8f0; position: relative; flex-shrink: 0; transition: background 0.2s; }
+    .toggle-switch.on { background: #6366f1; }
+    .toggle-knob { width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 3px; left: 3px; transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .toggle-switch.on .toggle-knob { left: 21px; }
+
+    .branding-preview { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: var(--bg, #0f172a); position: sticky; top: 80px; display: flex; flex-direction: column; max-height: 600px; }
+    .preview-header { padding: 12px 16px; background: var(--surface, #1e293b); border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; min-height: 48px; }
+    .preview-product-name { font-size: 15px; font-weight: 700; color: var(--text, #f1f5f9); }
+    .preview-logo { max-height: 30px; }
+    .preview-body { display: flex; flex: 1; overflow: hidden; min-height: 260px; }
+    .preview-sidebar { width: 150px; background: var(--surface, #1e293b); padding: 10px 8px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,0.06); }
+    .preview-nav-item { padding: 7px 10px; border-radius: 7px; font-size: 11px; color: rgba(255,255,255,0.55); cursor: default; }
+    .preview-nav-item.active { background: var(--primary, #6366f1); color: #fff; }
+    .preview-content { flex: 1; background: var(--bg, #0f172a); padding: 14px; overflow: hidden; }
+    .preview-chat { display: flex; flex-direction: column; gap: 10px; }
+    .preview-msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; font-size: 11px; line-height: 1.5; }
+    .preview-msg.user { align-self: flex-end; background: var(--primary, #6366f1); color: #fff; }
+    .preview-msg.ai { align-self: flex-start; background: var(--surface, #1e293b); color: var(--text, #f1f5f9); }
+    .preview-footer { padding: 8px 16px; background: var(--surface, #1e293b); text-align: center; font-size: 11px; color: rgba(255,255,255,0.35); border-top: 1px solid rgba(255,255,255,0.06); min-height: 32px; display: flex; align-items: center; justify-content: center; }
+  `]
 })
 export class BrandingConfigComponent implements OnInit {
-  private http      = inject(HttpClient);
-  private sanitizer = inject(DomSanitizer);
+  private adminService = inject(AdminService);
+
+  @ViewChild('logoInput')    private logoInputEl!:    ElementRef<HTMLInputElement>;
+  @ViewChild('faviconInput') private faviconInputEl!: ElementRef<HTMLInputElement>;
 
   saving      = signal(false);
   saved       = signal(false);
   previewMode = signal(false);
   verifying   = signal(false);
 
-  form: BrandingConfig = {
+  form: AdminBrandingConfig = {
     productName: '', tagline: '', logoUrl: null, faviconUrl: null,
     primaryColor: '#6366f1', secondaryColor: '#8b5cf6', accentColor: '#06b6d4',
     bgColor: '#0f172a', surfaceColor: '#1e293b', textColor: '#f1f5f9',
@@ -284,7 +342,7 @@ export class BrandingConfigComponent implements OnInit {
     features: { showTrainingSection: true, showBillingSection: true, showApiKeys: true, showAuditLog: true },
   };
 
-  colorFields: { key: keyof BrandingConfig; label: string }[] = [
+  colorFields: { key: keyof AdminBrandingConfig; label: string }[] = [
     { key: 'primaryColor',   label: 'Cor primária' },
     { key: 'secondaryColor', label: 'Cor secundária' },
     { key: 'accentColor',    label: 'Destaque' },
@@ -301,7 +359,7 @@ export class BrandingConfigComponent implements OnInit {
     { name: 'Light',      primary: '#6366f1', secondary: '#8b5cf6', accent: '#06b6d4', bg: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
   ];
 
-  featureToggles: { key: keyof BrandingConfig['features']; label: string }[] = [
+  featureToggles: { key: keyof AdminBrandingConfig['features']; label: string }[] = [
     { key: 'showTrainingSection', label: 'Seção de Treinamento de IA' },
     { key: 'showBillingSection',  label: 'Seção de Billing e Custos' },
     { key: 'showApiKeys',         label: 'Gerenciamento de API Keys' },
@@ -309,12 +367,12 @@ export class BrandingConfigComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.http.get<BrandingConfig>('/api/admin/branding').subscribe((b) => { this.form = { ...b }; });
+    this.adminService.getBranding().subscribe((b) => { this.form = { ...b }; });
   }
 
   save(): void {
     this.saving.set(true);
-    this.http.put('/api/admin/branding', this.form).subscribe({
+    this.adminService.updateBranding(this.form).subscribe({
       next: () => { this.saving.set(false); this.saved.set(true); setTimeout(() => this.saved.set(false), 3000); },
       error: () => this.saving.set(false),
     });
@@ -333,8 +391,8 @@ export class BrandingConfigComponent implements OnInit {
     return `--primary:${this.form.primaryColor};--secondary:${this.form.secondaryColor};--accent:${this.form.accentColor};--bg:${this.form.bgColor};--surface:${this.form.surfaceColor};--text:${this.form.textColor}`;
   }
 
-  uploadLogo(): void { (document.querySelector('#logoInput') as HTMLInputElement)?.click(); }
-  uploadFavicon(): void { (document.querySelector('#faviconInput') as HTMLInputElement)?.click(); }
+  uploadLogo():    void { this.logoInputEl?.nativeElement.click(); }
+  uploadFavicon(): void { this.faviconInputEl?.nativeElement.click(); }
 
   onLogoChange(event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -355,14 +413,13 @@ export class BrandingConfigComponent implements OnInit {
   verifyDomain(): void {
     if (!this.form.customDomain) return;
     this.verifying.set(true);
-    this.http.post<{ status: BrandingConfig['customDomainStatus'] }>('/api/admin/branding/verify-domain', { domain: this.form.customDomain })
-      .subscribe({
-        next: (res) => { this.form.customDomainStatus = res.status; this.verifying.set(false); },
-        error: () => { this.form.customDomainStatus = 'failed'; this.verifying.set(false); },
-      });
+    this.adminService.verifyBrandingDomain(this.form.customDomain).subscribe({
+      next: (res) => { this.form.customDomainStatus = res.status; this.verifying.set(false); },
+      error: () => { this.form.customDomainStatus = 'failed'; this.verifying.set(false); },
+    });
   }
 
-  toggleFeature(key: keyof BrandingConfig['features']): void {
+  toggleFeature(key: keyof AdminBrandingConfig['features']): void {
     if (this.form.features) this.form.features[key] = !this.form.features[key];
   }
 }
