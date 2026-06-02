@@ -92,6 +92,14 @@ export interface SsoConfig {
   defaultRole: string;
 }
 
+// Espelha RagConfig (backend, camelCase).
+export interface RagConfig {
+  topK: number;
+  chunkSize: number;
+  chunkOverlap: number;
+  similarityThreshold: number;
+}
+
 // ─── AI / LoRA models ─────────────────────────────────────────────
 
 export interface AiModel {
@@ -196,6 +204,15 @@ export class AdminService {
   // Backend expõe revogação como PATCH /api-keys/:id/revoke.
   revokeApiKey(id: string): Observable<unknown> {
     return this.http.patch(`${BASE}/api-keys/${id}/revoke`, {});
+  }
+
+  // RAG config — GET/PUT /admin/ai/rag-config
+  getRagConfig(): Observable<RagConfig> {
+    return this.http.get<RagConfig>(`${BASE}/ai/rag-config`);
+  }
+
+  updateRagConfig(cfg: RagConfig): Observable<unknown> {
+    return this.http.put(`${BASE}/ai/rag-config`, cfg);
   }
 
   // SSO

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewChecked, signal, computed } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -62,6 +62,12 @@ function genId(): string {
           <button class="new-btn" (click)="newChat()" title="Nova conversa">+</button>
         </div>
 
+        <div class="search-box">
+          <input class="search-input" type="text"
+                 [(ngModel)]="searchQuery" (input)="onSearch()"
+                 placeholder="🔍 Buscar conversas...">
+        </div>
+
         <div class="chat-list">
           @for (c of recentChats(); track c.id) {
             <div class="chat-row" [class.active]="activeChatId() === c.id">
@@ -123,7 +129,11 @@ function genId(): string {
             @if (messages().length > 0) {
               <button class="header-btn" (click)="exportConversation()" title="Exportar conversa (.txt)">⬇️ Exportar</button>
             }
-            <span class="model-badge">Ollama</span>
+            <span class="ollama-badge" [class]="ollamaStatus()"
+                  [title]="'Ollama ' + ollamaStatus()">
+              <span class="ollama-dot"></span>
+              {{ ollamaStatus() === 'online' ? 'Ollama online' : ollamaStatus() === 'offline' ? 'Ollama offline' : 'Ollama' }}
+            </span>
           </div>
         </header>
 
@@ -267,6 +277,16 @@ function genId(): string {
     .header-btn { padding:5px 10px; border-radius:8px; background:#1e1e1e; border:1px solid #333; color:#aaa; cursor:pointer; font-size:0.75rem; font-weight:500; }
     .header-btn:hover { background:#2a2a2a; color:#fff; }
     .model-badge { font-size:0.72rem; background:#1e3a5f; color:#60a5fa; padding:3px 10px; border-radius:999px; }
+    .search-box { padding:8px 10px 4px; }
+    .search-input { width:100%; box-sizing:border-box; background:#1a1a1a; border:1px solid #2a2a2a; border-radius:8px; color:#ddd; font-size:0.8rem; padding:7px 10px; }
+    .search-input:focus { outline:none; border-color:#6366f1; }
+    .search-input::placeholder { color:#666; }
+    .ollama-badge { display:inline-flex; align-items:center; gap:6px; font-size:0.72rem; padding:3px 10px; border-radius:999px; background:#1a1a1a; border:1px solid #2a2a2a; color:#999; }
+    .ollama-badge .ollama-dot { width:7px; height:7px; border-radius:50%; background:#666; }
+    .ollama-badge.online { color:#4ade80; border-color:#22c55e44; }
+    .ollama-badge.online .ollama-dot { background:#22c55e; }
+    .ollama-badge.offline { color:#f87171; border-color:#ef444444; }
+    .ollama-badge.offline .ollama-dot { background:#ef4444; }
     .pin-indicator { margin-right:3px; }
     .chat-action-btn.pinned { color:#f59e0b; opacity:1; }
     .messages-area { flex:1; overflow-y:auto; padding:1.5rem; display:flex; flex-direction:column; gap:1rem; }
@@ -337,7 +357,7 @@ function genId(): string {
     .chip-remove:hover { color:#fff; }
   `]
 })
-export class ChatContainerComponent implements OnInit, AfterViewChecked {
+export class ChatContainerComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('msgArea') private msgArea!: ElementRef<HTMLDivElement>;
 
   private http = inject(HttpClient);
@@ -376,6 +396,14 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
   availableModels = signal<ModelItem[]>([]);
   selectedModel   = signal<string>('');
 
+  // Busca no histórico (debounced)
+  searchQuery = '';
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Status do Ollama (polling)
+  ollamaStatus = signal<'online' | 'offline' | 'unknown'>('unknown');
+  private ollamaTimer: ReturnType<typeof setInterval> | null = null;
+
   private scrollNeeded = false;
 
   ngOnInit() {
@@ -388,18 +416,38 @@ export class ChatContainerComponent implements OnInit, AfterViewChecked {
         if (!this.selectedModel()) this.selectedModel.set(default_model);
       },
     });
+    this.checkOllama();
+    this.ollamaTimer = setInterval(() => this.checkOllama(), 30_000);
+  }
+
+  ngOnDestroy() {
+    if (this.ollamaTimer) clearInterval(this.ollamaTimer);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
   ngAfterViewChecked() {
     if (this.scrollNeeded) { this.scrollToBottom(); this.scrollNeeded = false; }
   }
 
-  loadRecentChats() {
+  checkOllama() {
+    this.http.get<{ status: string }>('/api/v1/health/ollama').subscribe({
+      next: r => this.ollamaStatus.set(r.status === 'online' ? 'online' : 'offline'),
+      error: () => this.ollamaStatus.set('offline'),
+    });
+  }
+
+  loadRecentChats(q?: string) {
     this.loadingChats.set(true);
-    this.http.get<ChatSummary[]>('/api/v1/chats').subscribe({
+    const url = q && q.trim() ? `/api/v1/chats?q=${encodeURIComponent(q.trim())}` : '/api/v1/chats';
+    this.http.get<ChatSummary[]>(url).subscribe({
       next: chats => { this.recentChats.set(this.sortChats(chats ?? [])); this.loadingChats.set(false); },
       error: () => this.loadingChats.set(false),
     });
+  }
+
+  onSearch() {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => this.loadRecentChats(this.searchQuery), 300);
   }
 
   /** Fixados primeiro, depois por data de atualização (espelha o ORDER BY do backend). */
