@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { BrandTheme, FeatureFlags } from '../white-label/models/branding.model';
 
 const BASE = `${environment.apiUrl}/admin`;
 // environment.apiUrl já inclui o prefixo `/api/v1`; não duplicar o segmento aqui.
@@ -270,28 +271,29 @@ export class AdminService {
 }
 
 export interface AdminBrandingConfig {
-  productName: string;
+  platformName: string;
   tagline: string;
+  companyName: string;
   logoUrl: string | null;
+  logoMarkUrl: string | null;
+  logoDarkUrl: string | null;
   faviconUrl: string | null;
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  bgColor: string;
-  surfaceColor: string;
-  textColor: string;
-  fontFamily: 'inter' | 'roboto' | 'poppins' | 'custom';
-  customFontUrl: string;
+  theme: BrandTheme;
+  subdomain: string;
   customDomain: string | null;
   customDomainStatus: 'pending' | 'verified' | 'failed' | null;
-  showPoweredBy: boolean;
-  termsUrl: string;
-  privacyUrl: string;
-  supportEmail: string;
-  features: {
-    showTrainingSection: boolean;
-    showBillingSection: boolean;
-    showApiKeys: boolean;
-    showAuditLog: boolean;
-  };
+  emailFromName: string;
+  emailFromAddress: string | null;
+  chatWelcomeMessage: string;
+  chatPlaceholder: string;
+  chatBotName: string;
+  chatBotAvatar: string | null;
+  loginPageTitle: string | null;
+  loginPageSubtitle: string | null;
+  loginBackgroundUrl: string | null;
+  termsUrl: string | null;
+  privacyUrl: string | null;
+  supportEmail: string | null;
+  supportUrl: string | null;
+  featureFlags: FeatureFlags;
 }
