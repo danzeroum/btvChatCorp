@@ -702,15 +702,20 @@ export class ChatContainerComponent implements OnInit, OnDestroy, AfterViewCheck
     this.scrollNeeded = true;
 
     let chatId = this.activeChatId();
+    const wasNewChat = !chatId;
     if (!chatId) {
       try {
+        // Cria sem título: o backend assume 'Nova conversa', permitindo que o
+        // título automático (gerado pelo LLM) dispare. Exibimos um rótulo
+        // otimista (trecho da mensagem) só na UI até o título real chegar.
         const newChat = await firstValueFrom(
-          this.http.post<{ id: string; title: string }>('/api/v1/chats', { title: text.slice(0, 60) })
+          this.http.post<{ id: string; title: string }>('/api/v1/chats', {})
         );
         chatId = newChat!.id;
         this.activeChatId.set(chatId);
-        this.currentTitle.set(newChat!.title || text.slice(0, 40));
-        this.recentChats.update(list => [newChat as ChatSummary, ...list]);
+        const optimistic = text.slice(0, 40);
+        this.currentTitle.set(optimistic);
+        this.recentChats.update(list => [{ ...(newChat as ChatSummary), title: optimistic }, ...list]);
       } catch {
         this.sending.set(false);
         this.messages.update(m => [...m, {
@@ -758,8 +763,29 @@ export class ChatContainerComponent implements OnInit, OnDestroy, AfterViewCheck
             ? { ...c, updated_at: new Date().toISOString() } : c
           ))
         );
+        // Na 1ª troca, o backend gera o título de forma assíncrona — busca leve
+        // (só este chat) para refletir o título gerado quando ficar pronto.
+        if (wasNewChat && chatId) this.refreshTitle(chatId);
       },
     });
+  }
+
+  /** Busca leve do título gerado pelo backend (apenas este chat). Só faz upgrade:
+   *  nunca rebaixa para 'Nova conversa' caso o LLM ainda esteja gerando. */
+  private refreshTitle(chatId: string, attempt = 0) {
+    setTimeout(() => {
+      this.http.get<{ title: string }>(`/api/v1/chats/${chatId}`).subscribe({
+        next: chat => {
+          const t = chat?.title?.trim();
+          if (t && t !== 'Nova conversa') {
+            this.recentChats.update(list => list.map(c => c.id === chatId ? { ...c, title: t } : c));
+            if (this.activeChatId() === chatId) this.currentTitle.set(t);
+          } else if (attempt < 1) {
+            this.refreshTitle(chatId, attempt + 1); // LLM ainda gerando — tenta de novo
+          }
+        },
+      });
+    }, attempt === 0 ? 1500 : 3000);
   }
 
   sendFeedback(msg: Message, value: 1 | -1) {
