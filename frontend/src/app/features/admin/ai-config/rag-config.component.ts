@@ -52,20 +52,22 @@ import { AdminService, RagConfig } from '../admin.service';
   styles: [`
     .rag-config { max-width: 640px; }
     .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
-    .page-header h1 { margin:0 0 4px; font-size:1.4rem; }
-    .page-header p { margin:0; color:#888; font-size:0.85rem; }
-    .btn-secondary { padding:8px 14px; border-radius:8px; background:#1e1e1e; border:1px solid #2a2a2a; color:#bbb; text-decoration:none; font-size:0.85rem; }
-    .form-card { background:#161616; border:1px solid #2a2a2a; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:18px; }
+    .page-header h1 { margin:0 0 4px; font-size:1.4rem; color:#0f172a; }
+    .page-header p { margin:0; color:#64748b; font-size:0.85rem; }
+    .btn-secondary { padding:8px 14px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; color:#374151; text-decoration:none; font-size:0.85rem; }
+    .btn-secondary:hover { border-color:#6366f1; color:#6366f1; }
+    .form-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:22px; display:flex; flex-direction:column; gap:18px; }
     .form-group { display:flex; flex-direction:column; gap:6px; }
-    .form-group label { font-size:0.85rem; font-weight:600; }
-    .hint { font-weight:400; color:#777; font-size:0.78rem; }
-    .form-group input { background:#0d0d0d; border:1px solid #333; border-radius:8px; padding:9px 12px; color:#fff; font-size:0.9rem; }
-    .form-group input:focus { outline:none; border-color:#6366f1; }
+    .form-group label { font-size:0.85rem; font-weight:600; color:#374151; }
+    .hint { font-weight:400; color:#94a3b8; font-size:0.78rem; }
+    .form-group input { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 12px; color:#1e293b; font-size:0.9rem; }
+    .form-group input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,0.08); }
     .actions { display:flex; align-items:center; gap:12px; margin-top:4px; }
     .btn-primary { padding:9px 18px; border-radius:8px; background:#6366f1; color:#fff; border:none; cursor:pointer; font-weight:600; font-size:0.88rem; }
+    .btn-primary:hover { background:#4f46e5; }
     .btn-primary:disabled { opacity:.5; cursor:not-allowed; }
-    .saved-msg { color:#22c55e; font-size:0.85rem; }
-    .loading { color:#777; }
+    .saved-msg { color:#16a34a; font-size:0.85rem; }
+    .loading { color:#64748b; }
   `],
 })
 export class RagConfigComponent implements OnInit {
