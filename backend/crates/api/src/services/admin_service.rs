@@ -881,10 +881,12 @@ impl AdminService {
         let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, BrandingConfig>(
             r#"SELECT
-                   product_name, tagline, logo_url, favicon_url,
-                   primary_color, secondary_color, accent_color, bg_color, surface_color, text_color,
-                   font_family, custom_font_url, custom_domain, custom_domain_status,
-                   show_powered_by, terms_url, privacy_url, support_email, features
+                   platform_name, tagline, company_name, logo_url, logo_mark_url, logo_dark_url,
+                   favicon_url, theme, subdomain, custom_domain, custom_domain_status,
+                   email_from_name, email_from_address, chat_welcome_message, chat_placeholder,
+                   chat_bot_name, chat_bot_avatar, login_page_title, login_page_subtitle,
+                   login_background_url, terms_url, privacy_url, support_email, support_url,
+                   feature_flags
                FROM branding_configs
                WHERE workspace_id = current_setting('app.workspace_id')::uuid
                LIMIT 1"#
@@ -895,31 +897,40 @@ impl AdminService {
     pub async fn update_branding(&self, workspace_id: Uuid, config: BrandingConfig) -> Result<()> {
         let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query(
-            r#"UPDATE branding_configs SET product_name=$2, tagline=$3, logo_url=$4, favicon_url=$5,
-               primary_color=$6, secondary_color=$7, accent_color=$8, bg_color=$9, surface_color=$10,
-               text_color=$11, font_family=$12, custom_font_url=$13, custom_domain=$14,
-               show_powered_by=$15, terms_url=$16, privacy_url=$17, support_email=$18,
-               features=$19, updated_at=NOW()
+            r#"UPDATE branding_configs SET
+                   platform_name=$2, tagline=$3, company_name=$4, logo_url=$5, logo_mark_url=$6,
+                   logo_dark_url=$7, favicon_url=$8, theme=$9, subdomain=$10, custom_domain=$11,
+                   email_from_name=$12, email_from_address=$13, chat_welcome_message=$14,
+                   chat_placeholder=$15, chat_bot_name=$16, chat_bot_avatar=$17,
+                   login_page_title=$18, login_page_subtitle=$19, login_background_url=$20,
+                   terms_url=$21, privacy_url=$22, support_email=$23, support_url=$24,
+                   feature_flags=$25, updated_at=NOW()
                WHERE workspace_id = current_setting('app.workspace_id')::uuid"#
         )
-        .bind(&config.product_name)
-        .bind(&config.tagline)
-        .bind(&config.logo_url)
-        .bind(&config.favicon_url)
-        .bind(&config.primary_color)
-        .bind(&config.secondary_color)
-        .bind(&config.accent_color)
-        .bind(&config.bg_color)
-        .bind(&config.surface_color)
-        .bind(&config.text_color)
-        .bind(&config.font_family)
-        .bind(&config.custom_font_url)
-        .bind(&config.custom_domain)
-        .bind(config.show_powered_by)
-        .bind(&config.terms_url)
-        .bind(&config.privacy_url)
-        .bind(&config.support_email)
-        .bind(serde_json::to_value(&config.features)?)
+        .bind(&config.platform_name)        // $2
+        .bind(&config.tagline)               // $3
+        .bind(&config.company_name)          // $4
+        .bind(&config.logo_url)              // $5
+        .bind(&config.logo_mark_url)         // $6
+        .bind(&config.logo_dark_url)         // $7
+        .bind(&config.favicon_url)           // $8
+        .bind(&config.theme)                 // $9
+        .bind(&config.subdomain)             // $10
+        .bind(&config.custom_domain)         // $11
+        .bind(&config.email_from_name)       // $12
+        .bind(&config.email_from_address)    // $13
+        .bind(&config.chat_welcome_message)  // $14
+        .bind(&config.chat_placeholder)      // $15
+        .bind(&config.chat_bot_name)         // $16
+        .bind(&config.chat_bot_avatar)       // $17
+        .bind(&config.login_page_title)      // $18
+        .bind(&config.login_page_subtitle)   // $19
+        .bind(&config.login_background_url)  // $20
+        .bind(&config.terms_url)             // $21
+        .bind(&config.privacy_url)           // $22
+        .bind(&config.support_email)         // $23
+        .bind(&config.support_url)           // $24
+        .bind(&config.feature_flags)         // $25
         .execute(&mut *conn).await?;
         Ok(())
     }
