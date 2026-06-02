@@ -25,6 +25,16 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/unauthorized.component').then(m => m.UnauthorizedComponent),
   },
 
+  // Admin — shell próprio (sidebar admin), fora do app-shell principal
+  {
+    path: 'admin',
+    canActivate: [authGuard, adminGuard],
+    loadComponent: () =>
+      import('./features/admin/admin-shell.component').then(m => m.AdminShellComponent),
+    loadChildren: () =>
+      import('./features/admin/admin.routes').then(m => m.ADMIN_ROUTES),
+  },
+
   // App protegido (precisa de JWT válido)
   {
     path: '',
@@ -63,13 +73,6 @@ export const routes: Routes = [
       {
         path: 'training',
         loadChildren: () => import('./features/training-dashboard/training-dashboard.routes').then(m => m.TRAINING_ROUTES),
-      },
-
-      // Admin: precisa de JWT válido (authGuard acima) + role admin (adminGuard aqui)
-      {
-        path: 'admin',
-        canActivate: [adminGuard],
-        loadChildren: () => import('./features/admin/admin.routes').then(m => m.ADMIN_ROUTES),
       },
 
       { path: '', redirectTo: 'projects', pathMatch: 'full' },
