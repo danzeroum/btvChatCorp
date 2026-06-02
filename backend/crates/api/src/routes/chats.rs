@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{
         sse::{Event, Sse},
@@ -28,6 +28,7 @@ pub fn routes() -> Router<AppState> {
         .route("/chats/:id/messages/:mid/feedback", post(feedback))
         .route("/chats/:id/project", patch(transfer_to_project))
         .route("/chat/stream", post(stream_message))
+        .route("/health/ollama", get(ollama_health))
 }
 
 /// Versão estendida de Chat com o nome do projeto para uso na listagem.
@@ -45,6 +46,11 @@ struct ChatListItem {
     project_name: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+struct ChatListQuery {
+    q: Option<String>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/chats",
@@ -58,7 +64,16 @@ struct ChatListItem {
 async fn list(
     Extension(auth): Extension<AuthUser>,
     State(state): State<AppState>,
+    Query(query): Query<ChatListQuery>,
 ) -> Result<Json<Vec<ChatListItem>>, AppError> {
+    // Busca opcional (?q=): casa por título OU por conteúdo de mensagem.
+    let like = query
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{}%", s));
+
     let rows = sqlx::query_as::<_, ChatListItem>(
         "SELECT c.id, c.workspace_id, c.project_id, c.title, c.summary,
                 c.is_pinned, c.created_by, c.created_at, c.updated_at,
@@ -66,10 +81,15 @@ async fn list(
          FROM chats c
          LEFT JOIN projects p ON p.id = c.project_id
          WHERE c.workspace_id=$1 AND c.created_by=$2
+           AND ($3::text IS NULL
+                OR c.title ILIKE $3
+                OR EXISTS (SELECT 1 FROM messages m
+                           WHERE m.chat_id=c.id AND m.content ILIKE $3))
          ORDER BY c.is_pinned DESC, c.updated_at DESC",
     )
     .bind(auth.workspace_id)
     .bind(auth.user_id)
+    .bind(&like)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows))
@@ -327,6 +347,16 @@ async fn send_message(
         .await
         .ok();
 
+    // Gera título automático na 1ª troca (fire-and-forget, não bloqueia a resposta).
+    tokio::spawn(maybe_generate_title(
+        state.db.clone(),
+        state.ollama_url.clone(),
+        effective_model.to_string(),
+        state.ollama_auth.clone(),
+        chat_id,
+        dto.content.clone(),
+    ));
+
     Ok(Json(assistant_msg))
 }
 
@@ -525,6 +555,12 @@ async fn stream_message(
     let db = state.db.clone();
     let src = sources_json.clone();
 
+    // Clones dedicados para a geração de título (o ramo real consome auth_cfg/model).
+    let title_url = ollama_url.clone();
+    let title_model = model.clone();
+    let title_auth = state.ollama_auth.clone();
+    let title_msg = dto.message.clone();
+
     tokio::spawn(async move {
         // Mock para CI (OLLAMA_MOCK=true)
         if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
@@ -551,6 +587,11 @@ async fn stream_message(
             let _ = tx.unbounded_send(Ok(Event::default()
                 .data(serde_json::json!({ "type": "sources", "data": src }).to_string())));
             let _ = tx.unbounded_send(Ok(Event::default().data("[DONE]")));
+            // Título automático após o [DONE] (não atrasa o stream).
+            maybe_generate_title(
+                db.clone(), title_url, title_model, title_auth, chat_id, title_msg,
+            )
+            .await;
             return;
         }
 
@@ -618,6 +659,8 @@ async fn stream_message(
         let _ = tx.unbounded_send(Ok(Event::default()
             .data(serde_json::json!({ "type": "sources", "data": src }).to_string())));
         let _ = tx.unbounded_send(Ok(Event::default().data("[DONE]")));
+        // Título automático após o [DONE] (não atrasa o stream).
+        maybe_generate_title(db, title_url, title_model, title_auth, chat_id, title_msg).await;
     });
 
     Sse::new(rx)
@@ -744,6 +787,80 @@ async fn transfer_to_project(
         return Err(AppError::not_found("Chat nao encontrado"));
     }
     Ok(StatusCode::OK)
+}
+
+// -- Health do Ollama (acessível a qualquer usuário autenticado)
+
+async fn ollama_health(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let online = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
+        true
+    } else {
+        let client = reqwest::Client::new();
+        let mut req = client
+            .get(format!("{}/v1/models", state.ollama_url))
+            .timeout(std::time::Duration::from_secs(3));
+        if let Some(auth) = state.ollama_auth.as_deref() {
+            let mut parts = auth.splitn(2, ':');
+            req = req.basic_auth(parts.next().unwrap_or(""), Some(parts.next().unwrap_or("")));
+        }
+        req.send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    };
+    Json(serde_json::json!({
+        "status": if online { "online" } else { "offline" },
+        "url": state.ollama_url,
+    }))
+}
+
+// -- Título automático
+
+/// Gera um título curto via LLM após a 1ª troca, sem bloquear a requisição.
+/// Só sobrescreve o título padrão 'Nova conversa' (não mexe em títulos manuais).
+async fn maybe_generate_title(
+    db: sqlx::PgPool,
+    ollama_url: String,
+    model: String,
+    auth: Option<String>,
+    chat_id: Uuid,
+    user_message: String,
+) {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE chat_id=$1")
+        .bind(chat_id)
+        .fetch_one(&db)
+        .await
+        .unwrap_or(99);
+    if count > 2 {
+        return; // não é a primeira troca
+    }
+
+    let title: Option<String> = if std::env::var("OLLAMA_MOCK").as_deref() == Ok("true") {
+        // Em modo mock (CI), deriva um título simples da mensagem do usuário.
+        Some(user_message.chars().take(40).collect::<String>())
+    } else {
+        let prompt = format!(
+            "Resuma em até 6 palavras o tema desta conversa, sem pontuação e sem aspas:\nUsuário: {}",
+            user_message
+        );
+        call_llm(
+            &ollama_url,
+            &model,
+            auth.as_deref(),
+            &[serde_json::json!({ "role": "user", "content": prompt })],
+            0.3,
+            20,
+        )
+        .await
+        .ok()
+        .map(|r| r.content.trim().trim_matches('"').trim().to_string())
+        .filter(|t| !t.is_empty())
+    };
+
+    if let Some(title) = title {
+        let _ = sqlx::query("UPDATE chats SET title=$1 WHERE id=$2 AND title='Nova conversa'")
+            .bind(title)
+            .bind(chat_id)
+            .execute(&db)
+            .await;
+    }
 }
 
 // -- LLM client
