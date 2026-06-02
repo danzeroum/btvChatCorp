@@ -254,4 +254,44 @@ export class AdminService {
   reloadModel(modelId: string): Observable<void> {
     return this.http.post<void>(`${API}/models/${modelId}/reload`, {});
   }
+
+  // Branding
+  getBranding(): Observable<AdminBrandingConfig> {
+    return this.http.get<AdminBrandingConfig>(`${BASE}/branding`);
+  }
+
+  updateBranding(config: AdminBrandingConfig): Observable<void> {
+    return this.http.put<void>(`${BASE}/branding`, config);
+  }
+
+  verifyBrandingDomain(domain: string): Observable<{ status: 'pending' | 'verified' | 'failed' }> {
+    return this.http.post<{ status: 'pending' | 'verified' | 'failed' }>(`${BASE}/branding/verify-domain`, { domain });
+  }
+}
+
+export interface AdminBrandingConfig {
+  productName: string;
+  tagline: string;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  bgColor: string;
+  surfaceColor: string;
+  textColor: string;
+  fontFamily: 'inter' | 'roboto' | 'poppins' | 'custom';
+  customFontUrl: string;
+  customDomain: string | null;
+  customDomainStatus: 'pending' | 'verified' | 'failed' | null;
+  showPoweredBy: boolean;
+  termsUrl: string;
+  privacyUrl: string;
+  supportEmail: string;
+  features: {
+    showTrainingSection: boolean;
+    showBillingSection: boolean;
+    showApiKeys: boolean;
+    showAuditLog: boolean;
+  };
 }
