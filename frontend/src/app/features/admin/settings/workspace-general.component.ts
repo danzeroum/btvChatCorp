@@ -205,7 +205,53 @@ interface WorkspaceSettings {
         </section>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .workspace-general { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .header-actions { display:flex; gap:10px; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-danger { background:#ef4444; color:#fff; border:none; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .toast { padding:10px 16px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+    .toast.success { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+    .settings-sections { display:flex; flex-direction:column; gap:16px; }
+    .settings-section { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .settings-section h2 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .form-group { display:flex; flex-direction:column; gap:4px; }
+    .form-group label { font-size:12px; font-weight:500; color:#374151; }
+    .form-group input, .form-group select, .form-group textarea { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; width:100%; box-sizing:border-box; margin-top:4px; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline:none; border-color:#6366f1; }
+    .slug-input { display:flex; align-items:center; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:4px; }
+    .slug-prefix { padding:8px 10px; background:#f8fafc; font-size:12px; color:#64748b; white-space:nowrap; border-right:1px solid #e2e8f0; }
+    .slug-input input { border:none; border-radius:0; margin:0; }
+    .slug-input input:focus { border-color:transparent; }
+    .hint { font-size:11px; color:#94a3b8; margin-top:2px; }
+    .toggle-group { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+    .toggle-label { display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:4px 0; }
+    .toggle-info { display:flex; flex-direction:column; gap:2px; }
+    .toggle-info span:first-child, .toggle-label > span { font-size:13px; color:#0f172a; }
+    .toggle-switch { width:40px; height:22px; border-radius:11px; background:#e2e8f0; position:relative; flex-shrink:0; transition:background 0.2s; }
+    .toggle-switch.on { background:#6366f1; }
+    .toggle-knob { width:16px; height:16px; border-radius:50%; background:#fff; position:absolute; top:3px; left:3px; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+    .toggle-switch.on .toggle-knob { left:21px; }
+    .method-checkboxes { display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; }
+    .checkbox-label { display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; cursor:pointer; font-weight:normal; }
+    .checkbox-label input[type="checkbox"] { cursor:pointer; }
+    .danger-zone { border-color:#fca5a5; }
+    .danger-zone h2 { color:#991b1b; }
+    .danger-actions { display:flex; flex-direction:column; gap:16px; }
+    .danger-item { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid #f8fafc; }
+    .danger-item:last-child { border-bottom:none; }
+    .danger-item h4 { font-size:14px; font-weight:600; color:#0f172a; margin:0 0 2px; }
+    .danger-item p { font-size:12px; color:#64748b; margin:0; }
+  `]
 })
 export class WorkspaceGeneralComponent implements OnInit {
   private http = inject(HttpClient);

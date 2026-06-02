@@ -116,7 +116,46 @@ interface WebhookDelivery {
         <button [disabled]="deliveries().length < perPage" (click)="nextPage()">Próxima &#8594;</button>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .webhook-logs { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .btn-ghost { background:none; border:1px solid #e2e8f0; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px; color:#374151; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-sm { padding:5px 12px; font-size:12px; }
+    .filters-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .chip { padding:5px 14px; border:1px solid #e2e8f0; border-radius:20px; background:#fff; color:#374151; font-size:12px; cursor:pointer; }
+    .chip.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .deliveries-list { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .delivery-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px; cursor:pointer; transition:background 0.15s; }
+    .delivery-card:hover { background:#f8fafc; }
+    .delivery-card.success { border-left:3px solid #16a34a; }
+    .delivery-card.failed { border-left:3px solid #ef4444; }
+    .delivery-card.retrying { border-left:3px solid #f59e0b; }
+    .delivery-card.pending { border-left:3px solid #6366f1; }
+    .delivery-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+    .delivery-identity { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .status-icon { font-size:14px; }
+    .event-name { font-size:13px; font-weight:500; color:#0f172a; }
+    .http-status { font-size:12px; padding:2px 8px; border-radius:4px; font-weight:500; }
+    .http-status.ok { background:#dcfce7; color:#15803d; }
+    .http-status.err { background:#fee2e2; color:#991b1b; }
+    .attempt-badge { font-size:11px; background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:4px; }
+    .delivery-meta { display:flex; align-items:center; gap:10px; font-size:12px; color:#64748b; }
+    .delivery-detail { margin-top:14px; border-top:1px solid #e2e8f0; padding-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .detail-col h4 { font-size:12px; font-weight:600; color:#0f172a; margin:0 0 6px; }
+    .detail-col pre { background:#1e293b; color:#e2e8f0; border-radius:8px; padding:10px; font-size:11px; overflow:auto; max-height:180px; margin:0; }
+    .next-retry { font-size:12px; color:#f59e0b; margin:8px 0 0; grid-column:1/-1; }
+    .pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:16px; }
+    .pagination button { padding:7px 16px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; color:#374151; font-size:13px; cursor:pointer; }
+    .pagination button:disabled { opacity:0.4; cursor:not-allowed; }
+    .pagination span { font-size:13px; color:#64748b; }
+  `]
 })
 export class WebhookLogsComponent implements OnInit {
   private http  = inject(HttpClient);
