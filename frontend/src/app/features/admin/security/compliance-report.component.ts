@@ -199,7 +199,86 @@ interface IsolationTest {
 
       }
     </div>
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .compliance-report { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .report-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .report-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .report-header p { font-size:13px; color:#64748b; margin:0 0 2px; }
+    .report-period-selector select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:7px 12px; font-size:13px; color:#1e293b; }
+    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .compliance-scorecard { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:24px; margin-bottom:16px; display:flex; gap:32px; flex-wrap:wrap; }
+    .score-main { display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0; }
+    .score-circle { width:96px; height:96px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:4px solid #e2e8f0; }
+    .score-circle.excellent { border-color:#15803d; background:#dcfce7; }
+    .score-circle.good { border-color:#1d4ed8; background:#dbeafe; }
+    .score-circle.attention { border-color:#92400e; background:#fef3c7; }
+    .score-circle.critical { border-color:#991b1b; background:#fee2e2; }
+    .score-value { font-size:28px; font-weight:700; color:#0f172a; }
+    .score-label { font-size:12px; color:#64748b; text-align:center; }
+    .score-breakdown { flex:1; display:flex; flex-direction:column; gap:12px; min-width:240px; }
+    .score-item { display:flex; flex-direction:column; gap:4px; }
+    .score-item-header { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#374151; }
+    .score-badge { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:500; }
+    .score-badge.excellent { background:#dcfce7; color:#15803d; }
+    .score-badge.good { background:#dbeafe; color:#1d4ed8; }
+    .score-badge.attention { background:#fef3c7; color:#92400e; }
+    .score-badge.critical { background:#fee2e2; color:#991b1b; }
+    .score-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; }
+    .score-fill { height:100%; border-radius:3px; }
+    .score-fill.excellent { background:#15803d; }
+    .score-fill.good { background:#1d4ed8; }
+    .score-fill.attention { background:#f59e0b; }
+    .score-fill.critical { background:#ef4444; }
+    .score-note { font-size:11px; color:#94a3b8; margin:0; }
+    .report-sections { display:flex; flex-direction:column; gap:16px; margin-bottom:16px; }
+    .report-section { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .report-section h2 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
+    .data-summary { display:flex; gap:24px; flex-wrap:wrap; margin-bottom:16px; }
+    .summary-item { display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .summary-value { font-size:24px; font-weight:700; color:#0f172a; }
+    .summary-label { font-size:12px; color:#64748b; }
+    table { width:100%; border-collapse:collapse; }
+    th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
+    td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
+    tr:hover td { background:#f8fafc; }
+    .compliance-status { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+    .compliance-status.compliant { background:#dcfce7; color:#15803d; }
+    .compliance-status.attention { background:#fef3c7; color:#92400e; }
+    .access-summary { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+    .access-summary p { font-size:13px; color:#374151; margin:0; }
+    .recommendation { border-radius:8px; padding:12px 16px; font-size:13px; margin-top:12px; }
+    .recommendation.warning { background:#fef3c7; color:#92400e; }
+    .isolation-tests { display:flex; flex-direction:column; gap:8px; }
+    .test-result { display:flex; align-items:center; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; }
+    .test-result.pass { border-color:#86efac; background:#f0fdf4; }
+    .test-result.fail { border-color:#fca5a5; background:#fff8f8; }
+    .test-icon { font-size:16px; }
+    .test-info { flex:1; display:flex; flex-direction:column; gap:2px; }
+    .test-name { font-size:13px; font-weight:500; color:#0f172a; }
+    .test-description { font-size:12px; color:#64748b; }
+    .test-date { font-size:11px; color:#94a3b8; white-space:nowrap; }
+    .retention-config { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+    .retention-item { display:flex; justify-content:space-between; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; padding:6px 0; }
+    .deletion-stats { display:flex; flex-direction:column; gap:4px; }
+    .deletion-stats p { font-size:13px; color:#374151; margin:0; }
+    .location-map { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+    .location-item { display:flex; align-items:center; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; }
+    .location-item.compliant { border-color:#86efac; background:#f0fdf4; }
+    .location-item.non-compliant { border-color:#fca5a5; background:#fff8f8; }
+    .location-icon { font-size:16px; }
+    .location-name { font-size:13px; font-weight:500; color:#0f172a; display:block; }
+    .location-detail { font-size:12px; color:#64748b; }
+    .compliant-badge { margin-left:auto; font-size:12px; padding:2px 10px; border-radius:20px; }
+    .compliant-badge.ok { background:#dcfce7; color:#15803d; }
+    .compliant-badge.warn { background:#fef3c7; color:#92400e; }
+    .data-flow-note p { font-size:13px; color:#374151; margin:0 0 4px; }
+    .report-actions { display:flex; gap:12px; justify-content:flex-end; padding:16px 0; }
+  `]
 })
 export class ComplianceReportComponent implements OnInit {
   private http = inject(HttpClient);

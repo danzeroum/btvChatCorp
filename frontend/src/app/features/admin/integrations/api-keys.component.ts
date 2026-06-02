@@ -178,7 +178,66 @@ interface ApiKey {
         </div>
       </div>
     }
-  `
+  `,
+  styles: [`
+    :host { display:block; font-family: Inter, system-ui, sans-serif; }
+    .api-keys { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
+    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:hover { background:#4f46e5; }
+    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-danger { background:#ef4444; color:#fff; border:none; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-ghost { background:none; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; color:#374151; }
+    .btn-sm { padding:5px 12px; font-size:12px; }
+    .filters-bar { margin-bottom:16px; }
+    .filter-chips { display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { padding:5px 14px; border:1px solid #e2e8f0; border-radius:20px; background:#fff; color:#374151; font-size:12px; cursor:pointer; }
+    .chip.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .keys-list { display:flex; flex-direction:column; gap:12px; }
+    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
+    .key-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .key-card.revoked { opacity:0.65; border-color:#fca5a5; }
+    .key-card.expired { opacity:0.65; border-color:#fcd34d; }
+    .key-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+    .key-identity { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .key-name { font-size:14px; font-weight:600; color:#0f172a; }
+    .key-masked { font-family:monospace; font-size:13px; color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:2px 8px; }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+    .status-badge.active { background:#dcfce7; color:#15803d; }
+    .status-badge.revoked { background:#fee2e2; color:#991b1b; }
+    .status-badge.expired { background:#fef3c7; color:#92400e; }
+    .key-actions { display:flex; gap:8px; align-items:center; }
+    .key-details { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; }
+    .key-detail { display:flex; flex-direction:column; gap:2px; }
+    .key-detail .label { font-size:11px; color:#94a3b8; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; }
+    .key-detail span:last-child { font-size:13px; color:#374151; }
+    .permission-chips { display:flex; flex-wrap:wrap; gap:4px; }
+    .perm-chip { background:#eef2ff; color:#4338ca; font-size:11px; padding:2px 8px; border-radius:4px; }
+    .expiring { color:#f59e0b; font-weight:600; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
+    .modal { background:#fff; border-radius:12px; padding:24px; width:480px; max-width:90vw; }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .modal-header h2 { font-size:16px; font-weight:600; color:#0f172a; margin:0; }
+    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color:#94a3b8; }
+    .modal-body { display:flex; flex-direction:column; gap:0; }
+    .modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    .form-group { display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }
+    .form-group label { font-size:12px; font-weight:500; color:#374151; }
+    .form-group input { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; width:100%; box-sizing:border-box; margin-top:4px; }
+    .form-group input:focus { outline:none; border-color:#6366f1; }
+    .perm-checkboxes { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+    .checkbox-label { display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; cursor:pointer; font-weight:normal; }
+    .checkbox-label input[type="checkbox"] { cursor:pointer; }
+    .new-key-modal { width:540px; }
+    .new-key-alert { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:14px; }
+    .new-key-display { display:flex; align-items:center; gap:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; }
+    .new-key-display code { font-family:monospace; font-size:13px; color:#0f172a; flex:1; word-break:break-all; }
+    .new-key-display button { padding:6px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer; font-size:12px; white-space:nowrap; }
+  `]
 })
 export class ApiKeysComponent implements OnInit {
   private http = inject(HttpClient);
