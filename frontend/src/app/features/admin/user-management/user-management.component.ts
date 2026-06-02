@@ -29,6 +29,10 @@ type TabFilter = 'all' | 'admin' | 'curator' | 'member' | 'pending' | 'no-mfa' |
         </div>
       </div>
 
+      @if (inviteToast()) {
+        <div class="invite-toast">{{ inviteToast() }}</div>
+      }
+
       <!-- Stats Row -->
       <div class="stats-row">
         <div class="stat-card">
@@ -283,6 +287,7 @@ export class UserManagementComponent implements OnInit {
   showInvite = false;
   inviteEmail = '';
   inviteRoleId = '';
+  inviteToast = signal('');
   activeTab = signal<TabFilter>('all');
   selectedUser = signal<AdminUser | null>(null);
 
@@ -368,6 +373,8 @@ export class UserManagementComponent implements OnInit {
       this.showInvite = false;
       this.inviteEmail = '';
       this.loadUsers();
+      this.inviteToast.set('Convite criado. E-mail será enviado quando SMTP estiver configurado.');
+      setTimeout(() => this.inviteToast.set(''), 5000);
     });
   }
 
