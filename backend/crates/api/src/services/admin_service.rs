@@ -346,7 +346,15 @@ impl AdminService {
 
     pub async fn list_roles(&self) -> Result<Vec<RoleRow>> {
         let rows = sqlx::query_as::<_, RoleRow>(
-            "SELECT * FROM roles WHERE workspace_id = current_setting('app.workspace_id')::uuid OR is_system = true ORDER BY is_system DESC, name"
+            r#"SELECT r.id, r.name, r.description, r.is_system, r.permissions,
+                   COUNT(u.id) AS user_count
+               FROM roles r
+               LEFT JOIN users u ON u.role_id = r.id
+                   AND u.workspace_id = current_setting('app.workspace_id')::uuid
+               WHERE r.workspace_id = current_setting('app.workspace_id')::uuid
+                  OR r.is_system = true
+               GROUP BY r.id
+               ORDER BY r.is_system DESC, r.name"#
         ).fetch_all(&self.db).await?;
         Ok(rows)
     }
@@ -354,7 +362,13 @@ impl AdminService {
     pub async fn create_role(&self, body: serde_json::Value) -> Result<RoleRow> {
         let id = Uuid::new_v4();
         let row = sqlx::query_as::<_, RoleRow>(
-            "INSERT INTO roles (id, name, description, workspace_id, is_system, permissions) VALUES ($1, $2, $3, current_setting('app.workspace_id')::uuid, false, $4) RETURNING *"
+            r#"WITH inserted AS (
+                   INSERT INTO roles (id, name, description, workspace_id, is_system, permissions)
+                   VALUES ($1, $2, $3, current_setting('app.workspace_id')::uuid, false, $4)
+                   RETURNING *
+               )
+               SELECT i.id, i.name, i.description, i.is_system, i.permissions, 0::bigint AS user_count
+               FROM inserted i"#
         )
         .bind(id)
         .bind(body["name"].as_str().unwrap_or_default())
@@ -818,7 +832,14 @@ impl AdminService {
 
     pub async fn get_branding(&self) -> Result<BrandingConfig> {
         let row = sqlx::query_as::<_, BrandingConfig>(
-            "SELECT * FROM branding_configs WHERE workspace_id = current_setting('app.workspace_id')::uuid LIMIT 1"
+            r#"SELECT
+                   product_name, tagline, logo_url, favicon_url,
+                   primary_color, secondary_color, accent_color, bg_color, surface_color, text_color,
+                   font_family, custom_font_url, custom_domain, custom_domain_status,
+                   show_powered_by, terms_url, privacy_url, support_email, features
+               FROM branding_configs
+               WHERE workspace_id = current_setting('app.workspace_id')::uuid
+               LIMIT 1"#
         ).fetch_one(&self.db).await?;
         Ok(row)
     }
@@ -827,8 +848,9 @@ impl AdminService {
         sqlx::query(
             r#"UPDATE branding_configs SET product_name=$2, tagline=$3, logo_url=$4, favicon_url=$5,
                primary_color=$6, secondary_color=$7, accent_color=$8, bg_color=$9, surface_color=$10,
-               text_color=$11, font_family=$12, custom_domain=$13, show_powered_by=$14,
-               terms_url=$15, privacy_url=$16, support_email=$17, features=$18, updated_at=NOW()
+               text_color=$11, font_family=$12, custom_font_url=$13, custom_domain=$14,
+               show_powered_by=$15, terms_url=$16, privacy_url=$17, support_email=$18,
+               features=$19, updated_at=NOW()
                WHERE workspace_id = current_setting('app.workspace_id')::uuid"#
         )
         .bind(&config.product_name)
@@ -842,6 +864,7 @@ impl AdminService {
         .bind(&config.surface_color)
         .bind(&config.text_color)
         .bind(&config.font_family)
+        .bind(&config.custom_font_url)
         .bind(&config.custom_domain)
         .bind(config.show_powered_by)
         .bind(&config.terms_url)
