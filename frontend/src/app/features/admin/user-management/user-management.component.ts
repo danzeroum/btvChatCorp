@@ -61,15 +61,16 @@ type TabFilter = 'all' | 'admin' | 'curator' | 'member' | 'pending' | 'no-mfa' |
         <div class="table-section">
           <!-- Tabs -->
           <div class="tabs">
-            <button *ngFor="let tab of tabs"
-                    class="tab-btn"
-                    [class.active]="activeTab() === tab.id"
-                    (click)="setTab(tab.id)">
-              {{ tab.label }}
-              @if (tab.count && tab.count > 0) {
-                <span class="tab-badge" [class.warn]="tab.warn">{{ tab.count }}</span>
-              }
-            </button>
+            @for (tab of tabs; track tab.id) {
+              <button class="tab-btn"
+                      [class.active]="activeTab() === tab.id"
+                      (click)="setTab(tab.id)">
+                {{ tab.label }}
+                @if (tab.count && tab.count > 0) {
+                  <span class="tab-badge" [class.warn]="tab.warn">{{ tab.count }}</span>
+                }
+              </button>
+            }
           </div>
 
           <!-- Search bar (inline) -->
@@ -259,14 +260,27 @@ type TabFilter = 'all' | 'admin' | 'curator' | 'member' | 'pending' | 'no-mfa' |
             </div>
             <div class="form-group">
               <label>Papel</label>
-              <select [(ngModel)]="inviteRoleId">
-                <option value="" disabled>Selecione...</option>
-                <option *ngFor="let r of roles" [value]="r.id">{{ r.name }}</option>
-              </select>
+              @if (roles.length === 0) {
+                <div class="roles-error">
+                  Papéis não carregados — verifique a conexão com o servidor.
+                </div>
+              } @else {
+                <select [(ngModel)]="inviteRoleId">
+                  <option value="" disabled>Selecione...</option>
+                  @for (r of roles; track r.id) {
+                    <option [value]="r.id">{{ r.name }}</option>
+                  }
+                </select>
+              }
             </div>
             <div class="modal-actions">
               <button class="btn-outline" (click)="showInvite = false">Cancelar</button>
-              <button class="btn-primary" (click)="sendInvite()">Enviar convite</button>
+              <button class="btn-primary"
+                      [disabled]="!inviteEmail || !inviteRoleId"
+                      [title]="!inviteRoleId ? 'Selecione um papel para continuar' : ''"
+                      (click)="sendInvite()">
+                Enviar convite
+              </button>
             </div>
           </div>
         </div>
