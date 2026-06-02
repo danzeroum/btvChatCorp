@@ -34,21 +34,23 @@ import { AdminService, AuditEntry } from '../admin.service';
       </div>
 
       <!-- Tabela de logs -->
-      <table class="log-table">
-        <thead>
-          <tr><th>Hora</th><th>Usuário</th><th>Ação</th><th>Recurso</th><th>Severidade</th><th>IP</th></tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let entry of entries" [class]="'row-' + entry.severity">
-            <td class="timestamp">{{ entry.createdAt | date:'dd/MM HH:mm:ss' }}</td>
-            <td>{{ entry.userName }}</td>
-            <td><code>{{ entry.action }}</code></td>
-            <td>{{ entry.resourceName }}</td>
-            <td><span class="sev-badge" [class]="'sev-' + entry.severity">{{ entry.severity }}</span></td>
-            <td class="ip">{{ entry.userIp }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="log-table-wrap">
+        <table class="log-table">
+          <thead>
+            <tr><th>Hora</th><th>Usuário</th><th>Ação</th><th>Recurso</th><th>Severidade</th><th>IP</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let entry of entries" [class]="'row-' + entry.severity">
+              <td class="timestamp">{{ entry.createdAt | date:'dd/MM HH:mm:ss' }}</td>
+              <td>{{ entry.userName }}</td>
+              <td><code>{{ entry.action }}</code></td>
+              <td>{{ entry.resourceName }}</td>
+              <td><span class="sev-badge" [class]="'sev-' + entry.severity">{{ entry.severity }}</span></td>
+              <td class="ip">{{ entry.userIp }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <!-- Paginação -->
       <div class="pagination" *ngIf="total > perPage">
