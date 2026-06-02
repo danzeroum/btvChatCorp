@@ -39,6 +39,20 @@ impl AdminService {
         }
     }
 
+    /// Acquires a dedicated connection from the pool and configures app.workspace_id
+    /// so all queries on this connection see the correct workspace via current_setting().
+    async fn scoped_conn(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>> {
+        let mut conn = self.db.acquire().await?;
+        sqlx::query("SELECT set_config('app.workspace_id', $1, false)")
+            .bind(workspace_id.to_string())
+            .execute(&mut *conn)
+            .await?;
+        Ok(conn)
+    }
+
     // ── Health ────────────────────────────────────────────────────────────────
 
     pub async fn get_system_health(&self) -> Result<SystemHealth> {
@@ -125,14 +139,15 @@ impl AdminService {
 
     // ── Alerts ───────────────────────────────────────────────────────────────
 
-    pub async fn get_pending_alerts(&self) -> Result<Vec<AdminAlert>> {
+    pub async fn get_pending_alerts(&self, workspace_id: Uuid) -> Result<Vec<AdminAlert>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Gera alertas dinamicamente baseado em estado do sistema
         let mut alerts = Vec::new();
 
         // Verifica usuários sem MFA
         let no_mfa_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM users WHERE workspace_id = current_setting('app.workspace_id')::uuid AND mfa_enabled = false AND status = 'active'"
-        ).fetch_one(&self.db).await.unwrap_or(0);
+        ).fetch_one(&mut *conn).await.unwrap_or(0);
 
         if no_mfa_count > 0 {
             alerts.push(AdminAlert {
@@ -149,7 +164,7 @@ impl AdminService {
         // Verifica webhooks com falhas consecutivas
         let failing_wh: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM webhooks WHERE workspace_id = current_setting('app.workspace_id')::uuid AND consecutive_failures >= 5"
-        ).fetch_one(&self.db).await.unwrap_or(0);
+        ).fetch_one(&mut *conn).await.unwrap_or(0);
 
         if failing_wh > 0 {
             alerts.push(AdminAlert {
@@ -168,7 +183,8 @@ impl AdminService {
 
     // ── Metrics ──────────────────────────────────────────────────────────────
 
-    pub async fn get_usage_metrics(&self, period: &str) -> Result<UsageMetrics> {
+    pub async fn get_usage_metrics(&self, workspace_id: Uuid, period: &str) -> Result<UsageMetrics> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let days = period_to_days(period);
         let row = sqlx::query_as::<_, UsageMetricsRow>(
             r#"SELECT
@@ -184,14 +200,15 @@ impl AdminService {
               AND created_at >= NOW() - ($1 || ' days')::interval"#
         )
         .bind(days)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *conn)
         .await?;
 
         let cost = calculate_cost(&row);
         Ok(row.into_metrics(period, cost))
     }
 
-    pub async fn get_daily_metrics(&self, period: &str) -> Result<Vec<DailyMetric>> {
+    pub async fn get_daily_metrics(&self, workspace_id: Uuid, period: &str) -> Result<Vec<DailyMetric>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let days = period_to_days(period);
         let rows = sqlx::query_as::<_, DailyMetric>(
             r#"SELECT
@@ -207,12 +224,13 @@ impl AdminService {
             ORDER BY date"#,
         )
         .bind(days)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows)
     }
 
-    pub async fn get_top_projects(&self, limit: i64) -> Result<Vec<ProjectMetric>> {
+    pub async fn get_top_projects(&self, workspace_id: Uuid, limit: i64) -> Result<Vec<ProjectMetric>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, ProjectMetric>(
             r#"SELECT p.id, p.name, p.color, p.icon,
                 COUNT(DISTINCT c.id) AS chat_count,
@@ -230,12 +248,13 @@ impl AdminService {
             LIMIT $1"#,
         )
         .bind(limit)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows)
     }
 
-    pub async fn get_top_users(&self, limit: i64) -> Result<Vec<UserMetric>> {
+    pub async fn get_top_users(&self, workspace_id: Uuid, limit: i64) -> Result<Vec<UserMetric>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, UserMetric>(
             r#"SELECT u.id, u.name,
                 COUNT(DISTINCT m.id) AS message_count,
@@ -251,13 +270,13 @@ impl AdminService {
             LIMIT $1"#,
         )
         .bind(limit)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
         Ok(rows)
     }
 
-    pub async fn export_metrics_csv(&self, period: &str) -> Result<String> {
-        let metrics = self.get_usage_metrics(period).await?;
+    pub async fn export_metrics_csv(&self, workspace_id: Uuid, period: &str) -> Result<String> {
+        let metrics = self.get_usage_metrics(workspace_id, period).await?;
         let csv = format!(
             "period,total_tokens_input,total_tokens_output,total_chat_requests,active_users,cost_total\n{},{},{},{},{},{}",
             csv_field(&metrics.period), metrics.total_tokens_input, metrics.total_tokens_output,
@@ -268,26 +287,30 @@ impl AdminService {
 
     // ── Users ────────────────────────────────────────────────────────────────
 
-    pub async fn list_users(&self) -> Result<Vec<WorkspaceUserRow>> {
+    pub async fn list_users(&self, workspace_id: Uuid) -> Result<Vec<WorkspaceUserRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, WorkspaceUserRow>(
             "SELECT u.*, r.name as role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.workspace_id = current_setting('app.workspace_id')::uuid ORDER BY u.created_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn get_user(&self, id: Uuid) -> Result<WorkspaceUserRow> {
+    pub async fn get_user(&self, workspace_id: Uuid, id: Uuid) -> Result<WorkspaceUserRow> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, WorkspaceUserRow>(
             "SELECT u.*, r.name as role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.workspace_id = current_setting('app.workspace_id')::uuid"
-        ).bind(id).fetch_one(&self.db).await?;
+        ).bind(id).fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
     pub async fn invite_user(
         &self,
+        workspace_id: Uuid,
         email: &str,
         role_id: &str,
         project_ids: &[Uuid],
     ) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let user_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO users (id, email, role_id, workspace_id, status) VALUES ($1, $2, $3, current_setting('app.workspace_id')::uuid, 'invited')"
@@ -295,11 +318,11 @@ impl AdminService {
         .bind(user_id)
         .bind(email)
         .bind(role_id)
-        .execute(&self.db).await?;
+        .execute(&mut *conn).await?;
 
         for pid in project_ids {
             sqlx::query("INSERT INTO project_members (project_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-                .bind(pid).bind(user_id).execute(&self.db).await.ok();
+                .bind(pid).bind(user_id).execute(&mut *conn).await.ok();
         }
 
         // TODO: enviar e-mail de convite
@@ -324,8 +347,8 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn export_users_csv(&self) -> Result<String> {
-        let users = self.list_users().await?;
+    pub async fn export_users_csv(&self, workspace_id: Uuid) -> Result<String> {
+        let users = self.list_users(workspace_id).await?;
         let mut csv = "id,name,email,role,status,mfa_enabled,last_login\n".to_string();
         for u in users {
             csv.push_str(&format!(
@@ -344,7 +367,8 @@ impl AdminService {
 
     // ── Roles ─────────────────────────────────────────────────────────────────
 
-    pub async fn list_roles(&self) -> Result<Vec<RoleRow>> {
+    pub async fn list_roles(&self, workspace_id: Uuid) -> Result<Vec<RoleRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, RoleRow>(
             r#"SELECT r.id, r.name, r.description, r.is_system, r.permissions,
                    COUNT(u.id) AS user_count
@@ -355,11 +379,12 @@ impl AdminService {
                   OR r.is_system = true
                GROUP BY r.id
                ORDER BY r.is_system DESC, r.name"#
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn create_role(&self, body: serde_json::Value) -> Result<RoleRow> {
+    pub async fn create_role(&self, workspace_id: Uuid, body: serde_json::Value) -> Result<RoleRow> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let id = Uuid::new_v4();
         let row = sqlx::query_as::<_, RoleRow>(
             r#"WITH inserted AS (
@@ -374,7 +399,7 @@ impl AdminService {
         .bind(body["name"].as_str().unwrap_or_default())
         .bind(body["description"].as_str().unwrap_or_default())
         .bind(&body["permissions"])
-        .fetch_one(&self.db).await?;
+        .fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
@@ -397,10 +422,11 @@ impl AdminService {
 
     // ── Sessions ──────────────────────────────────────────────────────────────
 
-    pub async fn list_active_sessions(&self) -> Result<Vec<SessionRow>> {
+    pub async fn list_active_sessions(&self, workspace_id: Uuid) -> Result<Vec<SessionRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, SessionRow>(
             "SELECT s.*, u.name as user_name, u.email as user_email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.workspace_id = current_setting('app.workspace_id')::uuid AND s.expires_at > NOW() ORDER BY s.created_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
@@ -412,16 +438,18 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn terminate_all_sessions(&self, except: Uuid) -> Result<i64> {
+    pub async fn terminate_all_sessions(&self, workspace_id: Uuid, except: Uuid) -> Result<i64> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let result = sqlx::query(
             "UPDATE sessions SET expires_at = NOW() WHERE workspace_id = current_setting('app.workspace_id')::uuid AND id != $1 AND expires_at > NOW()"
-        ).bind(except).execute(&self.db).await?;
+        ).bind(except).execute(&mut *conn).await?;
         Ok(result.rows_affected() as i64)
     }
 
     // ── Audit ─────────────────────────────────────────────────────────────────
 
-    pub async fn query_audit_logs(&self, filters: AuditFiltersQuery) -> Result<AuditPage> {
+    pub async fn query_audit_logs(&self, workspace_id: Uuid, filters: AuditFiltersQuery) -> Result<AuditPage> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let page = filters.page.unwrap_or(1);
         let per_page = filters.per_page.unwrap_or(50);
         let offset = (page - 1) * per_page;
@@ -440,12 +468,12 @@ impl AdminService {
         .bind(filters.user_id)
         .bind(per_page)
         .bind(offset)
-        .fetch_all(&self.db)
+        .fetch_all(&mut *conn)
         .await?;
 
         let total: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM audit_logs WHERE workspace_id = current_setting('app.workspace_id')::uuid"
-        ).fetch_one(&self.db).await.unwrap_or(0);
+        ).fetch_one(&mut *conn).await.unwrap_or(0);
 
         Ok(AuditPage {
             entries: rows,
@@ -455,8 +483,8 @@ impl AdminService {
         })
     }
 
-    pub async fn export_audit_csv(&self, filters: AuditFiltersQuery) -> Result<String> {
-        let page = self.query_audit_logs(filters).await?;
+    pub async fn export_audit_csv(&self, workspace_id: Uuid, filters: AuditFiltersQuery) -> Result<String> {
+        let page = self.query_audit_logs(workspace_id, filters).await?;
         let mut csv = "id,timestamp,user,action,resource,severity,category\n".to_string();
         for e in page.entries {
             csv.push_str(&format!(
@@ -467,15 +495,16 @@ impl AdminService {
         Ok(csv)
     }
 
-    pub async fn generate_compliance_report(&self) -> Result<ComplianceReport> {
+    pub async fn generate_compliance_report(&self, workspace_id: Uuid) -> Result<ComplianceReport> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Coleta estatísticas para o relatório LGPD
         let total_users: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM users WHERE workspace_id = current_setting('app.workspace_id')::uuid"
-        ).fetch_one(&self.db).await.unwrap_or(0);
+        ).fetch_one(&mut *conn).await.unwrap_or(0);
 
         let mfa_enabled: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM users WHERE workspace_id = current_setting('app.workspace_id')::uuid AND mfa_enabled = true"
-        ).fetch_one(&self.db).await.unwrap_or(0);
+        ).fetch_one(&mut *conn).await.unwrap_or(0);
 
         let mfa_percent = if total_users > 0 {
             (mfa_enabled * 100) / total_users
@@ -499,10 +528,11 @@ impl AdminService {
 
     // ── AI Models ─────────────────────────────────────────────────────────────
 
-    pub async fn list_models(&self) -> Result<Vec<AiModelConfig>> {
+    pub async fn list_models(&self, workspace_id: Uuid) -> Result<Vec<AiModelConfig>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, AiModelConfig>(
             "SELECT * FROM ai_model_configs WHERE workspace_id = current_setting('app.workspace_id')::uuid"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
@@ -517,63 +547,70 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn list_lora_adapters(&self) -> Result<Vec<LoraAdapter>> {
+    pub async fn list_lora_adapters(&self, workspace_id: Uuid) -> Result<Vec<LoraAdapter>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, LoraAdapter>(
             "SELECT * FROM lora_adapters WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY trained_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn deploy_lora(&self, version: &str) -> Result<()> {
+    pub async fn deploy_lora(&self, workspace_id: Uuid, version: &str) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Desativa o atual e ativa a nova versão
         sqlx::query("UPDATE lora_adapters SET status = 'available' WHERE workspace_id = current_setting('app.workspace_id')::uuid AND status = 'active'")
-            .execute(&self.db).await?;
+            .execute(&mut *conn).await?;
         sqlx::query(
             "UPDATE lora_adapters SET status = 'active', deployed_at = NOW() WHERE version = $1",
         )
         .bind(version)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
         // TODO: hot-swap no vLLM via API
         Ok(())
     }
 
-    pub async fn rollback_lora(&self, _version: &str) -> Result<()> {
+    pub async fn rollback_lora(&self, workspace_id: Uuid, _version: &str) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Reverte para versão anterior
         sqlx::query(
             "UPDATE lora_adapters SET status = 'rolledback' WHERE workspace_id = current_setting('app.workspace_id')::uuid AND status = 'active'"
-        ).execute(&self.db).await?;
+        ).execute(&mut *conn).await?;
         // Ativa a penúltima versão
         sqlx::query(
             "UPDATE lora_adapters SET status = 'active', deployed_at = NOW() WHERE id = (SELECT id FROM lora_adapters WHERE workspace_id = current_setting('app.workspace_id')::uuid AND status = 'available' ORDER BY trained_at DESC LIMIT 1)"
-        ).execute(&self.db).await?;
+        ).execute(&mut *conn).await?;
         Ok(())
     }
 
-    pub async fn start_training_batch(&self) -> Result<TrainingBatch> {
+    pub async fn start_training_batch(&self, workspace_id: Uuid) -> Result<TrainingBatch> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let id = Uuid::new_v4();
         let batch = sqlx::query_as::<_, TrainingBatch>(
             "INSERT INTO training_batches (id, workspace_id, status) VALUES ($1, current_setting('app.workspace_id')::uuid, 'queued') RETURNING *"
-        ).bind(id).fetch_one(&self.db).await?;
+        ).bind(id).fetch_one(&mut *conn).await?;
         // TODO: enqueue no worker de treinamento
         Ok(batch)
     }
 
-    pub async fn get_latest_training_batch(&self) -> Result<TrainingBatch> {
+    pub async fn get_latest_training_batch(&self, workspace_id: Uuid) -> Result<TrainingBatch> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let batch = sqlx::query_as::<_, TrainingBatch>(
             "SELECT * FROM training_batches WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY created_at DESC LIMIT 1"
-        ).fetch_one(&self.db).await?;
+        ).fetch_one(&mut *conn).await?;
         Ok(batch)
     }
 
-    pub async fn get_rag_config(&self) -> Result<RagConfig> {
+    pub async fn get_rag_config(&self, workspace_id: Uuid) -> Result<RagConfig> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let config = sqlx::query_as::<_, RagConfig>(
             "SELECT * FROM rag_configs WHERE workspace_id = current_setting('app.workspace_id')::uuid LIMIT 1"
-        ).fetch_one(&self.db).await?;
+        ).fetch_one(&mut *conn).await?;
         Ok(config)
     }
 
-    pub async fn update_rag_config(&self, config: RagConfig) -> Result<()> {
+    pub async fn update_rag_config(&self, workspace_id: Uuid, config: RagConfig) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query(
             "UPDATE rag_configs SET top_k = $2, chunk_size = $3, chunk_overlap = $4, similarity_threshold = $5, updated_at = NOW() WHERE workspace_id = current_setting('app.workspace_id')::uuid"
         )
@@ -581,26 +618,29 @@ impl AdminService {
         .bind(config.chunk_size)
         .bind(config.chunk_overlap)
         .bind(config.similarity_threshold)
-        .execute(&self.db).await?;
+        .execute(&mut *conn).await?;
         Ok(())
     }
 
     // ── API Keys ──────────────────────────────────────────────────────────────
 
-    pub async fn list_api_keys(&self) -> Result<Vec<ApiKeyRow>> {
+    pub async fn list_api_keys(&self, workspace_id: Uuid) -> Result<Vec<ApiKeyRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, ApiKeyRow>(
             "SELECT * FROM api_keys WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY created_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
     pub async fn create_api_key(
         &self,
+        workspace_id: Uuid,
         name: &str,
         permissions: &[String],
         rate_limit: i32,
         expires_at: Option<&str>,
     ) -> Result<(ApiKeyRow, String)> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Gera chave aleatória segura
         let raw_key = format!("btv_live_{}", generate_random_token(32));
         let hmac_secret = std::env::var("API_KEY_HMAC_SECRET").unwrap_or_default();
@@ -620,7 +660,7 @@ impl AdminService {
         .bind(serde_json::to_value(permissions)?)
         .bind(rate_limit)
         .bind(expires_at)
-        .fetch_one(&self.db).await?;
+        .fetch_one(&mut *conn).await?;
 
         Ok((row, raw_key))
     }
@@ -650,10 +690,11 @@ impl AdminService {
 
     // ── Webhooks ──────────────────────────────────────────────────────────────
 
-    pub async fn list_webhooks(&self) -> Result<Vec<WebhookRow>> {
+    pub async fn list_webhooks(&self, workspace_id: Uuid) -> Result<Vec<WebhookRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, WebhookRow>(
             "SELECT * FROM webhooks WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY created_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
@@ -665,7 +706,8 @@ impl AdminService {
         Ok(row)
     }
 
-    pub async fn create_webhook(&self, body: serde_json::Value) -> Result<WebhookRow> {
+    pub async fn create_webhook(&self, workspace_id: Uuid, body: serde_json::Value) -> Result<WebhookRow> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, WebhookRow>(
             r#"INSERT INTO webhooks (id, workspace_id, name, url, secret, events, retry_policy, timeout_ms, status)
                VALUES (gen_random_uuid(), current_setting('app.workspace_id')::uuid, $1, $2, $3, $4, $5, $6, 'active')
@@ -677,7 +719,7 @@ impl AdminService {
         .bind(&body["events"])
         .bind(body["retryPolicy"].as_str().unwrap_or("3x"))
         .bind(body["timeoutMs"].as_i64().unwrap_or(5000) as i32)
-        .fetch_one(&self.db).await?;
+        .fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
@@ -699,11 +741,12 @@ impl AdminService {
         Ok(())
     }
 
-    pub async fn set_webhook_status(&self, id: Uuid, status: &str) -> Result<()> {
+    pub async fn set_webhook_status(&self, workspace_id: Uuid, id: Uuid, status: &str) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query("UPDATE webhooks SET status = $2, updated_at = NOW() WHERE id = $1")
             .bind(id)
             .bind(status)
-            .execute(&self.db)
+            .execute(&mut *conn)
             .await?;
         Ok(())
     }
@@ -753,14 +796,16 @@ impl AdminService {
 
     // ── Resource Limits ───────────────────────────────────────────────────────
 
-    pub async fn list_resource_limits(&self) -> Result<Vec<ResourceLimitRow>> {
+    pub async fn list_resource_limits(&self, workspace_id: Uuid) -> Result<Vec<ResourceLimitRow>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, ResourceLimitRow>(
             "SELECT * FROM resource_limits WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY type, target_name"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn create_resource_limit(&self, body: serde_json::Value) -> Result<ResourceLimitRow> {
+    pub async fn create_resource_limit(&self, workspace_id: Uuid, body: serde_json::Value) -> Result<ResourceLimitRow> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, ResourceLimitRow>(
             r#"INSERT INTO resource_limits (id, workspace_id, type, target_name, max_tokens_per_day, max_messages_per_day, max_documents_total, max_storage_gb, max_api_requests_per_min)
                VALUES (gen_random_uuid(), current_setting('app.workspace_id')::uuid, $1, $2, $3, $4, $5, $6, $7)
@@ -773,7 +818,7 @@ impl AdminService {
         .bind(body["maxDocumentsTotal"].as_i64())
         .bind(body["maxStorageGb"].as_f64())
         .bind(body["maxApiRequestsPerMin"].as_i64())
-        .fetch_one(&self.db).await?;
+        .fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
@@ -797,14 +842,16 @@ impl AdminService {
 
     // ── Settings ──────────────────────────────────────────────────────────────
 
-    pub async fn get_settings(&self) -> Result<WorkspaceSettings> {
+    pub async fn get_settings(&self, workspace_id: Uuid) -> Result<WorkspaceSettings> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, WorkspaceSettings>(
             "SELECT * FROM workspace_settings WHERE workspace_id = current_setting('app.workspace_id')::uuid LIMIT 1"
-        ).fetch_one(&self.db).await?;
+        ).fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
-    pub async fn update_settings(&self, settings: WorkspaceSettings) -> Result<()> {
+    pub async fn update_settings(&self, workspace_id: Uuid, settings: WorkspaceSettings) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query(
             r#"UPDATE workspace_settings SET name=$2, slug=$3, timezone=$4, language=$5,
                session_timeout_minutes=$6, max_concurrent_sessions=$7, mfa_required=$8,
@@ -823,14 +870,15 @@ impl AdminService {
         .bind(settings.notify_on_training_complete)
         .bind(settings.notify_on_security_event)
         .bind(&settings.notification_email)
-        .execute(&self.db)
+        .execute(&mut *conn)
         .await?;
         Ok(())
     }
 
     // ── Branding ──────────────────────────────────────────────────────────────
 
-    pub async fn get_branding(&self) -> Result<BrandingConfig> {
+    pub async fn get_branding(&self, workspace_id: Uuid) -> Result<BrandingConfig> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let row = sqlx::query_as::<_, BrandingConfig>(
             r#"SELECT
                    product_name, tagline, logo_url, favicon_url,
@@ -840,11 +888,12 @@ impl AdminService {
                FROM branding_configs
                WHERE workspace_id = current_setting('app.workspace_id')::uuid
                LIMIT 1"#
-        ).fetch_one(&self.db).await?;
+        ).fetch_one(&mut *conn).await?;
         Ok(row)
     }
 
-    pub async fn update_branding(&self, config: BrandingConfig) -> Result<()> {
+    pub async fn update_branding(&self, workspace_id: Uuid, config: BrandingConfig) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query(
             r#"UPDATE branding_configs SET product_name=$2, tagline=$3, logo_url=$4, favicon_url=$5,
                primary_color=$6, secondary_color=$7, accent_color=$8, bg_color=$9, surface_color=$10,
@@ -871,11 +920,12 @@ impl AdminService {
         .bind(&config.privacy_url)
         .bind(&config.support_email)
         .bind(serde_json::to_value(&config.features)?)
-        .execute(&self.db).await?;
+        .execute(&mut *conn).await?;
         Ok(())
     }
 
-    pub async fn verify_domain(&self, domain: &str) -> Result<String> {
+    pub async fn verify_domain(&self, workspace_id: Uuid, domain: &str) -> Result<String> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // Verifica se existe registro CNAME apontando para cname.btvchat.com
         use std::net::ToSocketAddrs;
         let is_valid = format!("{}:443", domain)
@@ -884,20 +934,22 @@ impl AdminService {
             .unwrap_or(false);
         let status = if is_valid { "verified" } else { "pending" };
         sqlx::query("UPDATE branding_configs SET custom_domain_status = $2 WHERE workspace_id = current_setting('app.workspace_id')::uuid")
-            .bind(status).execute(&self.db).await.ok();
+            .bind(status).execute(&mut *conn).await.ok();
         Ok(status.to_string())
     }
 
     // ── Retention ─────────────────────────────────────────────────────────────
 
-    pub async fn get_retention_policies(&self) -> Result<Vec<RetentionPolicy>> {
+    pub async fn get_retention_policies(&self, workspace_id: Uuid) -> Result<Vec<RetentionPolicy>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, RetentionPolicy>(
             "SELECT * FROM retention_policies WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY data_type"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn update_retention_policies(&self, policies: Vec<RetentionPolicy>) -> Result<()> {
+    pub async fn update_retention_policies(&self, workspace_id: Uuid, policies: Vec<RetentionPolicy>) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         for p in policies {
             sqlx::query(
                 "UPDATE retention_policies SET retention_days=$2, auto_delete_enabled=$3, updated_at=NOW() WHERE data_type=$1 AND workspace_id=current_setting('app.workspace_id')::uuid"
@@ -905,12 +957,13 @@ impl AdminService {
             .bind(&p.data_type)
             .bind(p.retention_days)
             .bind(p.auto_delete_enabled)
-            .execute(&self.db).await?;
+            .execute(&mut *conn).await?;
         }
         Ok(())
     }
 
-    pub async fn manual_purge(&self, data_type: &str) -> Result<i64> {
+    pub async fn manual_purge(&self, workspace_id: Uuid, data_type: &str) -> Result<i64> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         // SAFETY: sql_stmt é uma string literal estática escolhida pelo match —
         // data_type nunca é interpolado na query.
         let sql_stmt: &'static str = match data_type {
@@ -930,27 +983,29 @@ impl AdminService {
 
         let policy: Option<i32> = sqlx::query_scalar(
             "SELECT retention_days FROM retention_policies WHERE data_type = $1 AND workspace_id = current_setting('app.workspace_id')::uuid"
-        ).bind(data_type).fetch_optional(&self.db).await?;
+        ).bind(data_type).fetch_optional(&mut *conn).await?;
 
         if let Some(days) = policy {
-            let result = sqlx::query(sql_stmt).bind(days).execute(&self.db).await?;
+            let result = sqlx::query(sql_stmt).bind(days).execute(&mut *conn).await?;
             Ok(result.rows_affected() as i64)
         } else {
             Ok(0)
         }
     }
 
-    pub async fn list_deletion_requests(&self) -> Result<Vec<DeletionRequest>> {
+    pub async fn list_deletion_requests(&self, workspace_id: Uuid) -> Result<Vec<DeletionRequest>> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         let rows = sqlx::query_as::<_, DeletionRequest>(
             "SELECT * FROM deletion_requests WHERE workspace_id = current_setting('app.workspace_id')::uuid ORDER BY requested_at DESC"
-        ).fetch_all(&self.db).await?;
+        ).fetch_all(&mut *conn).await?;
         Ok(rows)
     }
 
-    pub async fn create_deletion_request(&self, target_name: &str, data_type: &str) -> Result<()> {
+    pub async fn create_deletion_request(&self, workspace_id: Uuid, target_name: &str, data_type: &str) -> Result<()> {
+        let mut conn = self.scoped_conn(workspace_id).await?;
         sqlx::query(
             "INSERT INTO deletion_requests (id, workspace_id, type, target_name, status, requested_at) VALUES (gen_random_uuid(), current_setting('app.workspace_id')::uuid, $1, $2, 'pending', NOW())"
-        ).bind(data_type).bind(target_name).execute(&self.db).await?;
+        ).bind(data_type).bind(target_name).execute(&mut *conn).await?;
         Ok(())
     }
 
