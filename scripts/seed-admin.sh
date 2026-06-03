@@ -4,7 +4,7 @@ set -euo pipefail
 # Cria usuário admin se não existir.
 # Requer: ADMIN_PASS e ADMIN_EMAIL definidos no ambiente ou .env
 ADMIN_PASS="${ADMIN_PASS:?Erro: ADMIN_PASS obrigatorio — ex: ADMIN_PASS=xxx ./scripts/seed-admin.sh}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@btv.com}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 ADMIN_NAME="${ADMIN_NAME:-Admin}"
 WORKSPACE_NAME="${WORKSPACE_NAME:-BTV Corp}"
 
