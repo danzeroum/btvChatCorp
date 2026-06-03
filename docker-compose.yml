@@ -44,13 +44,13 @@ services:
     restart: always
     environment:
       DATABASE_URL:     postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
-      OLLAMA_URL: http://172.24.0.1:11434
+      OLLAMA_URL: ${OLLAMA_URL:?Erro: OLLAMA_URL obrigatorio — defina no .env}
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-llama3.2:3b}
       EMBEDDING_URL: http://embedding:8001
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER}
       OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS}
-      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-https://chatcorp.buildtovalue.cloud}
+      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-http://localhost:4200}
       JWT_SECRET:       ${JWT_SECRET}
       UPLOAD_DIR:       /uploads
       RUST_LOG:         ${RUST_LOG:-info}

@@ -447,7 +447,7 @@ async fn submit_to_training_service(batch: &TrainingBatch) -> anyhow::Result<Str
         return Ok(format!("mock-job-{}", batch.id));
     }
     let url =
-        std::env::var("TRAINING_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+        std::env::var("TRAINING_URL").unwrap_or_else(|_| "http://localhost:8080".into());
     let resp = reqwest::Client::new()
         .post(format!("{}/v1/training/jobs", url))
         .json(&serde_json::json!({
@@ -473,7 +473,7 @@ async fn fetch_job_status(job_id: &str) -> anyhow::Result<RemoteJobStatus> {
         });
     }
     let url =
-        std::env::var("TRAINING_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+        std::env::var("TRAINING_URL").unwrap_or_else(|_| "http://localhost:8080".into());
     let resp = reqwest::Client::new()
         .get(format!("{}/v1/training/jobs/{}", url, job_id))
         .send()

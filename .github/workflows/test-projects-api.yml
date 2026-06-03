@@ -39,7 +39,7 @@ jobs:
       OLLAMA_URL: http://localhost:11434
       OLLAMA_MODEL: llama3.1:8b
       TRAINING_MOCK: "true"
-      TRAINING_URL: https://api.buildtovalue.cloud
+      TRAINING_URL: http://localhost:8080
       INTERNAL_SERVICE_TOKEN: test_internal_token_for_ci_only
       QDRANT_URL: http://localhost:6333
       EMBEDDING_URL: http://localhost:8001

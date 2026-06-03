@@ -119,7 +119,7 @@ jobs:
       OLLAMA_MODEL: llama3.1:8b
       OLLAMA_MOCK: "true"
       TRAINING_MOCK: "true"
-      TRAINING_URL: https://api.buildtovalue.cloud
+      TRAINING_URL: http://localhost:8080
       QDRANT_URL: http://localhost:6333
       EMBEDDING_URL: http://localhost:8001
 
@@ -250,7 +250,7 @@ jobs:
       OLLAMA_MODEL: llama3.1:8b
       OLLAMA_MOCK: "true"
       TRAINING_MOCK: "true"
-      TRAINING_URL: https://api.buildtovalue.cloud
+      TRAINING_URL: http://localhost:8080
       QDRANT_URL: http://localhost:6333
       EMBEDDING_URL: http://localhost:8001
 
