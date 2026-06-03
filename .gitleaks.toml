@@ -1,0 +1,29 @@
+# Gitleaks config for btvChatCorp
+# Extends the default ruleset and adds an allowlist for known, non-sensitive
+# test fixtures and template placeholders used across the codebase.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixtures de teste e placeholders de template (não são segredos reais)"
+
+# Arquivos/paths que só contêm placeholders ou valores de teste de CI.
+paths = [
+  '''\.env\.example$''',
+  '''\.gitleaks\.toml$''',
+  '''(^|/)tests?/''',
+  '''.*\.spec\.ts$''',
+  '''(^|/)test_helpers\.rs$''',
+]
+
+# Strings fictícias conhecidas (fixtures de CI / placeholders).
+regexes = [
+  '''TROQUE_AQUI[A-Z0-9_]*''',
+  '''test_secret_for_ci_only''',
+  '''test_hmac_secret_for_ci_only''',
+  '''test_internal_token_for_ci_only''',
+  '''SmokeRag@1234''',
+  '''test_secret''',
+  '''test-hmac-secret''',
+]

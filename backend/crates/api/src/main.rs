@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Migrations OK");
 
     let ollama_url =
-        env::var("OLLAMA_URL").unwrap_or_else(|_| "https://api.buildtovalue.cloud".into());
+        env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".into());
     let ollama_model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "mistral:latest".into());
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET obrigatorio");
     let api_key_hmac_secret =
