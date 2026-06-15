@@ -1,8 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { UsageMetrics } from '../../../core/models/admin.model';
+import { KpiCardComponent } from '../shared/kpi-card.component';
+import { MiniBarComponent } from '../shared/mini-bar.component';
 
 interface DailyUsage {
   date: string;
@@ -12,219 +15,252 @@ interface DailyUsage {
   documents: number;
 }
 
+const MOCK_METRICS: UsageMetrics = {
+  period: '30d', totalTokensInput: 1_840_000, totalTokensOutput: 920_000, totalTokensEmbedding: 320_000,
+  totalChatRequests: 4_210, totalRagQueries: 1_870, totalDocumentsProcessed: 342,
+  totalTrainingRuns: 3, gpuHoursInference: 124.5, gpuHoursTraining: 18.2, gpuHoursEmbedding: 6.8,
+  storageDocumentsGb: 48.3, storageVectorDbGb: 12.1, storageModelsGb: 8.4,
+  estimatedCost: { gpu: 1_240, storage: 180, network: 60, total: 1_480, currency: 'BRL' },
+  byProject: [
+    { projectId: '1', projectName: 'Atendimento', chatCount: 2_100, tokensUsed: 980_000, percentOfTotal: 49 },
+    { projectId: '2', projectName: 'Jurídico',    chatCount: 1_200, tokensUsed: 620_000, percentOfTotal: 31 },
+    { projectId: '3', projectName: 'RH',          chatCount: 910,  tokensUsed: 160_000, percentOfTotal: 20 },
+  ],
+  byUser: [
+    { userId: 'u1', userName: 'Ana Lima',    chatCount: 820, tokensUsed: 390_000 },
+    { userId: 'u2', userName: 'Carlos Melo', chatCount: 640, tokensUsed: 310_000 },
+    { userId: 'u3', userName: 'Beatriz Sá',  chatCount: 510, tokensUsed: 210_000 },
+  ],
+  activeUsers: 87,
+};
+
+const BUDGET_LIMIT = 2_000;
+
 @Component({
   selector: 'app-usage-overview',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, FormsModule, RouterLink, KpiCardComponent, MiniBarComponent],
   template: `
-    <div class="usage-overview">
-      <div class="page-header">
+    <div class="admin-page">
+      <div class="breadcrumb">
+        <a [routerLink]="['/admin/dashboard']" class="bc-link">Dashboard</a>
+        <span class="bc-sep">/</span>
+        <span>Uso &amp; Custos</span>
+      </div>
+
+      <div class="admin-header">
         <div>
-          <h1>&#128202; Visão Geral de Uso</h1>
-          <p>Consumo detalhado por período, projeto e usuário.</p>
+          <h1>Uso &amp; Custos</h1>
+          <p class="page-sub">Consumo detalhado por período, projeto e usuário</p>
         </div>
         <div class="header-actions">
-          <select [(ngModel)]="selectedPeriod" (ngModelChange)="load()">
+          <select [(ngModel)]="selectedPeriod" (ngModelChange)="load()" class="period-select">
             <option value="7d">7 dias</option>
             <option value="30d">30 dias</option>
             <option value="90d">90 dias</option>
           </select>
-          <button class="btn-secondary" (click)="exportCsv()">&#11015;&#65039; Exportar CSV</button>
+          <button class="btn-ghost" (click)="exportCsv()">Exportar CSV</button>
         </div>
       </div>
 
-      <!-- KPIs -->
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <span class="kpi-icon">&#128172;</span>
-          <span class="kpi-value">{{ metrics().totalChatRequests | number }}</span>
-          <span class="kpi-label">Conversas</span>
+      @if (budgetPct() >= 80) {
+        <div class="budget-alert">
+          Atenção: {{ budgetPct() | number:'1.0-0' }}% do orçamento mensal utilizado
+          (R$ {{ metrics().estimatedCost.total | number:'1.0-0' }} / R$ {{ budgetLimit | number:'1.0-0' }})
         </div>
-        <div class="kpi-card">
-          <span class="kpi-icon">&#128196;</span>
-          <span class="kpi-value">{{ metrics().totalDocumentsProcessed | number }}</span>
-          <span class="kpi-label">Documentos processados</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-icon">&#129302;</span>
-          <span class="kpi-value">{{ shortNumber(metrics().totalTokensInput + metrics().totalTokensOutput) }}</span>
-          <span class="kpi-label">Tokens totais</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-icon">&#128100;</span>
-          <span class="kpi-value">{{ metrics().activeUsers }}</span>
-          <span class="kpi-label">Usuários ativos</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-icon">&#127956;</span>
-          <span class="kpi-value">{{ metrics().gpuHoursInference | number:'1.1-1' }}h</span>
-          <span class="kpi-label">GPU Horas (inferência)</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-icon">&#128300;</span>
-          <span class="kpi-value">{{ metrics().totalRagQueries | number }}</span>
-          <span class="kpi-label">Consultas RAG</span>
-        </div>
+      }
+
+      <div class="kpi-row">
+        <app-kpi-card [value]="metrics().totalChatRequests | number" label="Conversas" />
+        <app-kpi-card [value]="shortNumber(metrics().totalTokensInput + metrics().totalTokensOutput)" label="Tokens totais" />
+        <app-kpi-card [value]="metrics().activeUsers" label="Usuários ativos" />
+        <app-kpi-card [value]="'R$ ' + (metrics().estimatedCost.total | number:'1.0-0')" label="Custo estimado" />
       </div>
 
-      <!-- Gráfico de uso ao longo do tempo (barras visuais CSS) -->
+      <!-- Bar chart -->
       <div class="chart-card">
-        <div class="chart-header">
-          <h3>Uso ao longo do tempo</h3>
+        <div class="chart-head">
+          <h2>Uso ao longo do tempo</h2>
           <div class="chart-tabs">
             @for (tab of chartTabs; track tab.value) {
-              <button [class.active]="chartMetric() === tab.value" (click)="chartMetric.set(tab.value)">
-                {{ tab.label }}
-              </button>
+              <button class="chart-tab" [class.tab-active]="chartMetric() === tab.value"
+                      (click)="chartMetric.set(tab.value)">{{ tab.label }}</button>
             }
           </div>
         </div>
         <div class="bar-chart">
           @if (dailyUsage().length > 0) {
-            @for (day of dailyUsage(); track day.date) {
+            @for (day of dailyUsage(); track day.date; let last = $last) {
               <div class="bar-col">
                 <div class="bar-wrap">
-                  <div class="bar-fill" [style.height.%]="getBarHeight(day)" [title]="getBarValue(day) | number"></div>
+                  <div class="bar-fill"
+                       [class.bar-last]="last"
+                       [style.height.%]="getBarHeight(day)"
+                       [title]="(getBarValue(day) | number) ?? ''"></div>
                 </div>
                 <span class="bar-label">{{ day.date | date:'dd/MM' }}</span>
               </div>
             }
           } @else {
-            <div class="chart-empty">Nenhum dado disponível para o período.</div>
+            <div class="chart-empty">Nenhum dado para o período.</div>
           }
         </div>
       </div>
 
-      <!-- Por Projeto -->
-      <div class="section-grid">
-        <div class="table-card">
-          <h3>&#128218; Por Projeto</h3>
-          <table>
-            <thead>
-              <tr><th>Projeto</th><th>Chats</th><th>Tokens</th><th>% do total</th></tr>
-            </thead>
-            <tbody>
-              @for (p of metrics().byProject; track p.projectId) {
-                <tr>
-                  <td>{{ p.projectName }}</td>
-                  <td>{{ p.chatCount }}</td>
-                  <td>{{ shortNumber(p.tokensUsed) }}</td>
-                  <td>
-                    <div class="percent-bar">
-                      <div class="percent-fill" [style.width.%]="p.percentOfTotal"></div>
-                    </div>
-                    {{ p.percentOfTotal | number:'1.1-1' }}%
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+      <!-- Cost composition -->
+      <div class="section-card">
+        <h2 class="section-title">Composição de custo</h2>
+        <div class="cost-bars">
+          @for (item of costItems(); track item.label) {
+            <div class="cost-item">
+              <span class="cost-label">{{ item.label }}</span>
+              <app-mini-bar [value]="item.value" [max]="metrics().estimatedCost.total" height="8px" [color]="item.color" />
+              <span class="cost-value mono">R$ {{ item.value | number:'1.0-0' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Tables row -->
+      <div class="tables-row">
+        <div class="section-card">
+          <h2 class="section-title">Por projeto</h2>
+          <div class="proj-grid">
+            <div class="grid-head"><span>Projeto</span><span class="align-right">Chats</span><span class="align-right">Tokens</span><span>%</span></div>
+            @for (p of metrics().byProject; track p.projectId) {
+              <div class="grid-row">
+                <span>{{ p.projectName }}</span>
+                <span class="align-right mono">{{ p.chatCount | number }}</span>
+                <span class="align-right mono">{{ shortNumber(p.tokensUsed) }}</span>
+                <span class="pct-cell">
+                  <app-mini-bar [value]="p.percentOfTotal" [max]="100" height="5px" />
+                  <span class="mono ink-3">{{ p.percentOfTotal | number:'1.1-1' }}%</span>
+                </span>
+              </div>
+            }
+          </div>
         </div>
 
-        <div class="table-card">
-          <h3>&#128100; Por Usuário</h3>
-          <table>
-            <thead>
-              <tr><th>Usuário</th><th>Chats</th><th>Tokens</th></tr>
-            </thead>
-            <tbody>
-              @for (u of metrics().byUser; track u.userId) {
-                <tr>
-                  <td><span class="avatar-xs">{{ u.userName.slice(0,2) }}</span> {{ u.userName }}</td>
-                  <td>{{ u.chatCount }}</td>
-                  <td>{{ shortNumber(u.tokensUsed) }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
+        <div class="section-card">
+          <h2 class="section-title">Por usuário</h2>
+          <div class="user-grid">
+            <div class="grid-head"><span>Usuário</span><span class="align-right">Chats</span><span class="align-right">Tokens</span></div>
+            @for (u of metrics().byUser; track u.userId) {
+              <div class="grid-row">
+                <span class="user-cell">
+                  <span class="av-xs">{{ u.userName.slice(0,2).toUpperCase() }}</span>
+                  {{ u.userName }}
+                </span>
+                <span class="align-right mono">{{ u.chatCount | number }}</span>
+                <span class="align-right mono">{{ shortNumber(u.tokensUsed) }}</span>
+              </div>
+            }
+          </div>
         </div>
       </div>
 
       <!-- Storage -->
-      <div class="storage-section">
-        <h3>&#128190; Storage</h3>
-        <div class="storage-bars">
-          <div class="storage-item">
-            <span>Documentos</span>
-            <div class="storage-bar"><div class="storage-fill docs" [style.width.%]="storagePercent('docs')"></div></div>
-            <span>{{ metrics().storageDocumentsGb | number:'1.1-1' }} GB</span>
+      <div class="section-card">
+        <h2 class="section-title">Storage</h2>
+        <div class="cost-bars">
+          <div class="cost-item">
+            <span class="cost-label">Documentos</span>
+            <app-mini-bar [value]="metrics().storageDocumentsGb" [max]="totalStorageGb()" height="8px" color="var(--acc)" />
+            <span class="cost-value mono">{{ metrics().storageDocumentsGb | number:'1.1-1' }} GB</span>
           </div>
-          <div class="storage-item">
-            <span>Vector DB</span>
-            <div class="storage-bar"><div class="storage-fill vector" [style.width.%]="storagePercent('vector')"></div></div>
-            <span>{{ metrics().storageVectorDbGb | number:'1.1-1' }} GB</span>
+          <div class="cost-item">
+            <span class="cost-label">Vector DB</span>
+            <app-mini-bar [value]="metrics().storageVectorDbGb" [max]="totalStorageGb()" height="8px" color="var(--good)" />
+            <span class="cost-value mono">{{ metrics().storageVectorDbGb | number:'1.1-1' }} GB</span>
           </div>
-          <div class="storage-item">
-            <span>Modelos LoRA</span>
-            <div class="storage-bar"><div class="storage-fill models" [style.width.%]="storagePercent('models')"></div></div>
-            <span>{{ metrics().storageModelsGb | number:'1.1-1' }} GB</span>
+          <div class="cost-item">
+            <span class="cost-label">Modelos LoRA</span>
+            <app-mini-bar [value]="metrics().storageModelsGb" [max]="totalStorageGb()" height="8px" color="var(--warn)" />
+            <span class="cost-value mono">{{ metrics().storageModelsGb | number:'1.1-1' }} GB</span>
           </div>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    :host { display:block; font-family: Inter, system-ui, sans-serif; }
-    .usage-overview { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
-    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
-    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
-    .page-header p { font-size:13px; color:#64748b; margin:0; }
+    .admin-page { padding: 28px 32px; font-family: 'IBM Plex Sans', system-ui, sans-serif; max-width: 1200px; }
+    .breadcrumb { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-3); margin-bottom:16px; }
+    .bc-link { color:var(--ink-2); text-decoration:none; }
+    .bc-link:hover { color:var(--ink); }
+    .bc-sep { color:var(--line); }
+    .admin-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
+    .admin-header h1 { font-size:20px; font-weight:600; color:var(--ink); margin:0 0 4px; }
+    .page-sub { font-size:13px; color:var(--ink-3); margin:0; }
     .header-actions { display:flex; gap:10px; align-items:center; }
-    .header-actions select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:7px 12px; font-size:13px; color:#1e293b; }
-    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
-    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px; margin-bottom:16px; }
-    .kpi-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; display:flex; flex-direction:column; align-items:center; gap:4px; }
-    .kpi-icon { font-size:22px; }
-    .kpi-value { font-size:22px; font-weight:700; color:#0f172a; }
-    .kpi-label { font-size:12px; color:#64748b; text-align:center; }
-    .chart-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
-    .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .chart-header h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0; }
+    .period-select { background:var(--white); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; color:var(--ink); }
+    .btn-ghost { background:none; border:1px solid var(--line); border-radius:8px; padding:7px 16px; font-size:13px; color:var(--ink-2); cursor:pointer; }
+    .btn-ghost:hover { background:var(--panel-2); }
+    .budget-alert { background:#faf3e6; border:1px solid #ecd9b0; color:var(--warn); border-radius:8px; padding:10px 16px; font-size:13px; font-weight:500; margin-bottom:16px; }
+    .kpi-row { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:16px; }
+    .chart-card { background:var(--white); border:1px solid var(--line); border-radius:10px; padding:20px 24px; margin-bottom:12px; }
+    .chart-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .chart-head h2 { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
     .chart-tabs { display:flex; gap:6px; }
-    .chart-tabs button { padding:5px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#f1f5f9; color:#374151; font-size:12px; cursor:pointer; }
-    .chart-tabs button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
-    .bar-chart { display:flex; align-items:flex-end; gap:4px; height:120px; padding-bottom:20px; position:relative; }
+    .chart-tab { padding:5px 12px; border:1px solid var(--line); border-radius:6px; background:var(--panel-2); color:var(--ink-2); font-size:12px; cursor:pointer; }
+    .tab-active { background:var(--acc-soft); color:var(--acc); border-color:var(--acc-line); }
+    .bar-chart { display:flex; align-items:flex-end; gap:3px; height:120px; padding-bottom:20px; }
     .bar-col { display:flex; flex-direction:column; align-items:center; flex:1; min-width:0; }
     .bar-wrap { flex:1; display:flex; align-items:flex-end; width:100%; }
-    .bar-fill { width:100%; background:#6366f1; border-radius:3px 3px 0 0; min-height:2px; transition:height 0.3s; }
-    .bar-label { font-size:10px; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
-    .chart-empty { text-align:center; padding:40px; color:#94a3b8; font-size:14px; width:100%; }
-    .section-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
-    .table-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
-    .table-card h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
-    .table-card table { width:100%; border-collapse:collapse; }
-    .table-card th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
-    .table-card td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
-    .table-card tr:hover td { background:#f8fafc; }
-    .percent-bar { height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; display:inline-block; width:60px; margin-right:8px; vertical-align:middle; }
-    .percent-fill { height:100%; background:#6366f1; border-radius:3px; }
-    .avatar-xs { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:#e0e7ff; color:#4338ca; font-size:10px; font-weight:600; margin-right:6px; }
-    .storage-section { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; margin-bottom:16px; }
-    .storage-section h3 { font-size:15px; font-weight:600; color:#0f172a; margin:0 0 16px; }
-    .storage-bars { display:flex; flex-direction:column; gap:12px; }
-    .storage-item { display:flex; align-items:center; gap:12px; font-size:13px; color:#374151; }
-    .storage-item > span:first-child { width:100px; flex-shrink:0; }
-    .storage-bar { flex:1; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
-    .storage-fill { height:100%; border-radius:4px; }
-    .storage-fill.docs { background:#6366f1; }
-    .storage-fill.vector { background:#10b981; }
-    .storage-fill.models { background:#f59e0b; }
-  `]
+    .bar-fill { width:100%; background:var(--line); border-radius:3px 3px 0 0; min-height:2px; transition:height .3s; }
+    .bar-last { background:var(--acc); }
+    .bar-label { font-size:10px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; font-family:'IBM Plex Mono', monospace; }
+    .chart-empty { text-align:center; padding:40px; color:var(--ink-3); font-size:13px; width:100%; }
+    .section-card { background:var(--white); border:1px solid var(--line); border-radius:10px; padding:20px 24px; margin-bottom:12px; }
+    .section-title { font-size:14px; font-weight:600; color:var(--ink); margin:0 0 16px; }
+    .cost-bars { display:flex; flex-direction:column; gap:12px; }
+    .cost-item { display:flex; align-items:center; gap:12px; }
+    .cost-label { font-size:13px; color:var(--ink-2); min-width:100px; flex-shrink:0; }
+    .cost-value { font-size:12px; color:var(--ink-3); min-width:70px; text-align:right; }
+    app-mini-bar { flex:1; }
+    .tables-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .proj-grid, .user-grid { display:grid; grid-template-columns:1fr auto auto 120px; gap:0; }
+    .proj-grid { grid-template-columns:1fr 60px 80px 120px; }
+    .user-grid { grid-template-columns:1fr 60px 80px; }
+    .grid-head { display:contents; }
+    .grid-head > span { padding:8px 10px; font-size:11px; font-weight:600; color:var(--ink-3); border-bottom:1px solid var(--line); }
+    .grid-row { display:contents; }
+    .grid-row > span { padding:9px 10px; font-size:12.5px; color:var(--ink); border-bottom:1px solid var(--line-2); }
+    .grid-row:last-child > span { border-bottom:none; }
+    .grid-row:hover > span { background:var(--panel-2); }
+    .align-right { text-align:right; }
+    .pct-cell { display:flex; align-items:center; gap:8px; padding-right:0 !important; }
+    .user-cell { display:flex; align-items:center; gap:8px; }
+    .av-xs { width:22px; height:22px; border-radius:50%; background:var(--acc-soft); color:var(--acc); font-size:9px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .mono { font-family:'IBM Plex Mono', monospace; }
+    .ink-3 { color:var(--ink-3); }
+  `],
 })
 export class UsageOverviewComponent implements OnInit {
   private http = inject(HttpClient);
 
+  readonly budgetLimit = BUDGET_LIMIT;
+
   selectedPeriod = '30d';
   chartMetric    = signal<'messages' | 'tokens' | 'users' | 'documents'>('messages');
-  metrics        = signal<UsageMetrics>({
-    period: '', totalTokensInput: 0, totalTokensOutput: 0, totalTokensEmbedding: 0,
-    totalChatRequests: 0, totalRagQueries: 0, totalDocumentsProcessed: 0,
-    totalTrainingRuns: 0, gpuHoursInference: 0, gpuHoursTraining: 0,
-    gpuHoursEmbedding: 0, storageDocumentsGb: 0, storageVectorDbGb: 0,
-    storageModelsGb: 0, estimatedCost: { gpu: 0, storage: 0, network: 0, total: 0, currency: 'BRL' },
-    byProject: [], byUser: [], activeUsers: 0
+  metrics        = signal<UsageMetrics>(MOCK_METRICS);
+  dailyUsage     = signal<DailyUsage[]>([]);
+
+  budgetPct = computed(() => (this.metrics().estimatedCost.total / this.budgetLimit) * 100);
+
+  costItems = computed(() => {
+    const c = this.metrics().estimatedCost;
+    return [
+      { label: 'GPU / Inferência', value: c.gpu,     color: 'var(--acc)' },
+      { label: 'Storage',          value: c.storage,  color: 'var(--warn)' },
+      { label: 'Rede',             value: c.network,  color: 'var(--ink-3)' },
+    ];
   });
-  dailyUsage = signal<DailyUsage[]>([]);
+
+  totalStorageGb = computed(() => {
+    const m = this.metrics();
+    return m.storageDocumentsGb + m.storageVectorDbGb + m.storageModelsGb || 1;
+  });
 
   chartTabs: { value: 'messages' | 'tokens' | 'users' | 'documents'; label: string }[] = [
     { value: 'messages',  label: 'Mensagens' },
@@ -236,10 +272,14 @@ export class UsageOverviewComponent implements OnInit {
   ngOnInit(): void { this.load(); }
 
   load(): void {
-    this.http.get<UsageMetrics>(`/api/admin/metrics?period=${this.selectedPeriod}`)
-      .subscribe((m) => this.metrics.set(m));
-    this.http.get<DailyUsage[]>(`/api/admin/metrics/daily?period=${this.selectedPeriod}`)
-      .subscribe((d) => this.dailyUsage.set(d));
+    this.http.get<UsageMetrics>(`/api/admin/metrics?period=${this.selectedPeriod}`).subscribe({
+      next: (m) => this.metrics.set(m),
+      error: () => this.metrics.set(MOCK_METRICS),
+    });
+    this.http.get<DailyUsage[]>(`/api/admin/metrics/daily?period=${this.selectedPeriod}`).subscribe({
+      next: (d) => this.dailyUsage.set(d),
+      error: () => this.dailyUsage.set([]),
+    });
   }
 
   getBarValue(day: DailyUsage): number {
@@ -251,13 +291,6 @@ export class UsageOverviewComponent implements OnInit {
     const all = this.dailyUsage();
     const max = Math.max(...all.map((d) => this.getBarValue(d)), 1);
     return (this.getBarValue(day) / max) * 100;
-  }
-
-  storagePercent(type: 'docs' | 'vector' | 'models'): number {
-    const m = this.metrics();
-    const total = (m.storageDocumentsGb + m.storageVectorDbGb + m.storageModelsGb) || 1;
-    const v = type === 'docs' ? m.storageDocumentsGb : type === 'vector' ? m.storageVectorDbGb : m.storageModelsGb;
-    return (v / total) * 100;
   }
 
   exportCsv(): void {

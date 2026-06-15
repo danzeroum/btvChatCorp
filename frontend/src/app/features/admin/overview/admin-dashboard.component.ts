@@ -1,73 +1,95 @@
 import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
-import { CommonModule, DecimalPipe, DatePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { CommonModule, DecimalPipe, CurrencyPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { forkJoin, interval, Subscription, switchMap } from 'rxjs';
+import { interval, Subscription, switchMap, forkJoin } from 'rxjs';
 import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/models/admin.model';
+import { KpiCardComponent } from '../shared/kpi-card.component';
+import { GaugeComponent } from '../shared/gauge.component';
+import { MiniBarComponent } from '../shared/mini-bar.component';
+
+const MOCK_HEALTH: SystemHealth = {
+  status: 'healthy', api: true, database: true, vectorDb: true, gpu: true,
+  embedding: true, uptimePercent: 99.96, avgLatencyMs: 118,
+};
+const MOCK_GPU: GpuInfo = {
+  model: 'A100 80GB', utilization: 73, vramUsed: 42, vramTotal: 80,
+  vramPercent: 52.5, temperature: 68, requestsPerMin: 94,
+  activeModel: 'Llama-3 70B Q4', activeLoraVersion: 'v2.1', provider: 'RunPod',
+};
+const MOCK_METRICS: Partial<UsageMetrics> = {
+  activeUsers: 148, totalChatRequests: 8320, totalTokensInput: 12_400_000,
+  totalTokensOutput: 9_800_000,
+  estimatedCost: { gpu: 2_140, storage: 310, network: 75, total: 2_525, currency: 'BRL' },
+};
+const MOCK_ALERTS: AdminAlert[] = [
+  { id: '1', severity: 'critical', title: '3 usuários sem MFA', description: 'Usuários admin sem autenticação de dois fatores. Risco alto de comprometimento.', actionLabel: 'Ver usuários', actionType: '/admin/users?filter=no-mfa' },
+  { id: '2', severity: 'warning',  title: 'Orçamento em 84%', description: 'R$ 2.525 de R$ 3.000 utilizados. Projeção: R$ 3.100 ao fim do mês.', actionLabel: 'Ajustar limite', actionType: '/admin/billing' },
+];
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, DecimalPipe, DatePipe],
+  imports: [CommonModule, RouterLink, DecimalPipe, CurrencyPipe, KpiCardComponent, GaugeComponent, MiniBarComponent],
   template: `
-    <div class="dashboard">
-      <!-- Page Header -->
-      <div class="page-header">
-        <div class="header-left">
-          <h1 class="page-title">Visão geral</h1>
-          <p class="page-sub">{{ workspaceName() }} · Enterprise · atualizado há 2 min</p>
+    <div class="dash">
+      <!-- Header -->
+      <div class="dash-header">
+        <div>
+          <h1>Visão geral</h1>
+          <p class="subtitle">Centro de operações · atualizado agora</p>
         </div>
-        <div class="header-right">
-          <select class="period-select" [(ngModel)]="selectedPeriod" (ngModelChange)="loadMetrics()">
+        <div class="header-actions">
+          <select class="period-sel" [(value)]="selectedPeriod" (change)="onPeriodChange($event)">
             <option value="7d">Últimos 7 dias</option>
-            <option value="30d">Últimos 30 dias</option>
+            <option value="30d" selected>Últimos 30 dias</option>
             <option value="90d">Últimos 90 dias</option>
           </select>
-          <button class="btn-outline" (click)="exportReport()">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <button class="btn-ghost" (click)="exportReport()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             Exportar
           </button>
         </div>
       </div>
 
-      <!-- System Status Bar -->
-      <div class="status-bar">
-        <div class="status-indicator" [class.healthy]="systemHealth().status === 'healthy'"
-             [class.degraded]="systemHealth().status === 'degraded'">
-          <span class="status-dot"></span>
-          <span>{{ systemHealth().status === 'healthy' ? 'Sistema operacional' : 'Sistema degradado' }}</span>
+      <!-- 1. Health strip -->
+      <div class="health-strip">
+        <div class="health-left">
+          <span class="health-pill" [class.degraded]="health().status !== 'healthy'">
+            <span class="health-dot"></span>
+            {{ health().status === 'healthy' ? 'Sistema operacional' : 'Atenção em ' + downCount() + ' serviço(s)' }}
+          </span>
+          <div class="svc-row">
+            @for (svc of services(); track svc.name) {
+              <span class="svc-item" [title]="svc.name">
+                <span class="svc-dot" [class.svc-ok]="svc.ok" [class.svc-bad]="!svc.ok"></span>
+                <span class="svc-name">{{ svc.name }}</span>
+              </span>
+            }
+          </div>
         </div>
-        <div class="status-services">
-          @for (svc of services(); track svc.name) {
-            <div class="svc-pill" [class.ok]="svc.ok" [class.err]="!svc.ok">
-              <span class="svc-dot"></span>
-              <span>{{ svc.name }}</span>
-            </div>
-          }
-        </div>
-        <div class="status-meta">
-          <span>uptime <strong>{{ systemHealth().uptimePercent | number:'1.2-2' }}%</strong></span>
+        <div class="health-right mono">
+          <span>uptime <strong>{{ health().uptimePercent | number:'1.2-2' }}%</strong></span>
           <span class="sep">·</span>
-          <span>latência <strong>{{ systemHealth().avgLatencyMs }}ms</strong></span>
+          <span>latência <strong>{{ health().avgLatencyMs }}ms</strong></span>
         </div>
       </div>
 
-      <!-- Needs Attention -->
+      <!-- 2. Precisa da sua atenção -->
       @if (alerts().length > 0) {
         <section class="section">
-          <div class="section-header">
-            <span class="section-title">Precisa da sua atenção</span>
-            <span class="attention-count">{{ alerts().length }}</span>
-            <span class="section-hint">ações priorizadas por impacto</span>
-          </div>
+          <p class="sec-head">
+            Precisa da sua atenção
+            <span class="sec-count">{{ alerts().length }}</span>
+          </p>
           <div class="alerts-grid">
             @for (alert of alerts(); track alert.id) {
-              <div class="alert-card" [class]="'alert-' + alert.severity">
-                <div class="alert-icon-wrap">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <div class="action-card" [class]="'action-' + alert.severity">
+                <div class="action-icon-wrap">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                     @if (alert.severity === 'critical') {
                       <path d="M8 2L14.5 13H1.5L8 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
                       <path d="M8 6v3M8 11v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -77,203 +99,86 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
                     }
                   </svg>
                 </div>
-                <div class="alert-body">
-                  <p class="alert-title">{{ alert.title }}</p>
-                  <p class="alert-desc">{{ alert.description }}</p>
+                <div class="action-body">
+                  <span class="action-title">{{ alert.title }}</span>
+                  <span class="action-desc">{{ alert.description }}</span>
                 </div>
-                <button class="alert-action" (click)="handleAlert(alert)">
+                <a [routerLink]="alertRoute(alert)" [queryParams]="alertParams(alert)"
+                   class="action-btn" [class.action-btn-accent]="alert.severity === 'critical'">
                   {{ alert.actionLabel }} →
-                </button>
+                </a>
               </div>
             }
           </div>
         </section>
       }
 
-      <!-- KPI Cards -->
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <span class="kpi-label">Usuários ativos</span>
-          <span class="kpi-value">{{ metrics().activeUsers | number }}</span>
-          @if (metrics().chatsTrendPercent) {
-            <span class="kpi-trend up">↑ {{ metrics().chatsTrendPercent | number:'1.0-0' }} no mês</span>
-          }
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Conversas · {{ selectedPeriod }}</span>
-          <span class="kpi-value">{{ metrics().totalChatRequests | number }}</span>
-          @if (metrics().chatsTrendPercent) {
-            <span class="kpi-trend up">↑ {{ metrics().chatsTrendPercent | number:'1.0-0' }}%</span>
-          }
-        </div>
-        <div class="kpi-card gpu-kpi-card">
-          <span class="kpi-label">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-2px;margin-right:4px">
-              <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/>
-              <path d="M4 9h8M4 7h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-            </svg>
-            GPU
-            <span class="gpu-model-tag">{{ gpuInfo().model }}</span>
-          </span>
-          <div class="gpu-gauge-inline">
-            <svg class="gauge-svg" viewBox="0 0 100 100">
-              <circle class="gauge-track" cx="50" cy="50" r="42" fill="none"
-                stroke="rgba(255,255,255,0.08)" stroke-width="10"/>
-              <circle class="gauge-fill" cx="50" cy="50" r="42" fill="none"
-                [class]="'gfill-' + gpuUtilClass()"
-                stroke-width="10"
-                stroke-linecap="round"
-                stroke-dasharray="263.9"
-                [attr.stroke-dashoffset]="gaugeOffset()"
-                transform="rotate(-90 50 50)"/>
-              <text x="50" y="46" text-anchor="middle" class="gauge-num">{{ gpuInfo().utilization }}%</text>
-              <text x="50" y="60" text-anchor="middle" class="gauge-sub">GPU Util</text>
-            </svg>
-            <div class="gpu-stats">
-              <div class="gpu-stat">
-                <span class="gs-label">VRAM</span>
-                <span class="gs-val">{{ gpuInfo().vramUsed }}GB / {{ gpuInfo().vramTotal }}GB</span>
-                <div class="gs-bar"><div class="gs-fill" [style.width.%]="gpuInfo().vramPercent"></div></div>
-              </div>
-              <div class="gpu-stat">
-                <span class="gs-label">Modelo ativo</span>
-                <span class="gs-val">{{ gpuInfo().activeModel }}</span>
-              </div>
-              <div class="gpu-stat">
-                <span class="gs-label">Req/min</span>
-                <span class="gs-val">{{ gpuInfo().requestsPerMin }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="kpi-card cost-kpi-card">
-          <span class="kpi-label">$ Custo estimado · {{ selectedPeriod }}</span>
-          <span class="kpi-value cost-value">R$ {{ metrics().estimatedCost?.total | number:'1.0-0' }}</span>
-          <div class="cost-rows">
-            <div class="cost-row">
-              <span>GPU ({{ gpuInfo().provider }})</span>
-              <div class="cost-bar-wrap">
-                <div class="cost-bar-fill gpu-bar" [style.width.%]="gpuCostPct()"></div>
-              </div>
-              <span>R$ {{ metrics().estimatedCost?.gpu | number:'1.0-0' }}</span>
-            </div>
-            <div class="cost-row">
-              <span>Storage</span>
-              <div class="cost-bar-wrap">
-                <div class="cost-bar-fill" [style.width.%]="storageCostPct()"></div>
-              </div>
-              <span>R$ {{ metrics().estimatedCost?.storage | number:'1.0-0' }}</span>
-            </div>
-            <div class="cost-row">
-              <span>Rede</span>
-              <div class="cost-bar-wrap">
-                <div class="cost-bar-fill" [style.width.%]="networkCostPct()"></div>
-              </div>
-              <span>R$ {{ metrics().estimatedCost?.network | number:'1.0-0' }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-label">Tokens · {{ selectedPeriod }}</span>
-          <span class="kpi-value">{{ shortNumber(metrics().totalTokensInput + metrics().totalTokensOutput) }}</span>
-          <span class="kpi-sub">Custo/usuário R$ {{ costPerUser() | number:'1.2-2' }}/mês</span>
-        </div>
-      </div>
-
-      <!-- Top Tables -->
-      <div class="tables-row">
-        <div class="table-card">
-          <div class="tc-header">
-            <h3 class="tc-title">Projetos Mais Ativos</h3>
-          </div>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Projeto</th>
-                <th class="num">Chats</th>
-                <th class="num">Docs</th>
-                <th class="num">Tokens</th>
-                <th>Qualidade</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (p of topProjects(); track p.id) {
-                <tr class="clickable" [routerLink]="['/projects', p.id]">
-                  <td>
-                    <div class="cell-project">
-                      <span class="proj-dot" [style.background]="p.color"></span>
-                      <span>{{ p.icon }} {{ p.name }}</span>
-                    </div>
-                  </td>
-                  <td class="num">{{ p.chatCount }}</td>
-                  <td class="num">{{ p.docCount }}</td>
-                  <td class="num">{{ shortNumber(p.tokensUsed) }}</td>
-                  <td>
-                    <div class="quality-wrap">
-                      <div class="quality-bar">
-                        <div class="quality-fill" [style.width.%]="p.avgQuality * 20"></div>
-                      </div>
-                      <span class="quality-num">{{ p.avgQuality | number:'1.1-1' }}</span>
-                    </div>
-                  </td>
-                </tr>
-              }
-              @empty {
-                <tr><td colspan="5" class="empty-row">Nenhum projeto ainda</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div class="table-card">
-          <div class="tc-header">
-            <h3 class="tc-title">Usuários Mais Ativos</h3>
-          </div>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Usuário</th>
-                <th class="num">Msgs</th>
-                <th class="num">Feedback</th>
-                <th>Últ. atividade</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (u of topUsers(); track u.id) {
-                <tr class="clickable" [routerLink]="['/admin/users']">
-                  <td>
-                    <div class="cell-user">
-                      <span class="user-av">{{ u.name?.slice(0,2) }}</span>
-                      <span>{{ u.name }}</span>
-                    </div>
-                  </td>
-                  <td class="num">{{ u.messageCount }}</td>
-                  <td class="num">{{ u.feedbackCount }}</td>
-                  <td class="date-cell">{{ u.lastActiveAt | date:'dd/MM HH:mm' }}</td>
-                </tr>
-              }
-              @empty {
-                <tr><td colspan="4" class="empty-row">Nenhum dado ainda</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Admin Areas -->
+      <!-- 3. Métricas -->
       <section class="section">
-        <div class="section-header">
-          <span class="section-title">Áreas de administração</span>
+        <div class="metrics-grid">
+          <!-- KPIs 2×2 -->
+          <div class="kpi-quad">
+            <app-kpi-card value="{{ metrics().activeUsers | number }}"
+                          label="Usuários ativos"
+                          trend="↑ este mês" trendDir="up"/>
+            <app-kpi-card value="{{ metrics().totalChatRequests | number }}"
+                          label="Conversas · {{ selectedPeriod }}"
+                          trend="↑ 12%" trendDir="up"/>
+            <app-kpi-card value="{{ shortTokens() }}"
+                          label="Tokens · {{ selectedPeriod }}"/>
+            <app-kpi-card value="{{ costPerUser() | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}"
+                          label="Custo/usuário mês"
+                          [trend]="costTrend()" trendDir="warn"/>
+          </div>
+
+          <!-- GPU Gauge -->
+          <div class="gpu-card">
+            <p class="card-label">GPU · {{ gpu().model }}</p>
+            <div class="gpu-center">
+              <app-gauge [value]="gpu().utilization"
+                         sub="Utilização"
+                         [color]="gpu().utilization > 90 ? 'var(--acc)' : 'var(--good)'"/>
+            </div>
+            <div class="vram-row">
+              <span class="vram-label mono">VRAM {{ gpu().vramUsed }}GB / {{ gpu().vramTotal }}GB</span>
+              <app-mini-bar [value]="gpu().vramUsed" [max]="gpu().vramTotal"
+                            color="var(--ink-2)" height="5px"/>
+            </div>
+            <p class="gpu-model-info mono">{{ gpu().activeModel }}</p>
+          </div>
+
+          <!-- Custo -->
+          <div class="cost-card">
+            <div class="cost-total-row">
+              <p class="card-label">Custo 30d</p>
+              <span class="cost-total mono">{{ metrics().estimatedCost?.total | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</span>
+            </div>
+            <div class="cost-items">
+              @for (item of costBreakdown(); track item.label) {
+                <div class="cost-item">
+                  <span class="cost-item-label">{{ item.label }}</span>
+                  <app-mini-bar [value]="item.pct" [max]="100"
+                                color="var(--ink-2)" height="5px"/>
+                  <span class="cost-item-val mono">{{ item.val | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}</span>
+                </div>
+              }
+            </div>
+          </div>
         </div>
+      </section>
+
+      <!-- 4. Áreas de administração -->
+      <section class="section">
+        <p class="sec-head">Áreas de administração</p>
         <div class="areas-grid">
           @for (area of adminAreas; track area.route) {
             <a class="area-card" [routerLink]="area.route">
-              <div class="area-icon" [innerHTML]="area.icon"></div>
+              <div class="area-icon" [innerHTML]="area.icon" aria-hidden="true"></div>
               <div class="area-body">
                 <span class="area-title">{{ area.title }}</span>
                 <span class="area-desc">{{ area.desc }}</span>
               </div>
-              <svg class="area-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <svg class="area-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </a>
@@ -283,528 +188,388 @@ import { SystemHealth, GpuInfo, UsageMetrics, AdminAlert } from '../../../core/m
     </div>
   `,
   styles: [`
-    .dashboard {
-      padding: 28px 32px;
-      max-width: 1200px;
+    :host { display: block; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+
+    .dash {
+      padding: 20px 28px 40px;
+      max-width: 1120px;
       margin: 0 auto;
-      font-family: 'Inter', system-ui, sans-serif;
     }
 
     /* Header */
-    .page-header {
+    .dash-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 20px;
+      padding-bottom: 20px;
     }
-    .page-title {
-      font-size: 22px;
-      font-weight: 700;
-      color: #0f172a;
-      margin: 0 0 4px;
-    }
-    .page-sub { font-size: 13px; color: #64748b; margin: 0; }
-    .header-right { display: flex; gap: 10px; align-items: center; }
-    .period-select {
-      padding: 7px 12px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #374151;
-      background: #fff;
+    h1 { font-size: 19px; font-weight: 600; color: var(--ink); margin: 0; letter-spacing: -0.01em; }
+    .subtitle { font-size: 13px; color: var(--ink-3); margin: 2px 0 0; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .period-sel {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      font-size: 12.5px;
+      color: var(--ink-2);
+      background: var(--white);
       cursor: pointer;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      &:focus { outline: 2px solid var(--acc); outline-offset: 1px; }
     }
-    .btn-outline {
-      display: flex;
+
+    .btn-ghost {
+      display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 7px 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      background: #fff;
-      font-size: 13px;
-      color: #374151;
+      padding: 6px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--white);
+      font-size: 12.5px;
+      color: var(--ink-2);
       cursor: pointer;
-      transition: border-color 0.12s, background 0.12s;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      min-height: 34px;
+      transition: background 0.12s, color 0.12s;
+      &:hover { background: var(--panel-2); color: var(--ink); }
     }
-    .btn-outline:hover { border-color: #6366f1; color: #6366f1; }
 
-    /* Status bar */
-    .status-bar {
+    /* Health strip */
+    .health-strip {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 20px;
-      padding: 10px 16px;
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
+      padding: 12px 18px;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 12px;
       margin-bottom: 20px;
       flex-wrap: wrap;
     }
-    .status-indicator {
-      display: flex;
+    .health-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .health-pill {
+      display: inline-flex;
       align-items: center;
       gap: 7px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #64748b;
+      padding: 4px 11px;
+      background: var(--good-soft);
+      color: var(--good);
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      &.degraded { background: var(--acc-soft); color: var(--acc); }
     }
-    .status-indicator.healthy { color: #15803d; }
-    .status-indicator.degraded { color: #b45309; }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #94a3b8;
-    }
-    .status-indicator.healthy .status-dot { background: #22c55e; }
-    .status-indicator.degraded .status-dot { background: #f59e0b; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
-    .status-services { display: flex; gap: 12px; flex-wrap: wrap; flex: 1; }
-    .svc-pill {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 12px;
-      color: #94a3b8;
-    }
-    .svc-pill.ok { color: #374151; }
-    .svc-pill.err { color: #dc2626; }
-    .svc-dot {
-      width: 6px;
-      height: 6px;
+    .health-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: currentColor;
     }
-    .status-meta { font-size: 12px; color: #94a3b8; display: flex; gap: 6px; align-items: center; }
-    .status-meta strong { color: #374151; }
-    .sep { opacity: 0.5; }
+    .svc-row { display: flex; gap: 14px; flex-wrap: wrap; }
+    .svc-item { display: flex; align-items: center; gap: 5px; }
+    .svc-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ink-3);
+    }
+    .svc-ok  { background: var(--good); }
+    .svc-bad { background: var(--acc); }
+    .svc-name { font-size: 12px; color: var(--ink-2); }
+    .health-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 11.5px;
+      color: var(--ink-3);
+    }
+    .health-right strong { color: var(--ink); font-weight: 500; }
+    .sep { color: var(--line); }
 
     /* Section */
-    .section { margin-bottom: 28px; }
-    .section-header {
+    .section { margin-bottom: 24px; }
+    .sec-head {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 14px;
+      gap: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      margin: 0 0 12px;
     }
-    .section-title { font-size: 15px; font-weight: 600; color: #0f172a; }
-    .attention-count {
+    .sec-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      background: #ef4444;
+      background: var(--acc);
       color: #fff;
       font-size: 11px;
       font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
-    .section-hint { font-size: 12px; color: #94a3b8; margin-left: auto; }
 
-    /* Alerts */
+    /* Attention cards */
     .alerts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
       gap: 12px;
     }
-    .alert-card {
+    .action-card {
       display: flex;
       align-items: flex-start;
       gap: 12px;
-      padding: 16px;
+      padding: 14px 16px;
       border-radius: 10px;
-      border: 1px solid #fde68a;
-      background: #fffbeb;
+      border: 1px solid var(--acc-line);
+      background: var(--acc-soft);
     }
-    .alert-card.alert-critical {
-      border-color: #fca5a5;
-      background: #fff5f5;
+    .action-warning {
+      border-color: #ecd9b0;
+      background: #faf3e6;
     }
-    .alert-icon-wrap {
-      flex-shrink: 0;
-      width: 28px;
-      height: 28px;
+    .action-info {
+      border-color: var(--line);
+      background: var(--panel);
+    }
+    .action-icon-wrap {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: var(--white);
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
-      background: rgba(245,158,11,0.12);
-      color: #d97706;
-    }
-    .alert-critical .alert-icon-wrap { background: rgba(239,68,68,0.1); color: #dc2626; }
-    .alert-body { flex: 1; min-width: 0; }
-    .alert-title { display: block; font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
-    .alert-desc { display: block; font-size: 12px; color: #64748b; }
-    .alert-action {
       flex-shrink: 0;
-      padding: 6px 14px;
+      color: var(--acc);
+    }
+    .action-warning .action-icon-wrap { color: var(--warn); }
+    .action-info    .action-icon-wrap { color: var(--ink-2); }
+    .action-body { flex: 1; min-width: 0; }
+    .action-title { display: block; font-size: 13.5px; font-weight: 600; color: var(--acc); margin-bottom: 2px; }
+    .action-warning .action-title { color: #8a5c0a; }
+    .action-info    .action-title { color: var(--ink); }
+    .action-desc  { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+    .action-btn {
+      flex-shrink: 0;
+      padding: 5px 12px;
       border-radius: 7px;
       border: none;
-      background: #d97706;
+      background: var(--acc);
       color: #fff;
       font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       white-space: nowrap;
+      text-decoration: none;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+      align-self: center;
       transition: background 0.12s;
+      &:hover { background: #a84d32; }
     }
-    .alert-action:hover { background: #b45309; }
-    .alert-critical .alert-action { background: #dc2626; }
-    .alert-critical .alert-action:hover { background: #b91c1c; }
+    .action-warning .action-btn {
+      background: transparent;
+      color: #8a5c0a;
+      border: 1px solid #ecd9b0;
+      &:hover { background: #ecd9b0; }
+    }
+    .action-info .action-btn {
+      background: transparent;
+      color: var(--ink-2);
+      border: 1px solid var(--line);
+      &:hover { background: var(--panel-2); }
+    }
 
-    /* KPI Grid */
-    .kpi-grid {
+    /* Metrics grid */
+    .metrics-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1.6fr 1.4fr 1fr;
-      gap: 14px;
-      margin-bottom: 24px;
+      grid-template-columns: 1.6fr 0.85fr 1fr;
+      gap: 12px;
+      align-items: start;
     }
-    @media (max-width: 1100px) {
-      .kpi-grid { grid-template-columns: 1fr 1fr; }
-      .gpu-kpi-card, .cost-kpi-card { grid-column: span 2; }
-    }
-    .kpi-card {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 18px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .kpi-label { font-size: 12px; color: #64748b; font-weight: 500; }
-    .kpi-value { font-size: 28px; font-weight: 700; color: #0f172a; line-height: 1.1; }
-    .kpi-trend {
-      font-size: 12px;
-      color: #16a34a;
-      font-weight: 500;
-    }
-    .kpi-sub { font-size: 12px; color: #94a3b8; }
-
-    /* GPU card */
-    .gpu-kpi-card { padding: 18px 20px; }
-    .gpu-model-tag {
-      margin-left: 6px;
-      font-size: 10px;
-      background: #f1f5f9;
-      color: #64748b;
-      padding: 1px 7px;
-      border-radius: 20px;
-      font-weight: 500;
-    }
-    .gpu-gauge-inline {
-      display: flex;
-      gap: 20px;
-      align-items: center;
-      margin-top: 10px;
-    }
-    .gauge-svg {
-      width: 90px;
-      height: 90px;
-      flex-shrink: 0;
-    }
-    .gauge-track { }
-    .gauge-fill { transition: stroke-dashoffset 0.4s ease; }
-    .gfill-ok { stroke: #22c55e; }
-    .gfill-warning { stroke: #f59e0b; }
-    .gfill-critical { stroke: #ef4444; }
-    .gauge-num {
-      font-size: 20px;
-      font-weight: 700;
-      fill: #0f172a;
-      font-family: 'Inter', sans-serif;
-    }
-    .gauge-sub {
-      font-size: 9px;
-      fill: #94a3b8;
-      font-family: 'Inter', sans-serif;
-    }
-    .gpu-stats { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-    .gpu-stat { display: flex; flex-direction: column; gap: 3px; }
-    .gs-label { font-size: 11px; color: #94a3b8; }
-    .gs-val { font-size: 12.5px; font-weight: 500; color: #1e293b; }
-    .gs-bar {
-      height: 4px;
-      background: #f1f5f9;
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .gs-fill {
-      height: 100%;
-      background: #6366f1;
-      border-radius: 2px;
+    @media (max-width: 960px) {
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
     }
 
-    /* Cost card */
-    .cost-value { font-size: 26px; }
-    .cost-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
-    .cost-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: #64748b;
-    }
-    .cost-row > span:first-child { width: 90px; flex-shrink: 0; }
-    .cost-row > span:last-child { width: 60px; text-align: right; flex-shrink: 0; }
-    .cost-bar-wrap {
-      flex: 1;
-      height: 6px;
-      background: #f1f5f9;
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    .cost-bar-fill {
-      height: 100%;
-      background: #6366f1;
-      border-radius: 3px;
-      transition: width 0.4s ease;
-    }
-    .cost-bar-fill.gpu-bar { background: #ef4444; }
-
-    /* Tables */
-    .tables-row {
+    .kpi-quad {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-    @media (max-width: 900px) { .tables-row { grid-template-columns: 1fr; } }
-    .table-card {
-      background: #fff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .tc-header {
-      padding: 16px 20px 0;
-    }
-    .tc-title { font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 12px; }
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .data-table th {
-      padding: 10px 16px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      color: #94a3b8;
-      text-align: left;
-      background: #f8fafc;
-      border-top: 1px solid #f1f5f9;
-      border-bottom: 1px solid #f1f5f9;
-    }
-    .data-table th.num { text-align: right; }
-    .data-table td {
-      padding: 11px 16px;
-      font-size: 13px;
-      color: #374151;
-      border-bottom: 1px solid #f8fafc;
-    }
-    .data-table td.num { text-align: right; color: #1e293b; font-weight: 500; }
-    .data-table td.date-cell { color: #94a3b8; font-size: 12px; }
-    .data-table tr.clickable { cursor: pointer; }
-    .data-table tr.clickable:hover td { background: #f8fafc; }
-    .empty-row { text-align: center; color: #94a3b8; font-size: 13px; padding: 24px !important; }
-    .cell-project { display: flex; align-items: center; gap: 8px; }
-    .proj-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .cell-user { display: flex; align-items: center; gap: 8px; }
-    .user-av {
-      width: 28px;
-      height: 28px;
-      border-radius: 7px;
-      background: #ede9fe;
-      color: #6366f1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-    .quality-wrap { display: flex; align-items: center; gap: 8px; }
-    .quality-bar {
-      width: 60px;
-      height: 6px;
-      background: #f1f5f9;
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    .quality-fill { height: 100%; background: #22c55e; border-radius: 3px; }
-    .quality-num { font-size: 12px; color: #64748b; }
-
-    /* Areas grid */
-    .areas-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
       gap: 12px;
     }
+
+    .gpu-card, .cost-card {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .card-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-3);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 0 0 12px;
+    }
+    .gpu-center { display: flex; justify-content: center; margin-bottom: 12px; }
+    .vram-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .vram-label { font-size: 11px; color: var(--ink-3); }
+    .gpu-model-info { font-size: 11px; color: var(--ink-3); margin: 8px 0 0; text-align: center; }
+
+    .cost-total-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+    .cost-total { font-size: 22px; font-weight: 600; color: var(--ink); }
+    .cost-items { display: flex; flex-direction: column; gap: 10px; }
+    .cost-item { display: flex; align-items: center; gap: 8px; }
+    .cost-item-label { font-size: 12.5px; color: var(--ink-2); width: 70px; flex-shrink: 0; }
+    .cost-item-val { font-size: 12px; color: var(--ink-2); white-space: nowrap; width: 60px; text-align: right; flex-shrink: 0; }
+    app-mini-bar { flex: 1; }
+
+    /* Areas */
+    .areas-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) { .areas-grid { grid-template-columns: 1fr 1fr; } }
     .area-card {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding: 16px 18px;
-      background: #fff;
-      border: 1px solid #e2e8f0;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--white);
+      border: 1px solid var(--line);
       border-radius: 12px;
       text-decoration: none;
       color: inherit;
       transition: border-color 0.15s, box-shadow 0.15s;
-      cursor: pointer;
     }
     .area-card:hover {
-      border-color: #a5b4fc;
-      box-shadow: 0 2px 12px rgba(99,102,241,0.08);
+      border-color: var(--ink-3);
+      box-shadow: 0 2px 12px rgba(28,27,25,.06);
     }
     .area-icon {
       width: 38px;
       height: 38px;
       border-radius: 10px;
-      background: #f0f0ff;
-      color: #6366f1;
+      background: var(--panel-2);
+      color: var(--ink-2);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
     }
-    .area-icon svg { width: 18px; height: 18px; }
-    .area-body { flex: 1; overflow: hidden; }
-    .area-title { display: block; font-size: 13.5px; font-weight: 600; color: #1e293b; }
-    .area-desc { display: block; font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
-    .area-arrow { color: #cbd5e1; flex-shrink: 0; }
+    .area-icon ::ng-deep svg { width: 18px; height: 18px; }
+    .area-body { flex: 1; min-width: 0; }
+    .area-title { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+    .area-desc  { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .area-chevron { color: var(--ink-3); flex-shrink: 0; }
+
+    .mono { font-family: 'IBM Plex Mono', monospace; }
   `]
 })
 export class AdminDashboardComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
 
-  workspaceName = signal('Workspace');
   selectedPeriod = '30d';
-
-  systemHealth = signal<SystemHealth>({
-    status: 'healthy', api: true, database: true, vectorDb: true, gpu: true,
-    embedding: true, uptimePercent: 0, avgLatencyMs: 0
-  });
-
-  gpuInfo = signal<GpuInfo>({
-    model: '—', utilization: 0, vramUsed: 0, vramTotal: 0,
-    vramPercent: 0, temperature: 0, requestsPerMin: 0,
-    activeModel: '—', activeLoraVersion: '', provider: '—'
-  });
-
-  metrics = signal<UsageMetrics>({
-    period: '30d', totalTokensInput: 0, totalTokensOutput: 0,
-    totalTokensEmbedding: 0, totalChatRequests: 0, totalRagQueries: 0,
-    totalDocumentsProcessed: 0, totalTrainingRuns: 0, gpuHoursInference: 0,
-    gpuHoursTraining: 0, gpuHoursEmbedding: 0, storageDocumentsGb: 0,
-    storageVectorDbGb: 0, storageModelsGb: 0,
-    estimatedCost: { gpu: 0, storage: 0, network: 0, total: 0, currency: 'BRL' },
-    byProject: [], byUser: [], activeUsers: 0, chatsTrendPercent: 0
-  });
-
-  topProjects = signal<any[]>([]);
-  topUsers    = signal<any[]>([]);
-  alerts      = signal<AdminAlert[]>([]);
+  health   = signal<SystemHealth>(MOCK_HEALTH);
+  gpu      = signal<GpuInfo>(MOCK_GPU);
+  metrics  = signal<Partial<UsageMetrics>>(MOCK_METRICS);
+  alerts   = signal<AdminAlert[]>(MOCK_ALERTS);
 
   services = computed(() => [
-    { name: 'API',        ok: this.systemHealth().api },
-    { name: 'GPU · vLLM', ok: this.systemHealth().gpu },
-    { name: 'PostgreSQL', ok: this.systemHealth().database },
-    { name: 'Qdrant',     ok: this.systemHealth().vectorDb },
-    { name: 'Embedding',  ok: this.systemHealth().embedding },
+    { name: 'API',        ok: this.health().api },
+    { name: 'GPU · vLLM', ok: this.health().gpu },
+    { name: 'PostgreSQL', ok: this.health().database },
+    { name: 'Qdrant',     ok: this.health().vectorDb },
+    { name: 'Embedding',  ok: this.health().embedding },
   ]);
 
+  downCount = computed(() => this.services().filter(s => !s.ok).length);
+
   costPerUser = computed(() => {
-    const u = this.metrics().activeUsers;
+    const u = this.metrics().activeUsers ?? 0;
     return u > 0 ? (this.metrics().estimatedCost?.total ?? 0) / u : 0;
   });
 
-  gpuUtilClass = computed(() => {
-    const u = this.gpuInfo().utilization;
-    if (u > 90) return 'critical';
-    if (u > 70) return 'warning';
-    return 'ok';
+  shortTokens = computed(() => {
+    const n = (this.metrics().totalTokensInput ?? 0) + (this.metrics().totalTokensOutput ?? 0);
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
   });
 
-  gaugeOffset = computed(() => {
-    const circumference = 263.9;
-    const used = (1 - this.gpuInfo().utilization / 100) * circumference;
-    return used;
+  costTrend = computed(() => {
+    const used = this.metrics().estimatedCost?.total ?? 0;
+    const limit = 3000;
+    const pct = Math.round((used / limit) * 100);
+    return `${pct}% do orçamento`;
   });
 
-  gpuCostPct = computed(() => {
-    const total = this.metrics().estimatedCost?.total || 1;
-    return ((this.metrics().estimatedCost?.gpu || 0) / total) * 100;
+  costBreakdown = computed(() => {
+    const c = this.metrics().estimatedCost;
+    if (!c) return [];
+    return [
+      { label: 'GPU',     val: c.gpu,     pct: c.total ? (c.gpu     / c.total) * 100 : 0 },
+      { label: 'Storage', val: c.storage, pct: c.total ? (c.storage / c.total) * 100 : 0 },
+      { label: 'Rede',    val: c.network, pct: c.total ? (c.network / c.total) * 100 : 0 },
+    ];
   });
-  storageCostPct = computed(() => {
-    const total = this.metrics().estimatedCost?.total || 1;
-    return ((this.metrics().estimatedCost?.storage || 0) / total) * 100;
-  });
-  networkCostPct = computed(() => {
-    const total = this.metrics().estimatedCost?.total || 1;
-    return ((this.metrics().estimatedCost?.network || 0) / total) * 100;
-  });
+
+  alertRoute(a: AdminAlert): string {
+    return a.actionType?.split('?')[0] ?? '/admin/dashboard';
+  }
+
+  alertParams(a: AdminAlert): Record<string, string> {
+    const qs = a.actionType?.split('?')[1];
+    if (!qs) return {};
+    return Object.fromEntries(new URLSearchParams(qs).entries());
+  }
 
   adminAreas = [
     {
       title: 'Usuários & papéis',
-      desc: 'Gerencie membros, convites e permissões',
+      desc: 'Membros, convites e permissões',
       route: '/admin/users',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M2 16c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <path d="M13 9c2 0 4 1.2 4 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="13" cy="5.5" r="2" stroke="currentColor" stroke-width="1.5"/>
-      </svg>`,
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M2 16c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 9c2 0 4 1.2 4 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="13" cy="5.5" r="2" stroke="currentColor" stroke-width="1.5"/></svg>`,
     },
     {
       title: 'Auditoria',
-      desc: 'Histórico de ações e eventos de segurança',
+      desc: 'Histórico de eventos e segurança',
       route: '/admin/audit',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <rect x="2" y="1" width="11" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M5 6h7M5 9h7M5 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      </svg>`,
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="1" width="11" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 6h7M5 9h7M5 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
     },
     {
       title: 'Compliance LGPD',
-      desc: 'Retenção de dados e exclusão sob demanda',
-      route: '/admin/settings',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path d="M9 1.5L3 4.5V9c0 4 3 7 6 8 3-1 6-4 6-8V4.5L9 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>`,
+      desc: 'Score, controles e DSARs',
+      route: '/admin/compliance',
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 1.5L3 4.5V9c0 4 3 7 6 8 3-1 6-4 6-8V4.5L9 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 9l2.5 2.5 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
     },
     {
-      title: 'Modelos & IA',
-      desc: 'Modelos de inferência e treinamento automático',
+      title: 'Modelos & LoRA',
+      desc: 'Inferência e adapters ativos',
       route: '/admin/ai-config',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path d="M9 2L16 6V12L9 16L2 12V6L9 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        <circle cx="9" cy="9" r="2" fill="currentColor"/>
-      </svg>`,
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L16 6V12L9 16L2 12V6L9 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="9" cy="9" r="2" fill="currentColor"/></svg>`,
     },
     {
       title: 'Uso & custos',
       desc: 'Tokens, GPU e custo estimado',
       route: '/admin/billing',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <rect x="1.5" y="5" width="15" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M1.5 9h15" stroke="currentColor" stroke-width="1.5"/>
-        <circle cx="5.5" cy="12" r="1.2" fill="currentColor"/>
-      </svg>`,
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1.5" y="5" width="15" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 9h15" stroke="currentColor" stroke-width="1.5"/><circle cx="5.5" cy="12" r="1.2" fill="currentColor"/></svg>`,
     },
     {
-      title: 'API Keys',
-      desc: 'Gerencie chaves de acesso à API',
+      title: 'API keys',
+      desc: 'Acesso programático seguro',
       route: '/admin/api-keys',
-      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="6" cy="8" r="3.5" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M8.5 10.5L16 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <path d="M13.5 14l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      </svg>`,
+      icon: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="6" cy="8" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 10.5L16 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 14l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
     },
   ];
 
@@ -813,58 +578,38 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadAll();
     this.subs.push(
-      interval(30_000).pipe(switchMap(() =>
-        this.http.get<SystemHealth>('/api/v1/admin/health')))
-        .subscribe((h) => this.systemHealth.set(h))
-    );
-    this.subs.push(
-      interval(10_000).pipe(switchMap(() =>
-        this.http.get<GpuInfo>('/api/v1/admin/gpu-status')))
-        .subscribe((g) => this.gpuInfo.set(g))
+      interval(30_000)
+        .pipe(switchMap(() => this.http.get<SystemHealth>('/api/v1/admin/health')))
+        .subscribe({ next: (h) => this.health.set(h), error: () => {} })
     );
   }
 
-  ngOnDestroy(): void { this.subs.forEach((s) => s.unsubscribe()); }
+  ngOnDestroy(): void { this.subs.forEach(s => s.unsubscribe()); }
 
   loadAll(): void {
     forkJoin({
-      health:   this.http.get<SystemHealth>('/api/v1/admin/health'),
-      gpu:      this.http.get<GpuInfo>('/api/v1/admin/gpu-status'),
-      metrics:  this.http.get<UsageMetrics>(`/api/v1/admin/metrics?period=${this.selectedPeriod}`),
-      projects: this.http.get<any[]>('/api/v1/admin/metrics/top-projects?limit=5'),
-      users:    this.http.get<any[]>('/api/v1/admin/metrics/top-users?limit=5'),
-      alerts:   this.http.get<AdminAlert[]>('/api/v1/admin/alerts'),
-      workspace: this.http.get<any>('/api/v1/admin/settings'),
+      health:  this.http.get<SystemHealth>('/api/v1/admin/health'),
+      gpu:     this.http.get<GpuInfo>('/api/v1/admin/gpu-status'),
+      metrics: this.http.get<UsageMetrics>(`/api/v1/admin/metrics?period=${this.selectedPeriod}`),
+      alerts:  this.http.get<AdminAlert[]>('/api/v1/admin/alerts'),
     }).subscribe({
       next: (data) => {
-        this.systemHealth.set(data.health);
-        this.gpuInfo.set(data.gpu);
+        this.health.set(data.health);
+        this.gpu.set(data.gpu);
         this.metrics.set(data.metrics);
-        this.topProjects.set(data.projects);
-        this.topUsers.set(data.users);
         this.alerts.set(data.alerts);
-        if (data.workspace?.name) this.workspaceName.set(data.workspace.name);
-      }
+      },
+      error: () => { /* keep mock data */ },
     });
   }
 
-  loadMetrics(): void {
+  onPeriodChange(e: Event): void {
+    this.selectedPeriod = (e.target as HTMLSelectElement).value;
     this.http.get<UsageMetrics>(`/api/v1/admin/metrics?period=${this.selectedPeriod}`)
-      .subscribe((m) => this.metrics.set(m));
+      .subscribe({ next: (m) => this.metrics.set(m), error: () => {} });
   }
 
   exportReport(): void {
     window.open(`/api/v1/admin/metrics/export?period=${this.selectedPeriod}`, '_blank');
-  }
-
-  handleAlert(alert: AdminAlert): void {
-    console.log('Handle alert:', alert.actionType);
-  }
-
-  shortNumber(n: number): string {
-    if (!n) return '0';
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
-    return String(n);
   }
 }

@@ -62,4 +62,14 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () =>
       import('./billing/usage-overview.component').then(m => m.UsageOverviewComponent),
   },
+  {
+    path: 'compliance',
+    loadComponent: () =>
+      import('./compliance/compliance-lgpd.component').then(m => m.ComplianceLgpdComponent),
+  },
+  {
+    path: 'settings/retention',
+    loadComponent: () =>
+      import('./settings/data-retention.component').then(m => m.DataRetentionComponent),
+  },
 ];
