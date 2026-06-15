@@ -24,6 +24,7 @@ interface AdminNavGroup {
     <div class="admin-shell" [class.is-collapsed]="collapsed()">
       <!-- SIDEBAR -->
       <aside class="admin-sidebar" [class.collapsed]="collapsed()">
+
         <!-- Brand -->
         <div class="brand-area">
           <div class="brand-logo">
@@ -35,7 +36,9 @@ interface AdminNavGroup {
               </div>
             }
           </div>
-          <button class="collapse-btn" (click)="collapsed.set(!collapsed())" title="Recolher menu">
+          <button class="collapse-btn" (click)="collapsed.set(!collapsed())"
+                  [title]="collapsed() ? 'Expandir menu' : 'Recolher menu'"
+                  aria-label="Alternar menu">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path [attr.d]="collapsed() ? 'M6 3l5 5-5 5' : 'M10 3l-5 5 5 5'"
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -43,20 +46,18 @@ interface AdminNavGroup {
           </button>
         </div>
 
-        <!-- Section label when not collapsed -->
         @if (!collapsed()) {
           <div class="admin-label">Administração</div>
         }
 
-        <!-- Nav groups -->
-        <nav class="sidebar-nav">
-          <!-- Visão Geral -->
+        <!-- Nav -->
+        <nav class="sidebar-nav" aria-label="Menu do admin">
           <a routerLink="/admin/dashboard"
              routerLinkActive="active"
              [routerLinkActiveOptions]="{ exact: true }"
              class="nav-link top-link"
              [title]="collapsed() ? 'Visão geral' : ''">
-            <span class="nav-icon">
+            <span class="nav-icon" aria-hidden="true">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
                 <rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
@@ -71,25 +72,28 @@ interface AdminNavGroup {
             @if (!collapsed()) {
               <div class="group-title">{{ group.title }}</div>
             } @else {
-              <div class="group-divider"></div>
+              <div class="group-divider" role="separator"></div>
             }
             @for (item of group.items; track item.route) {
               <a [routerLink]="item.route"
                  routerLinkActive="active"
                  [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
                  class="nav-link"
-                 [title]="collapsed() ? item.label : ''">
-                <span class="nav-icon" [innerHTML]="item.icon"></span>
+                 [title]="collapsed() ? item.label : ''"
+                 [attr.aria-label]="item.label">
+                <span class="nav-icon" [innerHTML]="item.icon" aria-hidden="true"></span>
                 @if (!collapsed()) { <span class="nav-label">{{ item.label }}</span> }
               </a>
             }
           }
         </nav>
 
-        <!-- Footer: back + user -->
+        <!-- Footer -->
         <div class="sidebar-footer">
-          <a routerLink="/projects" class="nav-link back-link" [title]="collapsed() ? 'Voltar ao app' : ''">
-            <span class="nav-icon">
+          <a routerLink="/projects" class="nav-link back-link"
+             [title]="collapsed() ? 'Voltar ao app' : ''"
+             aria-label="Voltar ao app">
+            <span class="nav-icon" aria-hidden="true">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5"
                       stroke-linecap="round" stroke-linejoin="round"/>
@@ -123,19 +127,19 @@ interface AdminNavGroup {
       width: 100%;
       height: 100vh;
       overflow: hidden;
-      background: #f8fafc;
-      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--panel);
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
     }
 
     /* ─── Sidebar ─── */
     .admin-sidebar {
-      width: 220px;
-      min-width: 220px;
-      background: #0f172a;
-      color: #94a3b8;
+      width: 232px;
+      min-width: 232px;
+      background: var(--panel);
+      color: var(--ink-2);
       display: flex;
       flex-direction: column;
-      border-right: 1px solid rgba(255,255,255,0.05);
+      border-right: 1px solid var(--line);
       overflow-y: auto;
       overflow-x: hidden;
       flex-shrink: 0;
@@ -153,7 +157,7 @@ interface AdminNavGroup {
       justify-content: space-between;
       padding: 16px 14px 12px;
       min-height: 60px;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
+      border-bottom: 1px solid var(--line);
     }
     .brand-logo {
       display: flex;
@@ -165,7 +169,7 @@ interface AdminNavGroup {
       width: 34px;
       height: 34px;
       border-radius: 10px;
-      background: #6366f1;
+      background: var(--acc);
       color: #fff;
       display: flex;
       align-items: center;
@@ -173,6 +177,7 @@ interface AdminNavGroup {
       font-weight: 700;
       font-size: 13px;
       flex-shrink: 0;
+      letter-spacing: 0.02em;
     }
     .brand-text {
       display: flex;
@@ -183,7 +188,7 @@ interface AdminNavGroup {
     .brand-name {
       font-size: 13px;
       font-weight: 600;
-      color: #e2e8f0;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -191,33 +196,38 @@ interface AdminNavGroup {
     .plan-chip {
       font-size: 10px;
       font-weight: 600;
-      background: rgba(99,102,241,0.2);
-      color: #818cf8;
+      background: var(--acc-soft);
+      color: var(--acc);
+      border: 1px solid var(--acc-line);
       padding: 1px 7px;
-      border-radius: 20px;
+      border-radius: 999px;
       width: fit-content;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.03em;
     }
     .collapse-btn {
       background: none;
       border: none;
-      color: #475569;
+      color: var(--ink-3);
       cursor: pointer;
-      padding: 4px;
+      padding: 5px;
       border-radius: 6px;
       display: flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
       transition: color 0.12s, background 0.12s;
+      min-width: 28px;
+      min-height: 28px;
     }
-    .collapse-btn:hover { color: #94a3b8; background: rgba(255,255,255,0.06); }
+    .collapse-btn:hover { color: var(--ink-2); background: var(--panel-2); }
 
     .admin-label {
       padding: 12px 16px 4px;
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: #334155;
+      letter-spacing: 0.08em;
+      color: var(--ink-3);
     }
 
     /* Nav */
@@ -230,14 +240,14 @@ interface AdminNavGroup {
     .group-title {
       padding: 10px 10px 4px;
       font-size: 10px;
-      font-weight: 700;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: #334155;
+      letter-spacing: 0.06em;
+      color: var(--ink-3);
     }
     .group-divider {
       margin: 8px 10px;
-      border-top: 1px solid rgba(255,255,255,0.06);
+      border-top: 1px solid var(--line);
     }
     .nav-link {
       display: flex;
@@ -245,19 +255,20 @@ interface AdminNavGroup {
       gap: 9px;
       padding: 7px 10px;
       border-radius: 8px;
-      color: #94a3b8;
+      color: var(--ink-2);
       text-decoration: none;
-      font-size: 13.5px;
+      font-size: 13px;
       font-weight: 450;
       transition: background 0.12s, color 0.12s;
       white-space: nowrap;
       overflow: hidden;
       margin-bottom: 1px;
+      min-height: 36px;
     }
-    .nav-link:hover { background: rgba(255,255,255,0.06); color: #cbd5e1; }
+    .nav-link:hover { background: var(--panel-2); color: var(--ink); }
     .nav-link.active {
-      background: rgba(99,102,241,0.15);
-      color: #a5b4fc;
+      background: var(--acc-soft);
+      color: var(--acc);
       font-weight: 500;
     }
     .nav-icon {
@@ -267,36 +278,35 @@ interface AdminNavGroup {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      opacity: 0.85;
     }
-    .nav-icon svg { width: 16px; height: 16px; }
+    .nav-icon svg, .nav-icon ::ng-deep svg { width: 16px; height: 16px; }
 
     /* Footer */
     .sidebar-footer {
-      border-top: 1px solid rgba(255,255,255,0.05);
+      border-top: 1px solid var(--line);
       padding: 8px;
     }
     .back-link {
-      color: #64748b;
+      color: var(--ink-3);
       font-size: 12.5px;
       margin-bottom: 4px;
     }
-    .back-link:hover { color: #94a3b8; }
+    .back-link:hover { color: var(--ink-2); background: var(--panel-2); }
     .user-pill {
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 8px 10px;
       border-radius: 8px;
-      cursor: default;
       overflow: hidden;
     }
     .user-avatar {
       width: 32px;
       height: 32px;
       border-radius: 8px;
-      background: #312e81;
-      color: #a5b4fc;
+      background: var(--panel-2);
+      color: var(--ink-2);
+      border: 1px solid var(--line);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -304,12 +314,12 @@ interface AdminNavGroup {
       font-weight: 700;
       flex-shrink: 0;
     }
-    .user-info { overflow: hidden; }
+    .user-info { overflow: hidden; flex: 1; min-width: 0; }
     .user-name {
       display: block;
       font-size: 12.5px;
       font-weight: 500;
-      color: #e2e8f0;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -317,7 +327,7 @@ interface AdminNavGroup {
     .user-role {
       display: block;
       font-size: 11px;
-      color: #475569;
+      color: var(--ink-3);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -328,7 +338,7 @@ interface AdminNavGroup {
       flex: 1;
       overflow-y: auto;
       min-width: 0;
-      background: #f8fafc;
+      background: var(--white);
     }
   `]
 })
@@ -401,20 +411,21 @@ export class AdminShellComponent {
           icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <rect x="2" y="1" width="10" height="14" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
             <path d="M5 5h5M5 8h5M5 11h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-            <circle cx="13" cy="13" r="2.5" fill="#0f172a" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="13" cy="13" r="2.5" fill="var(--panel)" stroke="currentColor" stroke-width="1.3"/>
             <path d="M12.3 13l.5.5 1-1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
           </svg>`,
         },
         {
           label: 'Compliance LGPD',
-          route: '/admin/settings',
+          route: '/admin/compliance',
           icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M8 1.5L2 4v4c0 3.5 2.7 6.2 6 6.9C14 14.2 14 8 14 8V4L8 1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            <path d="M5.5 8l2 2 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>`,
         },
         {
           label: 'Retenção de dados',
-          route: '/admin/settings',
+          route: '/admin/settings/retention',
           icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <ellipse cx="8" cy="4" rx="5" ry="2" stroke="currentColor" stroke-width="1.4"/>
             <path d="M3 4v4c0 1.1 2.24 2 5 2s5-.9 5-2V4" stroke="currentColor" stroke-width="1.4"/>
@@ -453,8 +464,9 @@ export class AdminShellComponent {
           label: 'Webhooks',
           route: '/admin/integrations/webhooks',
           icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M6 8a2 2 0 100-4 2 2 0 000 4zM10 12a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" stroke-width="1.4"/>
-            <path d="M8 6l4 4M8 6L4 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <circle cx="6" cy="7" r="2" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="10" cy="11" r="2" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M8 7c1.5 0 2.5.8 3 2M6 9l-2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
           </svg>`,
         },
         {

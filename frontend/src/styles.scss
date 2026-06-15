@@ -1,2 +1,20 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', sans-serif; background: #0f0f0f; color: #f0f0f0; }
+body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #0f0f0f; color: #f0f0f0; }
+
+/* ── Admin design tokens ── */
+:root {
+  --ink:        #1c1b19;
+  --ink-2:      #5f5c57;
+  --ink-3:      #9a958d;
+  --line:       #e7e4df;
+  --line-2:     #f0eeea;
+  --panel:      #fafafa;
+  --panel-2:    #f4f2ee;
+  --white:      #ffffff;
+  --acc:        #bf5b3d;
+  --acc-soft:   #f8ece6;
+  --acc-line:   #e7c3b4;
+  --good:       #3f7d62;
+  --good-soft:  #eaf2ee;
+  --warn:       #c08a2e;
+}

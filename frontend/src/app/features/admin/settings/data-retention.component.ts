@@ -1,20 +1,24 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { ToggleComponent } from '../shared/toggle.component';
+import { StatusPillComponent } from '../shared/status-pill.component';
 
 interface RetentionPolicy {
   dataType: string;
   label: string;
   description: string;
   icon: string;
-  retentionDays: number | null; // null = forever
+  retentionDays: number | null;
   autoDeleteEnabled: boolean;
   lastPurgeAt: string | null;
   nextPurgeAt: string | null;
   currentSizeGb: number;
   itemCount: number;
-  purgeable: boolean; // permite purge manual
+  purgeable: boolean;
+  locked?: boolean;
 }
 
 interface DeletionRequest {
@@ -28,82 +32,107 @@ interface DeletionRequest {
   itemsDeleted: number | null;
 }
 
+const MOCK_POLICIES: RetentionPolicy[] = [
+  { dataType: 'chat_messages', label: 'Histórico de chat', description: 'Mensagens e conversas dos usuários', icon: '💬', retentionDays: 365, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 12.4, itemCount: 184320, purgeable: true },
+  { dataType: 'documents',     label: 'Documentos',        description: 'Arquivos carregados para projetos', icon: '📄', retentionDays: null, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 48.3, itemCount: 2841, purgeable: false },
+  { dataType: 'audit_logs',    label: 'Logs de auditoria', description: 'Registros de ações administrativas', icon: '📋', retentionDays: 365, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 0.8, itemCount: 94210, purgeable: false, locked: true },
+  { dataType: 'embeddings',    label: 'Embeddings',        description: 'Vetores gerados para busca semântica', icon: '🔢', retentionDays: null, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 12.1, itemCount: 184320, purgeable: false },
+  { dataType: 'training_data', label: 'Dados de treino',   description: 'Exemplos usados para fine-tuning LoRA', icon: '🧠', retentionDays: 180, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 3.2, itemCount: 12400, purgeable: true },
+];
+
+const MOCK_REQUESTS: DeletionRequest[] = [
+  { id: 'd1', type: 'user_data', requestedBy: 'admin@empresa.com', targetName: 'usuario@email.com', status: 'completed', requestedAt: '2026-05-10T14:30:00Z', completedAt: '2026-05-10T14:32:11Z', itemsDeleted: 847 },
+  { id: 'd2', type: 'project_data', requestedBy: 'admin@empresa.com', targetName: 'Projeto RH Legacy', status: 'pending', requestedAt: '2026-06-14T09:00:00Z', completedAt: null, itemsDeleted: null },
+];
+
 @Component({
   selector: 'app-data-retention',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, FormsModule, RouterLink, ToggleComponent, StatusPillComponent],
   template: `
-    <div class="data-retention">
-      <div class="page-header">
+    <div class="admin-page">
+      <div class="breadcrumb">
+        <a [routerLink]="['/admin/dashboard']" class="bc-link">Dashboard</a>
+        <span class="bc-sep">/</span>
+        <span>Retenção de Dados</span>
+      </div>
+
+      <div class="admin-header">
         <div>
-          <h1>&#128197; Retenção e Exclusão de Dados</h1>
-          <p>Configure por quanto tempo cada tipo de dado é mantido e gerencie solicitações de exclusão.</p>
+          <h1>Retenção e Exclusão de Dados</h1>
+          <p class="page-sub">Configure por quanto tempo cada tipo de dado é mantido</p>
         </div>
         <button class="btn-primary" (click)="saveAll()" [disabled]="saving()">
-          {{ saving() ? 'Salvando...' : 'Salvar políticas' }}
+          {{ saving() ? 'Salvando…' : 'Salvar políticas' }}
         </button>
       </div>
 
       @if (saved()) {
-        <div class="toast success">✅ Políticas salvas!</div>
+        <div class="toast-bar">Políticas salvas com sucesso.</div>
       }
 
-      <!-- Políticas por tipo de dado -->
       <div class="policies-grid">
         @for (policy of policies(); track policy.dataType) {
-          <div class="policy-card">
-            <div class="policy-header">
-              <span class="policy-icon">{{ policy.icon }}</span>
+          <div class="policy-card" [class.card-locked]="policy.locked">
+            <div class="card-head">
+              <span class="card-icon">{{ policy.icon }}</span>
               <div>
-                <h3>{{ policy.label }}</h3>
-                <p>{{ policy.description }}</p>
+                <span class="card-title">{{ policy.label }}</span>
+                @if (policy.locked) { <span class="locked-badge">Bloqueado — 365d mínimo</span> }
+                <p class="card-desc">{{ policy.description }}</p>
               </div>
             </div>
-
-            <div class="policy-stats">
-              <span>{{ policy.itemCount | number }} itens</span>
-              <span>{{ policy.currentSizeGb | number:'1.1-1' }} GB</span>
+            <div class="card-stats">
+              <span class="stat-item mono">{{ policy.itemCount | number }} itens</span>
+              <span class="stat-item mono">{{ policy.currentSizeGb | number:'1.1-1' }} GB</span>
             </div>
 
-            <div class="policy-form">
-              <div class="form-group">
-                <label>Retenção
-                  <div class="retention-input">
-                    <input type="number" [(ngModel)]="policy.retentionDays"
-                      [disabled]="policy.retentionDays === null"
-                      min="1" max="3650" placeholder="dias" />
-                    <label class="checkbox-label">
-                      <input type="checkbox" [checked]="policy.retentionDays === null"
-                        (change)="toggleForever(policy, $event)" />
-                      Para sempre
-                    </label>
+            <div class="card-form">
+              <div class="retention-field">
+                <span class="field-label">Retenção</span>
+                @if (policy.locked) {
+                  <span class="mono locked-val">365 dias (mínimo LGPD)</span>
+                } @else if (policy.retentionDays === null) {
+                  <span class="mono">Para sempre</span>
+                } @else {
+                  <div class="days-row">
+                    <input type="number" class="days-input mono" [(ngModel)]="policy.retentionDays"
+                           [disabled]="policy.locked ?? false" min="1" max="3650"
+                           (change)="confirmReduceIfNeeded(policy)" />
+                    <span class="days-unit">dias</span>
                   </div>
-                </label>
+                }
+                @if (!policy.locked) {
+                  <label class="forever-check">
+                    <input type="checkbox" [checked]="policy.retentionDays === null"
+                           (change)="toggleForever(policy, $event)" />
+                    Para sempre
+                  </label>
+                }
               </div>
 
-              <label class="toggle-label">
-                <div class="toggle-info">
-                  <span>Exclusão automática</span>
-                  <span class="hint">Purge automático ao atingir o prazo</span>
+              @if (!policy.locked) {
+                <div class="toggle-row">
+                  <div>
+                    <span class="toggle-title">Exclusão automática</span>
+                    <span class="toggle-hint">Purge automático ao atingir o prazo</span>
+                  </div>
+                  <app-toggle [(ngModel)]="policy.autoDeleteEnabled" />
                 </div>
-                <div class="toggle-switch" [class.on]="policy.autoDeleteEnabled"
-                  (click)="policy.autoDeleteEnabled = !policy.autoDeleteEnabled">
-                  <div class="toggle-knob"></div>
-                </div>
-              </label>
+              }
             </div>
 
-            <div class="policy-footer">
+            <div class="card-foot">
               @if (policy.lastPurgeAt) {
-                <span class="hint">Último purge: {{ policy.lastPurgeAt | date:'dd/MM/yyyy' }}</span>
+                <span class="foot-hint">Último purge: <span class="mono">{{ policy.lastPurgeAt | date:'dd/MM/yyyy' }}</span></span>
               }
               @if (policy.nextPurgeAt && policy.autoDeleteEnabled) {
-                <span class="hint">Próximo: {{ policy.nextPurgeAt | date:'dd/MM/yyyy' }}</span>
+                <span class="foot-hint">Próximo: <span class="mono">{{ policy.nextPurgeAt | date:'dd/MM/yyyy' }}</span></span>
               }
-              @if (policy.purgeable) {
-                <button class="btn-danger btn-sm" (click)="manualPurge(policy)"
-                  [disabled]="purging() === policy.dataType">
-                  {{ purging() === policy.dataType ? 'Purgando...' : '🗑️ Purge agora' }}
+              @if (policy.purgeable && !policy.locked) {
+                <button class="btn-purge" (click)="manualPurge(policy)" [disabled]="purging() === policy.dataType">
+                  {{ purging() === policy.dataType ? 'Purgando…' : 'Purge manual' }}
                 </button>
               }
             </div>
@@ -111,98 +140,94 @@ interface DeletionRequest {
         }
       </div>
 
-      <!-- Solicitações de exclusão (LGPD Art. 18) -->
-      <section class="deletion-requests">
-        <div class="section-header">
-          <h2>&#128683; Solicitações de Exclusão (LGPD Art. 18)</h2>
-          <button class="btn-secondary" (click)="newDeletionRequest()">+ Nova solicitação</button>
+      <!-- LGPD Art. 18 deletion requests -->
+      <div class="section-card">
+        <div class="section-head">
+          <h2>Solicitações de Exclusão — LGPD Art. 18</h2>
+          <button class="btn-ghost" (click)="newDeletionRequest()">+ Nova solicitação</button>
         </div>
 
-        <table class="deletion-table">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Alvo</th>
-              <th>Solicitado por</th>
-              <th>Data</th>
-              <th>Status</th>
-              <th>Itens excluídos</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (req of deletionRequests(); track req.id) {
-              <tr>
-                <td><span class="type-badge">{{ req.type }}</span></td>
-                <td>{{ req.targetName }}</td>
-                <td>{{ req.requestedBy }}</td>
-                <td>{{ req.requestedAt | date:'dd/MM/yyyy HH:mm' }}</td>
-                <td>
-                  <span class="status-pill" [class]="req.status">
-                    {{ req.status === 'completed' ? '✅' : req.status === 'failed' ? '❌' : req.status === 'processing' ? '⏳' : '🕐' }}
-                    {{ req.status }}
-                  </span>
-                </td>
-                <td>{{ req.itemsDeleted !== null ? (req.itemsDeleted | number) : '—' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </section>
+        <div class="dr-grid">
+          <div class="dr-head">
+            <span>Tipo</span>
+            <span>Alvo</span>
+            <span>Solicitado por</span>
+            <span>Data</span>
+            <span>Status</span>
+            <span class="align-right">Itens</span>
+          </div>
+          @for (req of deletionRequests(); track req.id) {
+            <div class="dr-row">
+              <span><span class="type-tag">{{ req.type }}</span></span>
+              <span>{{ req.targetName }}</span>
+              <span class="ink-3">{{ req.requestedBy }}</span>
+              <span class="mono ink-3">{{ req.requestedAt | date:'dd/MM/yyyy HH:mm' }}</span>
+              <span>
+                <app-status-pill [kind]="drKind(req.status)">{{ drLabel(req.status) }}</app-status-pill>
+              </span>
+              <span class="align-right mono ink-3">{{ req.itemsDeleted !== null ? (req.itemsDeleted | number) : '—' }}</span>
+            </div>
+          }
+        </div>
+      </div>
     </div>
   `,
   styles: [`
-    :host { display:block; font-family: Inter, system-ui, sans-serif; }
-    .data-retention { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
-    .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
-    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
-    .page-header p { font-size:13px; color:#64748b; margin:0; }
-    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
-    .btn-primary:hover { background:#4f46e5; }
-    .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
-    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
-    .btn-danger { background:#ef4444; color:#fff; border:none; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
-    .btn-danger.btn-sm { padding:5px 12px; font-size:12px; }
-    .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
-    .toast { padding:10px 16px; border-radius:8px; font-size:13px; margin-bottom:16px; }
-    .toast.success { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
-    .policies-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-bottom:24px; }
-    .policy-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; display:flex; flex-direction:column; gap:14px; }
-    .policy-header { display:flex; align-items:flex-start; gap:12px; }
-    .policy-icon { font-size:22px; flex-shrink:0; }
-    .policy-header h3 { font-size:14px; font-weight:600; color:#0f172a; margin:0 0 2px; }
-    .policy-header p { font-size:12px; color:#64748b; margin:0; }
-    .policy-stats { display:flex; gap:16px; font-size:12px; color:#64748b; }
-    .policy-form { display:flex; flex-direction:column; gap:10px; }
-    .form-group { display:flex; flex-direction:column; gap:4px; }
-    .form-group label { font-size:12px; font-weight:500; color:#374151; }
-    .retention-input { display:flex; align-items:center; gap:10px; margin-top:4px; }
-    .retention-input input[type="number"] { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:7px 10px; font-size:13px; color:#1e293b; width:80px; }
-    .retention-input input[type="number"]:focus { outline:none; border-color:#6366f1; }
-    .checkbox-label { display:flex; align-items:center; gap:6px; font-size:12px; color:#374151; cursor:pointer; }
-    .checkbox-label input[type="checkbox"] { cursor:pointer; }
-    .toggle-label { display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
-    .toggle-info { display:flex; flex-direction:column; gap:2px; }
-    .toggle-info span:first-child { font-size:13px; color:#0f172a; }
-    .hint { font-size:11px; color:#94a3b8; }
-    .toggle-switch { width:40px; height:22px; border-radius:11px; background:#e2e8f0; position:relative; flex-shrink:0; transition:background 0.2s; }
-    .toggle-switch.on { background:#6366f1; }
-    .toggle-knob { width:16px; height:16px; border-radius:50%; background:#fff; position:absolute; top:3px; left:3px; transition:left 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2); }
-    .toggle-switch.on .toggle-knob { left:21px; }
-    .policy-footer { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#94a3b8; flex-wrap:wrap; gap:8px; }
-    .deletion-requests { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
-    .section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .section-header h2 { font-size:15px; font-weight:600; color:#0f172a; margin:0; }
-    .deletion-table { width:100%; border-collapse:collapse; }
-    .deletion-table th { padding:10px 16px; font-size:11px; font-weight:600; text-transform:uppercase; color:#94a3b8; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; }
-    .deletion-table td { padding:11px 16px; font-size:13px; color:#374151; border-bottom:1px solid #f8fafc; }
-    .deletion-table tr:hover td { background:#f8fafc; }
-    .type-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; background:#f1f5f9; color:#64748b; }
-    .status-pill { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
-    .status-pill.completed { background:#dcfce7; color:#15803d; }
-    .status-pill.failed { background:#fee2e2; color:#991b1b; }
-    .status-pill.processing { background:#fef3c7; color:#92400e; }
-    .status-pill.pending { background:#f1f5f9; color:#64748b; }
-  `]
+    .admin-page { padding: 28px 32px; font-family: 'IBM Plex Sans', system-ui, sans-serif; max-width: 1100px; }
+    .breadcrumb { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-3); margin-bottom:16px; }
+    .bc-link { color:var(--ink-2); text-decoration:none; }
+    .bc-link:hover { color:var(--ink); }
+    .bc-sep { color:var(--line); }
+    .admin-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
+    .admin-header h1 { font-size:20px; font-weight:600; color:var(--ink); margin:0 0 4px; }
+    .page-sub { font-size:13px; color:var(--ink-3); margin:0; }
+    .btn-primary { padding:8px 18px; background:var(--acc); color:var(--white); border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
+    .btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+    .btn-ghost { background:none; border:1px solid var(--line); border-radius:8px; padding:7px 14px; font-size:13px; color:var(--ink-2); cursor:pointer; }
+    .btn-ghost:hover { background:var(--panel-2); }
+    .btn-purge { padding:5px 12px; border-radius:6px; border:1px solid var(--acc-line); background:var(--acc-soft); color:var(--acc); font-size:12px; cursor:pointer; }
+    .btn-purge:disabled { opacity:.5; cursor:not-allowed; }
+    .toast-bar { background:var(--good-soft); color:var(--good); border:1px solid #b2d8c4; border-radius:8px; padding:10px 16px; font-size:13px; margin-bottom:16px; }
+    .policies-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px; margin-bottom:16px; }
+    .policy-card { background:var(--white); border:1px solid var(--line); border-radius:10px; padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
+    .card-locked { border-color:var(--line-2); opacity:.85; }
+    .card-head { display:flex; gap:10px; align-items:flex-start; }
+    .card-icon { font-size:20px; flex-shrink:0; }
+    .card-title { font-size:13px; font-weight:600; color:var(--ink); display:block; }
+    .locked-badge { display:inline-block; font-size:10.5px; background:var(--line-2); color:var(--ink-3); border-radius:4px; padding:1px 6px; margin-left:6px; }
+    .card-desc { font-size:12px; color:var(--ink-3); margin:2px 0 0; }
+    .card-stats { display:flex; gap:14px; }
+    .stat-item { font-size:12px; color:var(--ink-3); }
+    .card-form { display:flex; flex-direction:column; gap:10px; }
+    .retention-field { display:flex; flex-direction:column; gap:6px; }
+    .field-label { font-size:12px; font-weight:500; color:var(--ink-2); }
+    .days-row { display:flex; align-items:center; gap:6px; }
+    .days-input { width:64px; border:1px solid var(--line); border-radius:6px; padding:5px 8px; font-size:13px; color:var(--ink); background:var(--white); }
+    .days-input:focus { outline:none; border-color:var(--acc); }
+    .days-unit { font-size:12px; color:var(--ink-3); }
+    .forever-check { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-2); cursor:pointer; }
+    .forever-check input { accent-color:var(--acc); }
+    .locked-val { font-size:13px; color:var(--ink-3); }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:8px; border-top:1px solid var(--line-2); }
+    .toggle-title { font-size:13px; font-weight:500; color:var(--ink); display:block; }
+    .toggle-hint { font-size:11.5px; color:var(--ink-3); }
+    .card-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; min-height:28px; }
+    .foot-hint { font-size:11.5px; color:var(--ink-3); }
+    .section-card { background:var(--white); border:1px solid var(--line); border-radius:10px; padding:20px 24px; margin-bottom:12px; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .section-head h2 { font-size:14px; font-weight:600; color:var(--ink); margin:0; }
+    .dr-grid { display:grid; grid-template-columns: 120px 1fr 1fr 130px 110px 80px; gap:0; }
+    .dr-head { display:contents; }
+    .dr-head > span { padding:9px 10px; font-size:11px; font-weight:600; color:var(--ink-3); border-bottom:1px solid var(--line); background:var(--panel-2); }
+    .dr-row { display:contents; }
+    .dr-row > span { padding:10px 10px; font-size:12.5px; color:var(--ink); border-bottom:1px solid var(--line-2); display:flex; align-items:center; }
+    .dr-row:last-child > span { border-bottom:none; }
+    .dr-row:hover > span { background:var(--panel-2); }
+    .type-tag { font-size:11px; background:var(--panel-2); border:1px solid var(--line); color:var(--ink-2); border-radius:4px; padding:2px 7px; font-family:'IBM Plex Mono', monospace; }
+    .align-right { justify-content:flex-end !important; }
+    .mono { font-family:'IBM Plex Mono', monospace; }
+    .ink-3 { color:var(--ink-3); }
+  `],
 })
 export class DataRetentionComponent implements OnInit {
   private http = inject(HttpClient);
@@ -216,13 +241,30 @@ export class DataRetentionComponent implements OnInit {
   ngOnInit(): void { this.load(); }
 
   load(): void {
-    this.http.get<RetentionPolicy[]>('/api/admin/data-retention/policies').subscribe((p) => this.policies.set(p));
-    this.http.get<DeletionRequest[]>('/api/admin/data-retention/deletion-requests').subscribe((r) => this.deletionRequests.set(r));
+    this.http.get<RetentionPolicy[]>('/api/admin/data-retention/policies').subscribe({
+      next: (p) => this.policies.set(p),
+      error: () => this.policies.set(MOCK_POLICIES),
+    });
+    this.http.get<DeletionRequest[]>('/api/admin/data-retention/deletion-requests').subscribe({
+      next: (r) => this.deletionRequests.set(r),
+      error: () => this.deletionRequests.set(MOCK_REQUESTS),
+    });
   }
 
   toggleForever(policy: RetentionPolicy, event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
-    policy.retentionDays = checked ? null : 365;
+    this.policies.update((list) =>
+      list.map((p) => p.dataType === policy.dataType ? { ...p, retentionDays: checked ? null : 365 } : p)
+    );
+  }
+
+  confirmReduceIfNeeded(policy: RetentionPolicy): void {
+    if ((policy.retentionDays ?? 0) < 365 && policy.dataType === 'audit_logs') {
+      alert('Logs de auditoria devem ser mantidos por no mínimo 365 dias (LGPD).');
+      this.policies.update((list) =>
+        list.map((p) => p.dataType === policy.dataType ? { ...p, retentionDays: 365 } : p)
+      );
+    }
   }
 
   saveAll(): void {
@@ -243,10 +285,17 @@ export class DataRetentionComponent implements OnInit {
   }
 
   newDeletionRequest(): void {
-    // Navegar para modal ou rota de nova solicitação
-    const target = prompt('E-mail ou nome do usuário/projeto a ter dados excluídos:');
-    if (!target) return;
-    this.http.post('/api/admin/data-retention/deletion-requests', { targetName: target, type: 'user_data' })
+    const target = prompt('E-mail ou nome do usuário/projeto para excluir dados:');
+    if (!target?.trim()) return;
+    this.http.post('/api/admin/data-retention/deletion-requests', { targetName: target.trim(), type: 'user_data' })
       .subscribe(() => this.load());
+  }
+
+  drKind(status: string): 'ok' | 'warn' | 'bad' | 'neutral' {
+    return status === 'completed' ? 'ok' : status === 'failed' ? 'bad' : status === 'processing' ? 'warn' : 'neutral';
+  }
+
+  drLabel(status: string): string {
+    return { pending: 'Pendente', processing: 'Processando', completed: 'Concluído', failed: 'Falhou' }[status] ?? status;
   }
 }

@@ -1,135 +1,312 @@
-// Estilos compartilhados do painel admin
-// Importe com @use '../admin-shared' nos componentes filhos
+// admin-shared.scss — tokens e utilitários do painel admin (redesenho)
+// Importe com @use '../admin-shared' as * nos componentes filhos
 
-$sidebar-bg: #0f172a;
-$accent: #6366f1;
-$accent-light: #a5b4fc;
-$surface: #ffffff;
-$bg: #f8fafc;
-$border: #e2e8f0;
-$text-primary: #0f172a;
-$text-secondary: #64748b;
-$text-muted: #94a3b8;
-
-// Page layout mixin
-@mixin admin-page {
-  padding: 28px 32px;
-  max-width: 1200px;
+// ── Página ──────────────────────────────────────────────────────────
+.admin-page {
+  padding: 20px 28px 40px;
+  max-width: 1120px;
   margin: 0 auto;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
 
-// Card
-.admin-card {
-  background: $surface;
-  border: 1px solid $border;
-  border-radius: 12px;
-  padding: 20px 24px;
-}
-
-// Page header
-.admin-page-header {
+// ── Header de página ────────────────────────────────────────────────
+.admin-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+
+  .admin-header-left { display: flex; flex-direction: column; gap: 2px; }
 
   h1 {
-    font-size: 22px;
-    font-weight: 700;
-    color: $text-primary;
-    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0;
   }
-  p { font-size: 13px; color: $text-secondary; margin: 0; }
-  .actions { display: flex; gap: 10px; align-items: center; }
+  .subtitle { font-size: 13px; color: var(--ink-3); margin: 0; }
+
+  .admin-header-actions { display: flex; gap: 8px; align-items: center; }
 }
 
-// Buttons
-.btn-primary {
-  display: inline-flex;
+// ── Breadcrumb ───────────────────────────────────────────────────────
+.admin-breadcrumb {
+  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 18px;
-  background: #0f172a;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s;
-  &:hover { background: #1e293b; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-bottom: 20px;
+
+  a { color: var(--ink-2); text-decoration: none; &:hover { color: var(--acc); } }
+  .sep { color: var(--line); }
+  .current { color: var(--ink); }
 }
 
-.btn-secondary {
+// ── KPI grid ────────────────────────────────────────────────────────
+.kpi-grid {
+  display: grid;
+  gap: 12px;
+  &.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  &.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  &.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  margin-bottom: 20px;
+}
+
+// ── Card base ───────────────────────────────────────────────────────
+.admin-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 15px 18px;
+}
+
+// ── Section head ────────────────────────────────────────────────────
+.sec-head {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .sec-count {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--ink-3);
+    margin-left: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+}
+
+// ── Chip / filtro ───────────────────────────────────────────────────
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  background: $accent;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13.5px;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
   font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink-2);
   cursor: pointer;
-  transition: background 0.12s;
-  &:hover { background: #4f46e5; }
-}
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+  user-select: none;
 
-.btn-outline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: $surface;
-  color: #374151;
-  border: 1px solid $border;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
-  &:hover { border-color: $accent; color: $accent; }
-}
+  &:hover { background: var(--panel-2); color: var(--ink); }
 
-// Status badges
-.status-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
+  &.active {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
 
-  &.s-active   { background: #dcfce7; color: #15803d; }
-  &.s-suspended { background: #fee2e2; color: #991b1b; }
-  &.s-pending, &.s-invited { background: #f1f5f9; color: #64748b; }
-}
+  &.warn-chip { color: var(--acc); border-color: var(--acc-line); }
+  &.warn-chip.active { background: var(--acc); border-color: var(--acc); color: #fff; }
 
-// Data table
-.admin-table {
-  width: 100%;
-  border-collapse: collapse;
-
-  th {
-    padding: 10px 16px;
+  .chip-count {
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 11px;
     font-weight: 600;
+  }
+}
+
+// ── Botões ──────────────────────────────────────────────────────────
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
+  white-space: nowrap;
+  min-height: 36px;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+.btn-primary {
+  @extend .btn;
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+  &:hover:not(:disabled) { background: #2c2b28; }
+}
+
+.btn-accent {
+  @extend .btn;
+  background: var(--acc);
+  color: #fff;
+  border-color: var(--acc);
+  &:hover:not(:disabled) { background: #a84d32; }
+}
+
+.btn-ghost {
+  @extend .btn;
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--line);
+  &:hover:not(:disabled) { background: var(--panel-2); color: var(--ink); }
+}
+
+.btn-ghost-accent {
+  @extend .btn;
+  background: transparent;
+  color: var(--acc);
+  border-color: var(--acc-line);
+  &:hover:not(:disabled) { background: var(--acc-soft); }
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-height: 28px;
+  border-radius: 7px;
+}
+
+// ── Mono utilitário ─────────────────────────────────────────────────
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+// ── Tabela CSS Grid ─────────────────────────────────────────────────
+.data-table {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--white);
+
+  .dt-header {
+    display: grid;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .dt-header-cell {
+    padding: 10px 8px;
+    font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: $text-muted;
-    text-align: left;
-    background: #f8fafc;
-    border-bottom: 1px solid $border;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    white-space: nowrap;
   }
 
-  td {
-    padding: 12px 16px;
+  .dt-row {
+    display: grid;
+    padding: 0 16px;
+    border-top: 1px solid var(--line-2);
+    cursor: pointer;
+    transition: background 0.1s;
+
+    &:hover { background: var(--panel); }
+    &:first-child { border-top: none; }
+  }
+
+  .dt-cell {
+    display: flex;
+    align-items: center;
+    padding: 11px 8px;
     font-size: 13px;
-    color: #374151;
-    border-bottom: 1px solid #f8fafc;
+    color: var(--ink-2);
+    min-height: 44px;
   }
+}
 
-  tr { cursor: pointer; }
-  tr:hover td { background: #f8fafc; }
+// ── Status pill ─────────────────────────────────────────────────────
+// (também exportado como componente standalone)
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &.ok      { background: var(--good-soft); color: var(--good); }
+  &.warn    { background: #faf3e6; color: var(--warn); }
+  &.bad     { background: var(--acc-soft); color: var(--acc); }
+  &.neutral { background: var(--panel-2); color: var(--ink-3); }
+}
+
+// ── Avatar de iniciais ───────────────────────────────────────────────
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+// ── Dot de status ────────────────────────────────────────────────────
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &.ok   { background: var(--good); }
+  &.warn { background: var(--warn); }
+  &.bad  { background: var(--acc); }
+  &.off  { background: var(--ink-3); }
+}
+
+// ── Confirmação modal base ───────────────────────────────────────────
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 25, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px 32px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 8px 40px rgba(28, 27, 25, 0.14);
+
+  h3 { font-size: 16px; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+  p  { font-size: 13.5px; color: var(--ink-2); line-height: 1.55; margin: 0 0 20px; }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
 }
