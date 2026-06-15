@@ -531,7 +531,10 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   alertParams(a: AdminAlert): Record<string, string> {
     const qs = a.actionType?.split('?')[1];
     if (!qs) return {};
-    return Object.fromEntries(new URLSearchParams(qs).entries());
+    const params = new URLSearchParams(qs);
+    const result: Record<string, string> = {};
+    params.forEach((value, key) => { result[key] = value; });
+    return result;
   }
 
   adminAreas = [

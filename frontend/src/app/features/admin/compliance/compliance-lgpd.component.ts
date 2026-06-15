@@ -99,7 +99,7 @@ const MOCK: ComplianceState = {
             <div class="controls-list">
               @for (ctrl of state()?.controls ?? []; track ctrl.id) {
                 <div class="control-row">
-                  <span class="ctrl-seal" [class]="'ctrl-' + ctrl.status" aria-label="Status: {{ ctrl.status }}">
+                  <span class="ctrl-seal" [class]="'ctrl-' + ctrl.status" [attr.aria-label]="'Status: ' + ctrl.status">
                     {{ ctrl.status === 'ok' ? '✓' : ctrl.status === 'partial' ? '!' : '○' }}
                   </span>
                   <div class="ctrl-body">

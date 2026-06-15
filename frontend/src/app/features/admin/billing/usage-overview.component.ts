@@ -72,10 +72,10 @@ const BUDGET_LIMIT = 2_000;
       }
 
       <div class="kpi-row">
-        <app-kpi-card [value]="metrics().totalChatRequests | number" label="Conversas" />
+        <app-kpi-card [value]="shortNumber(metrics().totalChatRequests)" label="Conversas" />
         <app-kpi-card [value]="shortNumber(metrics().totalTokensInput + metrics().totalTokensOutput)" label="Tokens totais" />
         <app-kpi-card [value]="metrics().activeUsers" label="Usuários ativos" />
-        <app-kpi-card [value]="'R$ ' + (metrics().estimatedCost.total | number:'1.0-0')" label="Custo estimado" />
+        <app-kpi-card [value]="'R$ ' + shortNumber(metrics().estimatedCost.total)" label="Custo estimado" />
       </div>
 
       <!-- Bar chart -->

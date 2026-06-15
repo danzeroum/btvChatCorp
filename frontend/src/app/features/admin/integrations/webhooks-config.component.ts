@@ -142,7 +142,7 @@ export interface Webhook {
             <div class="evt-checks">
               @for (evt of availableEvents; track evt.value) {
                 <label class="evt-check">
-                  <input type="checkbox" [checked]="form.events?.includes(evt.value)"
+                  <input type="checkbox" [checked]="form.events.includes(evt.value)"
                          (change)="toggleEvent(evt.value, $event)" />
                   <span class="evt-name">{{ evt.value }}</span>
                   <span class="evt-desc">{{ evt.description }}</span>
