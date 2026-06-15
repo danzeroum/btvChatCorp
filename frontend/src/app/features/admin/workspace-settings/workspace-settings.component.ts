@@ -76,7 +76,7 @@ const defaultSettings = (): WorkspaceSettings => ({
 
         <!-- Segurança -->
         <div class="section">
-          <h2>Segurança & Sessão</h2>
+          <h2>Segurança &amp; Sessão</h2>
           <div class="form-row">
             <div class="form-group">
               <label>Timeout de sessão (minutos)</label>
@@ -135,7 +135,7 @@ const defaultSettings = (): WorkspaceSettings => ({
 
         <!-- Dados -->
         <div class="section">
-          <h2>Dados & IA</h2>
+          <h2>Dados &amp; IA</h2>
           <div class="form-group">
             <label>Retenção de dados</label>
             <select [(ngModel)]="settings.data_retention_days">
@@ -173,37 +173,39 @@ const defaultSettings = (): WorkspaceSettings => ({
     </div>
   `,
   styles: [`
+    :host { display:block; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
     .page { padding: 2rem; max-width: 720px; }
     .page-header { margin-bottom: 1.5rem; }
-    h1 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
-    .subtitle { font-size: 0.85rem; color: #64748b; margin: 0; }
-    .loading-msg { color: #64748b; font-size: 0.9rem; }
+    h1 { font-size: 1.25rem; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
+    .subtitle { font-size: 0.85rem; color: var(--ink-2); margin: 0; }
+    .loading-msg { color: var(--ink-2); font-size: 0.9rem; }
 
     .section {
-      background: #fff;
-      border: 1px solid #e2e8f0;
+      background: var(--white);
+      border: 1px solid var(--line);
       border-radius: 12px;
       padding: 1.5rem;
       margin-bottom: 1rem;
     }
-    h2 { font-size: 0.9rem; font-weight: 600; color: #0f172a; margin: 0 0 1rem; }
+    h2 { font-size: 0.9rem; font-weight: 600; color: var(--ink); margin: 0 0 1rem; }
 
     .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0.75rem; }
     .form-group:last-child { margin-bottom: 0; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    label { font-size: 0.82rem; font-weight: 500; color: #374151; }
+    label { font-size: 0.82rem; font-weight: 500; color: var(--ink); }
 
     input[type=text], input[type=email], input[type=number], select {
-      background: #fff;
-      border: 1px solid #e2e8f0;
+      background: var(--white);
+      border: 1px solid var(--line);
       border-radius: 8px;
       padding: 8px 12px;
       font-size: 0.88rem;
-      color: #1e293b;
+      color: var(--ink);
       width: 100%;
       box-sizing: border-box;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
     }
-    input:focus, select:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+    input:focus, select:focus { border-color: var(--acc); outline: none; }
 
     .toggle-group { display: flex; flex-direction: column; gap: 0.75rem; }
     .toggle-label {
@@ -212,24 +214,25 @@ const defaultSettings = (): WorkspaceSettings => ({
       gap: 0.75rem;
       cursor: pointer;
     }
-    .toggle-label input[type=checkbox] { margin-top: 3px; flex-shrink: 0; accent-color: #6366f1; }
+    .toggle-label input[type=checkbox] { margin-top: 3px; flex-shrink: 0; accent-color: var(--acc); }
     .toggle-text { display: flex; flex-direction: column; gap: 2px; }
-    .toggle-text span:first-child { font-size: 0.88rem; font-weight: 500; color: #1e293b; }
-    .toggle-sub { font-size: 0.78rem; color: #94a3b8; }
+    .toggle-text span:first-child { font-size: 0.88rem; font-weight: 500; color: var(--ink); }
+    .toggle-sub { font-size: 0.78rem; color: var(--ink-3); }
 
     .actions { margin-top: 1.5rem; }
     .btn-primary {
       padding: 0.6rem 1.5rem;
-      background: #6366f1;
-      color: #fff;
+      background: var(--acc);
+      color: var(--white);
       border: none;
       border-radius: 8px;
       font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: opacity 0.15s;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
     }
-    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:hover { opacity: 0.88; }
     .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
     .error-msg { color: #dc2626; font-size: 0.85rem; margin-top: 0.75rem; }

@@ -6,10 +6,10 @@ import { HttpClient } from '@angular/common/http';
 interface ApiKey {
   id: string;
   name: string;
-  prefix: string;       // primeiros 8 chars visíveis, ex: "btv_live_"
-  maskedKey: string;    // ex: "btv_live_••••••••••••aBcD"
+  prefix: string;
+  maskedKey: string;
   permissions: string[];
-  rateLimit: number;    // requests/min
+  rateLimit: number;
   expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
@@ -56,7 +56,7 @@ interface ApiKey {
               <div class="key-header">
                 <div class="key-identity">
                   <span class="key-name">{{ key.name }}</span>
-                  <span class="key-masked">{{ key.maskedKey }}</span>
+                  <code class="key-masked">{{ key.maskedKey }}</code>
                   <span class="status-badge" [class]="key.status">{{ key.status }}</span>
                 </div>
                 <div class="key-actions">
@@ -79,15 +79,15 @@ interface ApiKey {
                 </div>
                 <div class="key-detail">
                   <span class="label">Rate limit</span>
-                  <span>{{ key.rateLimit }} req/min</span>
+                  <span class="mono">{{ key.rateLimit }} req/min</span>
                 </div>
                 <div class="key-detail">
                   <span class="label">Uso hoje</span>
-                  <span>{{ key.usageToday | number }} requests</span>
+                  <span class="mono">{{ key.usageToday | number }} requests</span>
                 </div>
                 <div class="key-detail">
                   <span class="label">Uso total</span>
-                  <span>{{ key.usageTotal | number }}</span>
+                  <span class="mono">{{ key.usageTotal | number }}</span>
                 </div>
                 <div class="key-detail">
                   <span class="label">Último uso</span>
@@ -180,32 +180,32 @@ interface ApiKey {
     }
   `,
   styles: [`
-    :host { display:block; font-family: Inter, system-ui, sans-serif; }
-    .api-keys { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    :host { display:block; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    .api-keys { padding: 28px 32px; background: var(--panel-2); min-height: 100vh; }
     .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
-    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
-    .page-header p { font-size:13px; color:#64748b; margin:0; }
-    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
-    .btn-primary:hover { background:#4f46e5; }
+    .page-header h1 { font-size:22px; font-weight:700; color: var(--ink); margin:0 0 4px; }
+    .page-header p { font-size:13px; color: var(--ink-2); margin:0; }
+    .btn-primary { padding:8px 18px; background: var(--acc); color: var(--white); border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; font-family:'IBM Plex Sans',system-ui,sans-serif; }
+    .btn-primary:hover { opacity:0.88; }
     .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
-    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
-    .btn-danger { background:#ef4444; color:#fff; border:none; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
-    .btn-ghost { background:none; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; color:#374151; }
+    .btn-secondary { background: var(--panel-2); color: var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-danger { background:#ef4444; color:var(--white); border:none; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-ghost { background:none; border:1px solid var(--line); border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; color: var(--ink); }
     .btn-sm { padding:5px 12px; font-size:12px; }
     .filters-bar { margin-bottom:16px; }
     .filter-chips { display:flex; gap:8px; flex-wrap:wrap; }
-    .chip { padding:5px 14px; border:1px solid #e2e8f0; border-radius:20px; background:#fff; color:#374151; font-size:12px; cursor:pointer; }
-    .chip.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .chip { padding:5px 14px; border:1px solid var(--line); border-radius:20px; background: var(--white); color: var(--ink); font-size:12px; cursor:pointer; }
+    .chip.active { background: var(--acc); color: var(--white); border-color: var(--acc); }
     .keys-list { display:flex; flex-direction:column; gap:12px; }
-    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
-    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
-    .key-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .loading-state { text-align:center; padding:40px; color: var(--ink-3); font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color: var(--ink-3); font-size:14px; }
+    .key-card { background: var(--white); border:1px solid var(--line); border-radius:12px; padding:20px 24px; }
     .key-card.revoked { opacity:0.65; border-color:#fca5a5; }
     .key-card.expired { opacity:0.65; border-color:#fcd34d; }
     .key-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
     .key-identity { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .key-name { font-size:14px; font-weight:600; color:#0f172a; }
-    .key-masked { font-family:monospace; font-size:13px; color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:2px 8px; }
+    .key-name { font-size:14px; font-weight:600; color: var(--ink); }
+    .key-masked { font-family:'IBM Plex Mono',monospace; font-size:13px; color: var(--ink-2); background: var(--panel-2); border:1px solid var(--line); border-radius:4px; padding:2px 8px; }
     .status-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
     .status-badge.active { background:#dcfce7; color:#15803d; }
     .status-badge.revoked { background:#fee2e2; color:#991b1b; }
@@ -213,30 +213,31 @@ interface ApiKey {
     .key-actions { display:flex; gap:8px; align-items:center; }
     .key-details { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; }
     .key-detail { display:flex; flex-direction:column; gap:2px; }
-    .key-detail .label { font-size:11px; color:#94a3b8; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; }
-    .key-detail span:last-child { font-size:13px; color:#374151; }
+    .key-detail .label { font-size:11px; color: var(--ink-3); font-weight:500; text-transform:uppercase; letter-spacing:0.04em; }
+    .key-detail span:last-child { font-size:13px; color: var(--ink); }
     .permission-chips { display:flex; flex-wrap:wrap; gap:4px; }
-    .perm-chip { background:#eef2ff; color:#4338ca; font-size:11px; padding:2px 8px; border-radius:4px; }
+    .perm-chip { background: var(--acc-soft); color: var(--acc); font-size:11px; padding:2px 8px; border-radius:4px; }
+    .mono { font-family:'IBM Plex Mono',monospace; }
     .expiring { color:#f59e0b; font-weight:600; }
     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
-    .modal { background:#fff; border-radius:12px; padding:24px; width:480px; max-width:90vw; }
+    .modal { background: var(--white); border-radius:12px; padding:24px; width:480px; max-width:90vw; }
     .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-    .modal-header h2 { font-size:16px; font-weight:600; color:#0f172a; margin:0; }
-    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color:#94a3b8; }
+    .modal-header h2 { font-size:16px; font-weight:600; color: var(--ink); margin:0; }
+    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color: var(--ink-3); }
     .modal-body { display:flex; flex-direction:column; gap:0; }
     .modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
     .form-group { display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }
-    .form-group label { font-size:12px; font-weight:500; color:#374151; }
-    .form-group input { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; width:100%; box-sizing:border-box; margin-top:4px; }
-    .form-group input:focus { outline:none; border-color:#6366f1; }
+    .form-group label { font-size:12px; font-weight:500; color: var(--ink); }
+    .form-group input { background: var(--white); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:13px; color: var(--ink); width:100%; box-sizing:border-box; margin-top:4px; font-family:'IBM Plex Sans',system-ui,sans-serif; }
+    .form-group input:focus { outline:none; border-color: var(--acc); }
     .perm-checkboxes { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
-    .checkbox-label { display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; cursor:pointer; font-weight:normal; }
-    .checkbox-label input[type="checkbox"] { cursor:pointer; }
+    .checkbox-label { display:flex; align-items:center; gap:6px; font-size:13px; color: var(--ink); cursor:pointer; font-weight:normal; }
+    .checkbox-label input[type="checkbox"] { cursor:pointer; accent-color: var(--acc); }
     .new-key-modal { width:540px; }
     .new-key-alert { background:#fef3c7; color:#92400e; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:14px; }
-    .new-key-display { display:flex; align-items:center; gap:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; }
-    .new-key-display code { font-family:monospace; font-size:13px; color:#0f172a; flex:1; word-break:break-all; }
-    .new-key-display button { padding:6px 12px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer; font-size:12px; white-space:nowrap; }
+    .new-key-display { display:flex; align-items:center; gap:10px; background: var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+    .new-key-display code { font-family:'IBM Plex Mono',monospace; font-size:13px; color: var(--ink); flex:1; word-break:break-all; }
+    .new-key-display button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background: var(--white); cursor:pointer; font-size:12px; white-space:nowrap; }
   `]
 })
 export class ApiKeysComponent implements OnInit {
@@ -331,7 +332,7 @@ export class ApiKeysComponent implements OnInit {
   isExpiringSoon(key: ApiKey): boolean {
     if (!key.expiresAt) return false;
     const diff = new Date(key.expiresAt).getTime() - Date.now();
-    return diff < 7 * 24 * 60 * 60 * 1000; // < 7 dias
+    return diff < 7 * 24 * 60 * 60 * 1000;
   }
 
   private emptyForm(): Partial<ApiKey> & { permissions: string[] } {

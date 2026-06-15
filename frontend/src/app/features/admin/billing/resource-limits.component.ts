@@ -8,13 +8,11 @@ interface ResourceLimit {
   type: 'workspace' | 'user' | 'project' | 'api_key';
   targetId: string;
   targetName: string;
-  // Limites
   maxTokensPerDay: number | null;
   maxMessagesPerDay: number | null;
   maxDocumentsTotal: number | null;
   maxStorageGb: number | null;
   maxApiRequestsPerMin: number | null;
-  // Status
   currentTokensToday: number;
   currentMessagesToday: number;
   currentDocumentsTotal: number;
@@ -75,7 +73,7 @@ interface ResourceLimit {
                         [class.critical]="usagePercent(limit.currentTokensToday, limit.maxTokensPerDay) > 95">
                       </div>
                     </div>
-                    <span class="usage-text">{{ shortNumber(limit.currentTokensToday) }} / {{ shortNumber(limit.maxTokensPerDay) }}</span>
+                    <span class="usage-text mono">{{ shortNumber(limit.currentTokensToday) }} / {{ shortNumber(limit.maxTokensPerDay) }}</span>
                   </div>
                 }
                 @if (limit.maxMessagesPerDay !== null) {
@@ -84,7 +82,7 @@ interface ResourceLimit {
                     <div class="usage-bar">
                       <div class="usage-fill" [style.width.%]="usagePercent(limit.currentMessagesToday, limit.maxMessagesPerDay)"></div>
                     </div>
-                    <span class="usage-text">{{ limit.currentMessagesToday }} / {{ limit.maxMessagesPerDay }}</span>
+                    <span class="usage-text mono">{{ limit.currentMessagesToday }} / {{ limit.maxMessagesPerDay }}</span>
                   </div>
                 }
                 @if (limit.maxStorageGb !== null) {
@@ -93,7 +91,7 @@ interface ResourceLimit {
                     <div class="usage-bar">
                       <div class="usage-fill" [style.width.%]="usagePercent(limit.currentStorageGb, limit.maxStorageGb)"></div>
                     </div>
-                    <span class="usage-text">{{ limit.currentStorageGb | number:'1.1-1' }}GB / {{ limit.maxStorageGb }}GB</span>
+                    <span class="usage-text mono">{{ limit.currentStorageGb | number:'1.1-1' }}GB / {{ limit.maxStorageGb }}GB</span>
                   </div>
                 }
               </div>
@@ -173,50 +171,56 @@ interface ResourceLimit {
     }
   `,
   styles: [`
-    :host { display:block; font-family: Inter, system-ui, sans-serif; }
-    .resource-limits { padding: 28px 32px; background: #f8fafc; min-height: 100vh; }
+    :host { display:block; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    .resource-limits { padding: 28px 32px; background: var(--panel-2); min-height: 100vh; }
     .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; }
-    .page-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0 0 4px; }
-    .page-header p { font-size:13px; color:#64748b; margin:0; }
-    .btn-primary { padding:8px 18px; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; }
-    .btn-primary:hover { background:#4f46e5; }
+    .page-header h1 { font-size:22px; font-weight:700; color: var(--ink); margin:0 0 4px; }
+    .page-header p { font-size:13px; color: var(--ink-2); margin:0; }
+    .btn-primary { padding:8px 18px; background: var(--acc); color: var(--white); border:none; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; font-family:'IBM Plex Sans',system-ui,sans-serif; }
+    .btn-primary:hover { opacity:0.88; }
     .btn-primary:disabled { opacity:0.5; cursor:not-allowed; }
-    .btn-secondary { background:#f1f5f9; color:#374151; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
+    .btn-secondary { background: var(--panel-2); color: var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }
     .type-tabs { display:flex; gap:8px; margin-bottom:20px; }
-    .type-tabs button { padding:7px 16px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; color:#374151; font-size:13px; cursor:pointer; }
-    .type-tabs button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+    .type-tabs button { padding:7px 16px; border:1px solid var(--line); border-radius:8px; background: var(--white); color: var(--ink); font-size:13px; cursor:pointer; font-family:'IBM Plex Sans',system-ui,sans-serif; }
+    .type-tabs button.active { background: var(--acc); color: var(--white); border-color: var(--acc); }
     .limits-list { display:flex; flex-direction:column; gap:12px; }
-    .loading-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
-    .empty-state { text-align:center; padding:40px; color:#94a3b8; font-size:14px; }
-    .limit-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px 24px; }
+    .loading-state { text-align:center; padding:40px; color: var(--ink-3); font-size:14px; }
+    .empty-state { text-align:center; padding:40px; color: var(--ink-3); font-size:14px; }
+    .limit-card { background: var(--white); border:1px solid var(--line); border-radius:12px; padding:20px 24px; }
     .limit-card.exceeded { border-color:#fca5a5; background:#fff8f8; }
     .limit-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
-    .limit-header h3 { font-size:14px; font-weight:600; color:#0f172a; margin:0 0 4px; }
-    .limit-type-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; background:#f1f5f9; color:#64748b; }
+    .limit-header h3 { font-size:14px; font-weight:600; color: var(--ink); margin:0 0 4px; }
+    .limit-type-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; background: var(--panel-2); color: var(--ink-2); }
     .limit-actions { display:flex; gap:8px; }
-    .limit-actions button { padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; border:1px solid #e2e8f0; background:#f1f5f9; color:#374151; }
+    .limit-actions button { padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; border:1px solid var(--line); background: var(--panel-2); color: var(--ink); }
     .limit-actions button.danger { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
     .limit-metrics { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
     .limit-metric { display:flex; align-items:center; gap:10px; }
-    .metric-label { font-size:12px; color:#64748b; width:110px; flex-shrink:0; }
-    .usage-bar { flex:1; height:6px; background:#f1f5f9; border-radius:3px; overflow:hidden; }
-    .usage-fill { height:100%; background:#6366f1; border-radius:3px; transition:width 0.3s; }
+    .metric-label { font-size:12px; color: var(--ink-2); width:110px; flex-shrink:0; }
+    .usage-bar { flex:1; height:6px; background: var(--panel-2); border-radius:3px; overflow:hidden; }
+    .usage-fill { height:100%; background: var(--acc); border-radius:3px; transition:width 0.3s; }
     .usage-fill.warn { background:#f59e0b; }
     .usage-fill.critical { background:#ef4444; }
-    .usage-text { font-size:12px; color:#374151; white-space:nowrap; }
-    .limit-footer { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#94a3b8; }
+    .usage-text { font-size:12px; color: var(--ink); white-space:nowrap; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .limit-footer { display:flex; justify-content:space-between; align-items:center; font-size:12px; color: var(--ink-3); }
     .exceeded-badge { background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:1000; }
-    .modal { background:#fff; border-radius:12px; padding:24px; width:540px; max-width:90vw; }
+    .modal { background: var(--white); border-radius:12px; padding:24px; width:540px; max-width:90vw; }
     .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-    .modal-header h2 { font-size:16px; font-weight:600; color:#0f172a; margin:0; }
-    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color:#94a3b8; }
+    .modal-header h2 { font-size:16px; font-weight:600; color: var(--ink); margin:0; }
+    .modal-header button { background:none; border:none; cursor:pointer; font-size:18px; color: var(--ink-3); }
     .modal-body { display:flex; flex-direction:column; gap:0; }
     .modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
     .form-group { display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }
-    .form-group label { font-size:12px; font-weight:500; color:#374151; }
-    .form-group input, .form-group select { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 12px; font-size:13px; color:#1e293b; width:100%; box-sizing:border-box; margin-top:4px; }
-    .form-group input:focus, .form-group select:focus { outline:none; border-color:#6366f1; }
+    .form-group label { font-size:12px; font-weight:500; color: var(--ink); }
+    .form-group input, .form-group select {
+      background: var(--white); border:1px solid var(--line); border-radius:8px;
+      padding:8px 12px; font-size:13px; color: var(--ink);
+      width:100%; box-sizing:border-box; margin-top:4px;
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    }
+    .form-group input:focus, .form-group select:focus { outline:none; border-color: var(--acc); }
     .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   `]
 })
