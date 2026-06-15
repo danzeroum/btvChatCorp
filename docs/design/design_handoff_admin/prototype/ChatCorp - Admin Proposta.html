@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ChatCorp — Admin (proposta funcional)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; height: 100%; background: #f0eee9; }
+  #root { height: 100%; }
+  .app-shell { height: 100vh; position: relative; overflow: hidden; }
+  .pnav { transition: box-shadow .15s, border-color .15s; }
+  .pnav:hover { box-shadow: 0 4px 16px rgba(28,27,25,0.07); border-color: var(--ink3); }
+  .urow:hover { background: var(--panel) !important; }
+  .wf-btn.gho:hover, .wf-chip:hover { filter: brightness(0.985); }
+  .wf-btn { white-space: nowrap; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="wf-kit.jsx"></script>
+<script type="text/babel" src="wf-admin-kit.jsx"></script>
+<script type="text/babel" src="admin-proposal.jsx"></script>
+<script type="text/babel" src="admin-proposal-users.jsx"></script>
+<script type="text/babel" src="admin-proposal-screens-b.jsx"></script>
+<script type="text/babel" src="admin-proposal-screens-c.jsx"></script>
+
+<script type="text/babel">
+  const { useState } = React;
+  const { NavSidebar } = window.AdminProposalShell;
+  const Overview = window.AdminProposalOverview;
+  const Users = window.AdminProposalUsers;
+
+  function App() {
+    const [screen, setScreen] = useState('overview');
+    const [params, setParams] = useState({});
+    const go = (id, p = {}) => { setScreen(id); setParams(p); };
+    return (
+      <div className="wf app-shell">
+        <NavSidebar active={screen} go={go} />
+        <div className="wf-main" style={{ position: 'relative' }}>
+          {screen === 'overview' && <Overview go={go} />}
+          {screen === 'users' && <Users go={go} initialFilter={params.filter} key={params.filter || 'all'} />}
+          {screen === 'models' && <window.AdminProposalModels go={go} />}
+          {screen === 'audit' && <window.AdminProposalAudit go={go} />}
+          {screen === 'compliance' && <window.AdminProposalCompliance go={go} />}
+          {screen === 'retention' && <window.AdminProposalRetention go={go} />}
+          {screen === 'usage' && <window.AdminProposalUsage go={go} />}
+          {screen === 'keys' && <window.AdminProposalKeys go={go} />}
+          {screen === 'webhooks' && <window.AdminProposalWebhooks go={go} />}
+          {screen === 'sso' && <window.AdminProposalSso go={go} />}
+          {screen === 'branding' && <window.AdminProposalBranding go={go} />}
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

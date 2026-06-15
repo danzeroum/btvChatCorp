@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ChatCorp — Admin · Handoff de implementação</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#1c1b19; --ink2:#5f5c57; --ink3:#9a958d; --line:#e7e4df; --line2:#f0eeea;
+    --panel:#fafafa; --panel2:#f4f2ee; --acc:#bf5b3d; --acc-soft:#f8ece6; --acc-line:#e7c3b4;
+    --good:#3f7d62; --good-soft:#eaf2ee; --warn:#c08a2e;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:#e9e6e0; color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .mono{ font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .doc{ max-width:1180px; margin:0 auto; padding:0 0 80px; }
+  section.page{ background:#fff; margin:22px 24px; border:1px solid var(--line); border-radius:14px;
+    box-shadow:0 1px 3px rgba(28,27,25,.04); overflow:hidden; }
+
+  /* cover */
+  .cover{ padding:54px 56px 46px; }
+  .cover .eyebrow{ font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--acc); font-weight:600; }
+  .cover h1{ font-size:40px; font-weight:600; letter-spacing:-.02em; margin:12px 0 6px; }
+  .cover .sub{ font-size:16px; color:var(--ink2); max-width:640px; line-height:1.5; }
+  .cover .metarow{ display:flex; flex-wrap:wrap; gap:10px 24px; margin-top:26px; padding-top:22px; border-top:1px solid var(--line); }
+  .cover .metarow div{ font-size:13px; color:var(--ink2); }
+  .cover .metarow b{ color:var(--ink); font-weight:600; }
+  .fid{ margin-top:22px; background:var(--acc-soft); border:1px solid var(--acc-line); border-radius:10px;
+    padding:14px 18px; font-size:13.5px; line-height:1.55; color:#7a3925; }
+  .fid b{ color:var(--acc); }
+
+  /* generic section */
+  .sec-head{ padding:26px 40px 0; }
+  .sec-head .kicker{ font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink3); font-weight:600; }
+  .sec-head h2{ font-size:24px; font-weight:600; letter-spacing:-.01em; margin:7px 0 0; }
+  .sec-body{ padding:20px 40px 36px; }
+
+  table.spec{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.spec th{ text-align:left; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink3); font-weight:600; padding:0 14px 8px; border-bottom:1px solid var(--line); }
+  table.spec td{ padding:11px 14px; border-bottom:1px solid var(--line2); vertical-align:top; color:var(--ink2); line-height:1.5; }
+  table.spec td:first-child{ color:var(--ink); font-weight:560; white-space:nowrap; }
+  .swatch{ display:inline-block; width:15px; height:15px; border-radius:4px; vertical-align:-3px; margin-right:8px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.12); }
+  .badge{ display:inline-block; font-size:11px; font-weight:600; padding:2px 9px; border-radius:999px; }
+  .b-exist{ background:var(--panel2); color:var(--ink2); }
+  .b-new{ background:var(--acc-soft); color:var(--acc); border:1px solid var(--acc-line); }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:14px 30px; }
+  .card-soft{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card-soft h4{ margin:0 0 6px; font-size:13px; font-weight:600; }
+  .card-soft p{ margin:0; font-size:12.5px; color:var(--ink2); line-height:1.5; }
+
+  /* screen page */
+  .screen{ display:grid; grid-template-columns:1fr; }
+  .screen .shot{ background:#f0eee9; border-bottom:1px solid var(--line); padding:28px 40px;
+    display:flex; justify-content:center; }
+  .screen .shot img{ width:100%; max-width:960px; border-radius:10px; border:1px solid var(--line);
+    box-shadow:0 8px 30px rgba(28,27,25,.10); display:block; }
+  .screen-head{ display:flex; align-items:flex-start; gap:16px; padding:24px 40px 4px; }
+  .screen-num{ font-family:"IBM Plex Mono",monospace; font-size:30px; font-weight:600; color:var(--acc); line-height:1; }
+  .screen-head h2{ font-size:23px; font-weight:600; letter-spacing:-.01em; margin:0; }
+  .screen-head .tag{ font-size:12.5px; color:var(--ink3); margin-top:3px; }
+  .purpose{ padding:8px 40px 4px; font-size:14.5px; color:var(--ink); line-height:1.55; max-width:880px; }
+
+  .routebar{ margin:16px 40px 0; display:flex; flex-wrap:wrap; gap:0; border:1px solid var(--line);
+    border-radius:10px; overflow:hidden; font-size:12.5px; }
+  .routebar > div{ padding:10px 16px; border-right:1px solid var(--line2); flex:1 1 auto; min-width:160px; }
+  .routebar > div:last-child{ border-right:none; }
+  .routebar .lbl{ font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); font-weight:600; display:block; margin-bottom:3px; }
+  .routebar .val{ color:var(--ink); font-weight:560; }
+
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:0 36px; padding:24px 40px 8px; }
+  @media (max-width:880px){ .cols{ grid-template-columns:1fr; } .grid2{ grid-template-columns:1fr; } }
+  .block{ margin-bottom:22px; }
+  .block > h3{ font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3);
+    font-weight:600; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .block > h3::after{ content:""; flex:1; height:1px; background:var(--line); }
+  ul.spec-list{ margin:0; padding:0; list-style:none; }
+  ul.spec-list li{ position:relative; padding:0 0 9px 16px; font-size:13px; color:var(--ink2); line-height:1.5; }
+  ul.spec-list li::before{ content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:9px; background:var(--ink3); }
+  .kv{ font-size:13px; }
+  .kv .row{ display:flex; gap:10px; padding:8px 0; border-top:1px solid var(--line2); }
+  .kv .row:first-child{ border-top:none; }
+  .kv .k{ color:var(--ink); font-weight:560; min-width:120px; }
+  .kv .v{ color:var(--ink2); line-height:1.5; }
+
+  pre.code{ margin:0; background:#1c1b19; color:#e8e4dd; border-radius:10px; padding:16px 18px;
+    font-family:"IBM Plex Mono",monospace; font-size:12px; line-height:1.6; overflow-x:auto; }
+  pre.code .cm{ color:#9a958d; } pre.code .kw{ color:#d99a7e; } pre.code .ty{ color:#8fb5a0; }
+  .api-list{ margin:0; padding:0; list-style:none; }
+  .api-list li{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink2);
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 11px; margin-bottom:7px; line-height:1.45; word-break:break-word; }
+  .api-list li .verb{ font-weight:600; color:var(--acc); }
+  .fullblock{ padding:0 40px 30px; }
+
+  .toc{ padding:18px 40px 30px; }
+  .toc-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px 30px; }
+  .toc-grid a{ display:flex; align-items:baseline; gap:12px; text-decoration:none; color:var(--ink);
+    font-size:14px; padding:9px 0; border-bottom:1px solid var(--line2); }
+  .toc-grid a .n{ font-family:"IBM Plex Mono",monospace; color:var(--acc); font-weight:600; font-size:13px; width:24px; }
+  .toc-grid a .t{ flex:1; font-weight:560; }
+  .toc-grid a .r{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink3); }
+  .toc-grid a:hover .t{ color:var(--acc); }
+
+  @media print{
+    html,body{ background:#fff; }
+    section.page{ margin:0; border:none; border-radius:0; box-shadow:none; page-break-after:always; }
+    .screen .shot img{ box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<div class="doc" id="top">
+
+  <!-- COVER -->
+  <section class="page">
+    <div class="cover">
+      <div class="eyebrow">Handoff de implementação</div>
+      <h1 id="cover-title"></h1>
+      <div class="sub" id="cover-sub"></div>
+      <div class="metarow" id="cover-meta"></div>
+      <div class="fid" id="cover-fid"></div>
+    </div>
+    <div class="toc">
+      <div class="block"><h3>Telas</h3></div>
+      <div class="toc-grid" id="toc"></div>
+    </div>
+  </section>
+
+  <!-- FOUNDATIONS -->
+  <section class="page" id="foundations"></section>
+
+  <!-- SCREENS injected here -->
+  <div id="screens"></div>
+
+</div>
+
+<script src="handoff-data.js"></script>
+<script>
+  const H = window.HANDOFF;
+  const esc = (s) => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  // crude TS syntax highlight
+  function hl(code){
+    return esc(code)
+      .replace(/(\/\/[^\n]*)/g, '<span class="cm">$1</span>')
+      .replace(/\b(interface|type|string|number|boolean|null)\b/g, '<span class="kw">$1</span>');
+  }
+
+  // cover
+  document.getElementById('cover-title').textContent = H.meta.title;
+  document.getElementById('cover-sub').textContent = H.meta.subtitle;
+  document.getElementById('cover-meta').innerHTML =
+    `<div><b>Repositório.</b> ${esc(H.meta.repo)}</div><div><b>${esc(H.meta.base)}</b></div>`;
+  document.getElementById('cover-fid').innerHTML = `<b>Fidelidade.</b> ${esc(H.meta.fidelity)}`;
+
+  // toc
+  document.getElementById('toc').innerHTML = H.screens.map(s =>
+    `<a href="#s-${s.id}"><span class="n">${s.n}</span><span class="t">${esc(s.title)}</span><span class="r">${esc(s.route)}</span></a>`
+  ).join('');
+
+  // foundations
+  const t = H.tokens;
+  document.getElementById('foundations').innerHTML = `
+    <div class="sec-head"><div class="kicker">Fundamentos</div><h2>Tokens, rotas e componentes compartilhados</h2></div>
+    <div class="sec-body">
+      <div class="block"><h3>Mapa de rotas → componentes</h3>
+        <table class="spec"><thead><tr><th>Tela</th><th>Rota</th><th>Componente</th><th>Arquivo</th><th>Status</th></tr></thead>
+        <tbody>${H.routes.map(r=>`<tr><td>${esc(r[0])}</td><td class="mono" style="color:var(--acc)">${esc(r[1])}</td><td class="mono">${esc(r[2])}</td><td class="mono" style="font-size:11px;color:var(--ink3)">${esc(r[3])}</td><td>${/NOVA|novo/i.test(r[4])?`<span class="badge b-new">${esc(r[4])}</span>`:`<span class="badge b-exist">${esc(r[4])}</span>`}</td></tr>`).join('')}</tbody></table>
+      </div>
+
+      <div class="cols" style="padding:24px 0 8px">
+        <div class="block"><h3>Cores</h3>
+          <table class="spec"><tbody>${t.color.map(c=>`<tr><td><span class="swatch" style="background:${c[1]}"></span><span class="mono" style="font-size:11.5px">${esc(c[0])}</span></td><td class="mono" style="font-size:11.5px">${esc(c[1])}</td><td style="font-size:12px">${esc(c[2])}</td></tr>`).join('')}</tbody></table>
+        </div>
+        <div class="block">
+          <h3>Tipografia</h3>
+          <table class="spec"><tbody>${t.type.map(c=>`<tr><td>${esc(c[0])}</td><td class="mono" style="font-size:11px">${esc(c[1])}</td></tr>`).join('')}</tbody></table>
+          <h3 style="margin-top:22px">Espaçamento & forma</h3>
+          <table class="spec"><tbody>${t.space.map(c=>`<tr><td>${esc(c[0])}</td><td class="mono" style="font-size:11.5px">${esc(c[1])}</td></tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+
+      <div class="block" style="margin-top:14px"><h3>Componentes compartilhados</h3>
+        <div class="grid2">${H.shared.map(s=>`<div class="card-soft"><h4 class="mono">${esc(s[0])}</h4><p>${esc(s[1])}</p></div>`).join('')}</div>
+      </div>
+
+      <div class="block" style="margin-top:24px"><h3>Convenções de implementação</h3>
+        <ul class="spec-list">${H.conventions.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>
+      </div>
+    </div>`;
+
+  // screens
+  document.getElementById('screens').innerHTML = H.screens.map(s => {
+    const statusBadge = /NOVA|novo/i.test(s.status) ? `<span class="badge b-new">${esc(s.status)}</span>` : `<span class="badge b-exist">${esc(s.status)}</span>`;
+    return `
+    <section class="page" id="s-${s.id}">
+      <div class="screen-head">
+        <div class="screen-num">${s.n}</div>
+        <div><h2>${esc(s.title)}</h2><div class="tag">${esc(s.tag)}</div></div>
+      </div>
+      <div class="purpose">${esc(s.purpose)}</div>
+      <div class="routebar">
+        <div><span class="lbl">Rota</span><span class="val mono" style="color:var(--acc)">${esc(s.route)}</span></div>
+        <div><span class="lbl">Componente</span><span class="val mono">${esc(s.comp)}</span></div>
+        <div><span class="lbl">Arquivo</span><span class="val mono" style="font-size:11px">${esc(s.file)}</span></div>
+        <div><span class="lbl">Status</span>${statusBadge}</div>
+      </div>
+      <div class="screen">
+        <div class="shot"><img src="${s.img}" alt="${esc(s.title)}" /></div>
+      </div>
+      <div class="cols">
+        <div class="block"><h3>Layout</h3><ul class="spec-list">${s.layout.map(l=>`<li>${esc(l)}</li>`).join('')}</ul></div>
+        <div class="block"><h3>Componentes & estilo</h3>
+          <div class="kv">${s.components.map(c=>`<div class="row"><span class="k">${esc(c[0])}</span><span class="v">${esc(c[1])}</span></div>`).join('')}</div>
+        </div>
+      </div>
+      <div class="fullblock">
+        <div class="block"><h3>Modelo de dados</h3><pre class="code">${hl(s.model)}</pre></div>
+      </div>
+      <div class="cols" style="padding-top:0">
+        <div class="block"><h3>API (contrato proposto)</h3><ul class="api-list">${s.api.map(a=>{const m=a.match(/^(GET|POST|PUT|PATCH|DELETE)/);return `<li>${m?`<span class="verb">${m[1]}</span>`+esc(a.slice(m[1].length)):esc(a)}</li>`;}).join('')}</ul></div>
+        <div class="block"><h3>Estados & interações</h3>
+          <ul class="spec-list">${s.states.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+          <div style="height:6px"></div>
+          <ul class="spec-list">${s.interactions.map(x=>`<li><b style="color:var(--ink);font-weight:600">↳</b> ${esc(x)}</li>`).join('')}</ul>
+        </div>
+      </div>
+    </section>`;
+  }).join('');
+</script>
+</body>
+</html>
