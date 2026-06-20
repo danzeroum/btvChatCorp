@@ -8,7 +8,10 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@btv.com}"
 ADMIN_NAME="${ADMIN_NAME:-Admin}"
 WORKSPACE_NAME="${WORKSPACE_NAME:-BTV Corp}"
 
-EXISTING=$(docker compose exec -T postgres psql -U btvchat -d btvchat -t -c "SELECT count(*) FROM users;" | tr -d ' ')
+# Usa os mesmos defaults do docker-compose.yml (POSTGRES_USER=btv, POSTGRES_DB=btvchat).
+PG_USER="${POSTGRES_USER:-btv}"
+PG_DB="${POSTGRES_DB:-btvchat}"
+EXISTING=$(docker compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -t -c "SELECT count(*) FROM users;" | tr -d ' ')
 
 if [ "$EXISTING" -gt "0" ]; then
   echo "Usuarios ja existem ($EXISTING). Nenhuma acao necessaria."

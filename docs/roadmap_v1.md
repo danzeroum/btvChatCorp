@@ -8,6 +8,10 @@
 > antes do push, e só é mergeado com o CI verde.
 >
 > **Decisões que dependem do usuário** ficam em `docs/pendencia.v1.md` (não bloqueiam o resto).
+>
+> ⚠️ **CI:** o GitHub Actions deste repo conclui todas as runs em *failure com 0 jobs*
+> (falha de startup ambiental — ver P-09 em `pendencia.v1.md`). Como não há CI verde
+> possível, cada PR é **verificado localmente** com os comandos do CI antes do merge.
 
 ## Legenda
 ✅ feito & mergeado · 🔄 em andamento · ⏳ a fazer · ⏸️ adiado (ver pendência) · ❌ bloqueado
@@ -15,20 +19,25 @@
 ## Rastreador de PRs
 | PR | Escopo | Branch | CI | Status |
 |----|--------|--------|----|--------|
-| #1 | Docs de rastreio + plano unificado | `claude/exec-plan-docs` | — | 🔄 |
+| #104 | Docs de rastreio + plano unificado | `claude/exec-plan-docs` | 🔄 | aberto |
+| #2 | Sprint 0: fix scripts + remover guards mortos | `claude/sprint0-scripts` | — | preparando |
 
 ## Status por Sprint / Ticket
 
 ### Sprint 0 — Estabilização do build
+**Descoberta:** o `ng build` **passa hoje** (`EXIT_CODE=0`) porque onboarding e os guards
+estão órfãos (fora do grafo de build). Logo, "frontend não compila" é latente — só quebra
+ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR dedicado).
+
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-001 | OnboardingService: `getState()` + `addUploadedDoc()` | ⏳ |
-| TKT-002 | Rota `/onboarding` em `app.routes.ts` | ⏳ |
-| TKT-003 | `data-classification.guard` → `getUserClearanceLevel()` | ⏳ |
-| TKT-004 | Deletar `role.guard.ts` duplicado | ⏳ |
-| TKT-005 | `APP_INITIALIZER` p/ `BrandingService` | ⏳ |
-| TKT-006 | Corrigir `start.sh`/`healthcheck.sh` | ⏳ |
-| TKT-007 | `seed-admin.sh` usar `$POSTGRES_USER`/`$POSTGRES_DB` | ⏳ |
+| TKT-001 | OnboardingService: `getState()` + `addUploadedDoc()` | ⏳ (PR onboarding; exige unificar os 2 `OnboardingState`) |
+| TKT-002 | Rota `/onboarding` em `app.routes.ts` | ⏳ (PR onboarding; só depois de TKT-001+039) |
+| TKT-003 | `data-classification.guard` órfão + método inexistente | ✅ removido (PR #2) |
+| TKT-004 | Deletar `role.guard.ts` duplicado/órfão | ✅ removido (PR #2) |
+| TKT-005 | `APP_INITIALIZER` p/ `BrandingService` | ⏳ (PR onboarding/branding) |
+| TKT-006 | Corrigir `start.sh`/`healthcheck.sh` | ✅ feito (PR #2) |
+| TKT-007 | `seed-admin.sh` usar `$POSTGRES_USER`/`$POSTGRES_DB` | ✅ feito (PR #2) |
 
 ### Sprint 1 — Infra & Compliance
 | Ticket | Descrição | Status |
