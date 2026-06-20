@@ -17,10 +17,14 @@
 ✅ feito & mergeado · 🔄 em andamento · ⏳ a fazer · ⏸️ adiado (ver pendência) · ❌ bloqueado
 
 ## Rastreador de PRs
-| PR | Escopo | Branch | CI | Status |
+| PR | Escopo | Branch | Verificação local | Status |
 |----|--------|--------|----|--------|
-| #104 | Docs de rastreio + plano unificado | `claude/exec-plan-docs` | 🔄 | aberto |
-| #2 | Sprint 0: fix scripts + remover guards mortos | `claude/sprint0-scripts` | — | preparando |
+| #104 | Docs de rastreio + plano unificado | `claude/exec-plan-docs` | n/a (docs) | ✅ merged |
+| #105 | Sprint 0: fix scripts + remover guards mortos | `claude/sprint0-scripts` | `bash -n`, `ng build` EXIT=0 | ✅ merged |
+| #106 | TKT-016: persistir `audit_logs` (wire + INSERT) | `claude/audit-logs` | `clippy -D warnings`, 39/39 testes, 11 linhas gravadas | 🔄 aberto |
+
+> Nota: o GitHub Actions não roda (P-09); "Verificação local" lista os comandos do CI
+> executados nesta máquina (Postgres 16 local, `cargo test`, `clippy`, `ng build`).
 
 ## Status por Sprint / Ticket
 
@@ -47,7 +51,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | TKT-010 | `QDRANT__SERVICE__API_KEY` no Qdrant | ⏳ |
 | TKT-011 | SSL/TLS no nginx + redirect + HSTS | ⏸️ (cert/domínio→pendência) |
 | TKT-012..015 | cert sync, SSE buffering, healthchecks, doc rede | ⏳ |
-| TKT-016 | **Persistir `audit_logs`** | ⏳ |
+| TKT-016 | **Persistir `audit_logs`** | ✅ (PR #106) — middleware wired + INSERT, verificado (11 linhas em teste) |
 | TKT-017 | Rate limiter → Redis | ⏸️ (depende de redis no compose) |
 
 ### Sprint 2 — Núcleo de IA

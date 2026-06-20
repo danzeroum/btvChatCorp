@@ -121,6 +121,12 @@ pub fn v1_routes(state: AppState) -> Router<AppState> {
         .merge(onboarding::protected_routes())
         // Admin: guard aplicado internamente em admin_routes() via require_admin_role
         .merge(admin::admin_routes())
+        // Audit fica "dentro" do require_auth: o auth (externo) injeta o
+        // WorkspaceContext antes; o audit (interno) o lê e persiste a escrita.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::middleware::audit_logger::audit_log_middleware,
+        ))
         .route_layer(axum::middleware::from_fn_with_state(state, require_auth));
 
     // Rotas publicas (sem JWT)
