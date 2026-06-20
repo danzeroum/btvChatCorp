@@ -26,20 +26,22 @@ echo "📦 Fazendo build das imagens..."
 docker compose build --parallel
 
 # Sobe infraestrutura primeiro
-echo "🗄️  Subindo infraestrutura (postgres, redis, qdrant)..."
-docker compose up -d postgres redis qdrant
+# NOTA: redis/vllm/training ainda NÃO estão no docker-compose.yml (ver TKT-008 em
+# docs/roadmap_v1.md). Este script referencia apenas serviços que existem hoje.
+echo "🗄️  Subindo infraestrutura (postgres, qdrant)..."
+docker compose up -d postgres qdrant
 echo "⏳ Aguardando banco ficar saudável..."
-docker compose wait postgres redis qdrant 2>/dev/null || sleep 20
+docker compose wait postgres 2>/dev/null || sleep 20
 
-# Sobe IA
-echo "🤖 Subindo vLLM e Embedding..."
-docker compose up -d vllm embedding
+# Sobe IA (embedding serve /embed e /rerank; LLM via OLLAMA_URL externo)
+echo "🤖 Subindo Embedding..."
+docker compose up -d embedding
 echo "⏳ Aguardando modelos carregarem (pode demorar ~2 min)..."
 sleep 30
 
 # Sobe serviços de backend
-echo "⚙️  Subindo API, RAG Searcher, Document Processor..."
-docker compose up -d api rag-searcher document-processor training
+echo "⚙️  Subindo API e Document Processor..."
+docker compose up -d api document-processor
 
 # Sobe frontend + nginx
 echo "🌐 Subindo Frontend e Nginx..."

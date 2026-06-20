@@ -24,6 +24,11 @@
 | P-07 | **Redis: provisionar?** | Rate limiter distribuído (TKT-017) e pub/sub do WebSocket (TKT-047) dependem de Redis. Vou adicionar ao compose; confirme se o ambiente de produção comporta. |
 | P-08 | **Secrets do GitHub Actions p/ CD** (registry/deploy) | CD para GHCR + deploy (TKT-045) precisa de `GHCR_TOKEN`/chaves SSH ou kubeconfig. |
 
+## 🚨 Bloqueio descoberto na execução
+| # | Pendência | Contexto |
+|---|---|---|
+| P-09 | **GitHub Actions não executa jobs** | TODAS as runs do `ci.yml` (inclusive no `main` atual `738b70b`) concluem em **failure com 0 jobs** — falha de *startup*, anterior a qualquer step. Não é o código: é ambiente/conta (Actions sem runner ou limite de billing/spending). Por isso **não há como obter "CI verde"** corrigindo código. **Adaptação:** verifico cada PR **localmente** com os mesmos comandos do CI (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run build`, `npm test`) e mergeio com base nessa verificação, já que o `main` analisado também está vermelho por esse motivo. **Ação sua:** verificar billing/runners de Actions em github.com/danzeroum/btvChatCorp/settings/actions. |
+
 ## ✅ Como isso é tratado
 - Itens acima estão **adiados** (⏸️ no `roadmap_v1.md`), não bloqueados: para cada um, deixo
   o **código/scaffold pronto** quando possível e marco o ponto exato que falta credencial/decisão.
