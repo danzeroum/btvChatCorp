@@ -3,47 +3,35 @@
 # Usa Ollama externo (VPS) como LLM — sem vLLM local, sem GPU
 #
 # Uso:
+#   ./scripts/gen-env.sh            # gera .env + cert self-signed
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 # ============================================================
 
 services:
-
-  # Desativa o vLLM local — usa Ollama na VPS
-  vllm:
-    profiles: [disabled]
-
-  # Desativa o training (sem GPU local)
-  training:
-    profiles: [disabled]
 
   # Desativa o embedding GPU — usa CPU em dev
   embedding:
     deploy:
       resources: {}   # remove reserva de GPU
 
-  # API aponta para Ollama externo
+  # API aponta para Ollama externo (VPS). Auth e opcional — muitos Ollama nao exigem.
   api:
     environment:
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://localhost:11434}
-      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:?Erro: OLLAMA_AUTH_USER obrigatorio — defina no .env}
-      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:?Erro: OLLAMA_AUTH_PASS obrigatorio — defina no .env}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3:70b}
-      VLLM_URL: ""   # não usado em modo ollama
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_AUTH_USER: ${OLLAMA_AUTH_USER:-}
+      OLLAMA_AUTH_PASS: ${OLLAMA_AUTH_PASS:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      VLLM_URL: ""   # nao usado em modo ollama
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
 
-  # RAG Searcher aponta para embedding no modo CPU
-  rag-searcher:
-    environment:
-      EMBEDDING_URL: http://embedding:8001
-
-  # Document processor também usa embedding CPU
+  # Document processor tambem usa embedding CPU
   document-processor:
     environment:
       EMBEDDING_URL: http://embedding:8001

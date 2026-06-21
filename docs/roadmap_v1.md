@@ -48,13 +48,14 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 ### Sprint 1 — Infra & Compliance
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-008 | Compose: `redis`/`vllm`/`reranker` (rag-searcher é lib, não entra) | ⏸️ (vLLM→pendência) |
-| TKT-009 | Unificar networks Docker | 🔄 parcial — `btv-prod-net` agora é gerenciada pelo compose (bridge), não mais externa |
-| TKT-010 | `QDRANT__SERVICE__API_KEY` no Qdrant | ⏳ |
-| TKT-011 | SSL/TLS no nginx + redirect + HSTS | ⏸️ (cert/domínio→pendência) |
-| TKT-012..015 | cert sync, SSE buffering, healthchecks, doc rede | ⏳ |
+| TKT-008 | Compose: `redis`/`reranker`/`mailpit` (+ `pgbouncer` no profile `scale`) | ✅ feito — serviços no compose; vLLM/training ficam em profile GPU (pendência) |
+| TKT-009 | Unificar networks Docker | ✅ feito — rede gerenciada (bridge); dev overlay sem `rag-searcher` fantasma |
+| TKT-010 | `QDRANT__SERVICE__API_KEY` no Qdrant | ✅ feito — Qdrant agora exige a key |
+| TKT-011 | SSL/TLS no nginx + redirect + HSTS | ✅ feito — :443 TLS + 80→443 + HSTS; cert self-signed via `gen-env.sh` (ACME→pendência P-05) |
+| TKT-014 | `proxy_buffering off` no SSE | ✅ feito — location dedicada `/api/v1/chat/stream` |
+| TKT-015 | healthchecks | 🔄 redis/reranker/embedding/api/nginx ok; qdrant usa `service_started` (imagem sem curl) |
 | TKT-016 | **Persistir `audit_logs`** | ✅ (PR #106) — middleware wired + INSERT, verificado (11 linhas em teste) |
-| TKT-017 | Rate limiter → Redis | ⏸️ (depende de redis no compose) |
+| TKT-017 | Rate limiter → Redis | 🔄 próximo commit (redis já no compose + rodando local) |
 
 ### Sprint 2 — Núcleo de IA
 | Ticket | Descrição | Status |
