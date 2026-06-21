@@ -7,7 +7,7 @@
 ## 🔧 Decisões de arquitetura
 | # | Pendência | Contexto | Opções |
 |---|---|---|---|
-| P-01 | **vLLM vs Ollama** (TKT-021) | ADR-001/005 dizem vLLM + Llama 3.3 70B; o runtime usa Ollama `llama3.2:3b`. | (a) Adotar vLLM (exige 2×H100/GPU) e atualizar compose; (b) Assumir Ollama e reescrever ADR-001/005/007. **Sem resposta, sigo com Ollama e alinho os ADRs.** |
+| P-01 | ✅ **RESOLVIDO** — Ollama externo | Decisão (com você): runtime = **Ollama externo** (`OLLAMA_URL`); vLLM/70B vira profile GPU opt-in. ADR-001 atualizado (#111). vLLM real ainda depende de **P-06** (GPU). |
 | P-02 | **api-public: serviço próprio ou rotas no `api`?** | Crate OpenAI-compat órfã. | (a) Deployar como serviço separado (Dockerfile+compose); (b) Montar rotas dentro do `api`. **Recomendo (b).** |
 
 ## 🔑 Credenciais / segredos (não tenho como gerar)
@@ -21,13 +21,13 @@
 | # | Pendência | Contexto |
 |---|---|---|
 | P-06 | **GPU disponível?** | Necessária p/ vLLM (P-01) e p/ fine-tuning real (`training`). Sem GPU, mantenho `TRAINING_MOCK`/Ollama. |
-| P-07 | **Redis: provisionar?** | Rate limiter distribuído (TKT-017) e pub/sub do WebSocket (TKT-047) dependem de Redis. Vou adicionar ao compose; confirme se o ambiente de produção comporta. |
+| P-07 | ✅ **RESOLVIDO (parcial)** — Redis no compose | `redis` adicionado ao compose (#108) e o throttle de login já usa Redis (#109, com fallback em memória). **Confirme** apenas se a VPS de produção comporta o container Redis (recursos). WebSocket pub/sub (TKT-047) ainda usará o mesmo Redis. |
 | P-08 | **Secrets do GitHub Actions p/ CD** (registry/deploy) | CD para GHCR + deploy (TKT-045) precisa de `GHCR_TOKEN`/chaves SSH ou kubeconfig. |
 
 ## 🚨 Bloqueio descoberto na execução
 | # | Pendência | Contexto |
 |---|---|---|
-| P-09 | **GitHub Actions não executa jobs** | TODAS as runs do `ci.yml` (inclusive no `main` atual `738b70b`) concluem em **failure com 0 jobs** — falha de *startup*, anterior a qualquer step. Não é o código: é ambiente/conta (Actions sem runner ou limite de billing/spending). Por isso **não há como obter "CI verde"** corrigindo código. **Adaptação:** verifico cada PR **localmente** com os mesmos comandos do CI (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run build`, `npm test`) e mergeio com base nessa verificação, já que o `main` analisado também está vermelho por esse motivo. **Ação sua:** verificar billing/runners de Actions em github.com/danzeroum/btvChatCorp/settings/actions. |
+| P-09 | **GitHub Actions não executa jobs** | TODAS as runs do `ci.yml` concluem em **failure com 0 jobs** — falha de *startup*, anterior a qualquer step. Não é o código: é ambiente/conta (Actions sem runner ou limite de billing/spending). Por isso **não há como obter "CI verde"** corrigindo código. **Adaptação:** verifico cada PR **localmente** com os mesmos comandos do CI (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run build`, `npm test`) e mergeio com base nessa verificação, já que o `main` analisado também está vermelho por esse motivo. **Ação sua:** verificar billing/runners de Actions em github.com/danzeroum/btvChatCorp/settings/actions. |
 
 ## ✅ Como isso é tratado
 - Itens acima estão **adiados** (⏸️ no `roadmap_v1.md`), não bloqueados: para cada um, deixo
