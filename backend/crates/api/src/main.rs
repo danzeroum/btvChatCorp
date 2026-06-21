@@ -102,6 +102,10 @@ async fn main() -> anyhow::Result<()> {
         embedding_url.clone(),
     ));
 
+    // Webhooks: dispatcher fire-and-forget com worker em background (HTTP + retry).
+    let webhook_dispatcher =
+        webhooks::WebhookDispatcher::new(webhooks::WebhookStore::new(db.clone()));
+
     let state = AppState {
         db,
         ollama_url,
@@ -113,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
         embedding_url,
         admin_service,
         login_throttle,
+        webhooks: webhook_dispatcher,
     };
 
     // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.

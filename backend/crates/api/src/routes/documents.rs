@@ -186,6 +186,16 @@ async fn upload(
         .fetch_one(&state.db)
         .await?;
 
+        state
+            .webhooks
+            .dispatch(webhooks::WebhookEvent {
+                event_type: webhooks::WebhookEventType::DocumentUploaded,
+                workspace_id: auth.workspace_id.to_string(),
+                data: serde_json::json!({ "document_id": row.id }),
+                meta: None,
+            })
+            .await;
+
         return Ok((StatusCode::CREATED, Json(row)));
     }
     Err(AppError::bad_request("Nenhum arquivo enviado"))

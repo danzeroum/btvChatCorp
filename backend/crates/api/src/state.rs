@@ -23,6 +23,8 @@ pub struct AppState {
     /// Throttle de tentativas de login por IP — Redis distribuido (scale-safe)
     /// com fallback em memoria.
     pub login_throttle: crate::throttle::LoginThrottle,
+    /// Dispatcher de webhooks (fire-and-forget; worker em background faz HTTP + retry).
+    pub webhooks: webhooks::WebhookDispatcher,
 }
 
 impl Clone for AppState {
@@ -38,6 +40,7 @@ impl Clone for AppState {
             embedding_url: self.embedding_url.clone(),
             admin_service: Arc::clone(&self.admin_service),
             login_throttle: self.login_throttle.clone(),
+            webhooks: self.webhooks.clone(),
         }
     }
 }
