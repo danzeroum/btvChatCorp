@@ -84,7 +84,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 |---|---|---|
 | TKT-032 | Deletar duplicatas do admin | ⏳ |
 | TKT-033/034 | Deletar duplicatas training + `chat.component` órfão | ⏳ |
-| TKT-035 | Remover `MOCK_*` → banner de erro | ⏳ |
+| TKT-035 | Remover `MOCK_*` → estado honesto | ✅ feito — removidos os 24 refs `MOCK_*` (admin-dashboard, usage-overview, data-retention); dados fabricados (148 users, A100, R$2525…) → estados vazios/zerados honestos; `ng build` EXIT=0. (Banner de erro explícito = polish futuro) |
 | TKT-036..040 | bulk suspend, OnPush, a11y, modelos, login | ⏳ |
 
 ### Sprint 5 — API pública & CD

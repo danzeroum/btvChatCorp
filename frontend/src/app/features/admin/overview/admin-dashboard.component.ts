@@ -8,24 +8,23 @@ import { KpiCardComponent } from '../shared/kpi-card.component';
 import { GaugeComponent } from '../shared/gauge.component';
 import { MiniBarComponent } from '../shared/mini-bar.component';
 
-const MOCK_HEALTH: SystemHealth = {
-  status: 'healthy', api: true, database: true, vectorDb: true, gpu: true,
-  embedding: true, uptimePercent: 99.96, avgLatencyMs: 118,
+// Estados vazios honestos (sem dados fabricados). Preenchidos pelas chamadas reais;
+// na falha de carregamento permanecem zerados em vez de exibir números falsos.
+const EMPTY_HEALTH: SystemHealth = {
+  status: 'down', api: false, database: false, vectorDb: false, gpu: false,
+  embedding: false, uptimePercent: 0, avgLatencyMs: 0,
 };
-const MOCK_GPU: GpuInfo = {
-  model: 'A100 80GB', utilization: 73, vramUsed: 42, vramTotal: 80,
-  vramPercent: 52.5, temperature: 68, requestsPerMin: 94,
-  activeModel: 'Llama-3 70B Q4', activeLoraVersion: 'v2.1', provider: 'RunPod',
+const EMPTY_GPU: GpuInfo = {
+  model: '—', utilization: 0, vramUsed: 0, vramTotal: 0,
+  vramPercent: 0, temperature: 0, requestsPerMin: 0,
+  activeModel: '—', activeLoraVersion: '—', provider: '—',
 };
-const MOCK_METRICS: Partial<UsageMetrics> = {
-  activeUsers: 148, totalChatRequests: 8320, totalTokensInput: 12_400_000,
-  totalTokensOutput: 9_800_000,
-  estimatedCost: { gpu: 2_140, storage: 310, network: 75, total: 2_525, currency: 'BRL' },
+const EMPTY_METRICS: Partial<UsageMetrics> = {
+  activeUsers: 0, totalChatRequests: 0, totalTokensInput: 0,
+  totalTokensOutput: 0,
+  estimatedCost: { gpu: 0, storage: 0, network: 0, total: 0, currency: 'BRL' },
 };
-const MOCK_ALERTS: AdminAlert[] = [
-  { id: '1', severity: 'critical', title: '3 usuários sem MFA', description: 'Usuários admin sem autenticação de dois fatores. Risco alto de comprometimento.', actionLabel: 'Ver usuários', actionType: '/admin/users?filter=no-mfa' },
-  { id: '2', severity: 'warning',  title: 'Orçamento em 84%', description: 'R$ 2.525 de R$ 3.000 utilizados. Projeção: R$ 3.100 ao fim do mês.', actionLabel: 'Ajustar limite', actionType: '/admin/billing' },
-];
+const EMPTY_ALERTS: AdminAlert[] = [];
 
 @Component({
   selector: 'app-admin-dashboard',
@@ -480,10 +479,10 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
 
   selectedPeriod = '30d';
-  health   = signal<SystemHealth>(MOCK_HEALTH);
-  gpu      = signal<GpuInfo>(MOCK_GPU);
-  metrics  = signal<Partial<UsageMetrics>>(MOCK_METRICS);
-  alerts   = signal<AdminAlert[]>(MOCK_ALERTS);
+  health   = signal<SystemHealth>(EMPTY_HEALTH);
+  gpu      = signal<GpuInfo>(EMPTY_GPU);
+  metrics  = signal<Partial<UsageMetrics>>(EMPTY_METRICS);
+  alerts   = signal<AdminAlert[]>(EMPTY_ALERTS);
 
   services = computed(() => [
     { name: 'API',        ok: this.health().api },

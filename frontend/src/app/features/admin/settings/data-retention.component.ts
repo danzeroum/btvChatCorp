@@ -32,18 +32,8 @@ interface DeletionRequest {
   itemsDeleted: number | null;
 }
 
-const MOCK_POLICIES: RetentionPolicy[] = [
-  { dataType: 'chat_messages', label: 'Histórico de chat', description: 'Mensagens e conversas dos usuários', icon: '💬', retentionDays: 365, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 12.4, itemCount: 184320, purgeable: true },
-  { dataType: 'documents',     label: 'Documentos',        description: 'Arquivos carregados para projetos', icon: '📄', retentionDays: null, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 48.3, itemCount: 2841, purgeable: false },
-  { dataType: 'audit_logs',    label: 'Logs de auditoria', description: 'Registros de ações administrativas', icon: '📋', retentionDays: 365, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 0.8, itemCount: 94210, purgeable: false, locked: true },
-  { dataType: 'embeddings',    label: 'Embeddings',        description: 'Vetores gerados para busca semântica', icon: '🔢', retentionDays: null, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 12.1, itemCount: 184320, purgeable: false },
-  { dataType: 'training_data', label: 'Dados de treino',   description: 'Exemplos usados para fine-tuning LoRA', icon: '🧠', retentionDays: 180, autoDeleteEnabled: false, lastPurgeAt: null, nextPurgeAt: null, currentSizeGb: 3.2, itemCount: 12400, purgeable: true },
-];
-
-const MOCK_REQUESTS: DeletionRequest[] = [
-  { id: 'd1', type: 'user_data', requestedBy: 'admin@empresa.com', targetName: 'usuario@email.com', status: 'completed', requestedAt: '2026-05-10T14:30:00Z', completedAt: '2026-05-10T14:32:11Z', itemsDeleted: 847 },
-  { id: 'd2', type: 'project_data', requestedBy: 'admin@empresa.com', targetName: 'Projeto RH Legacy', status: 'pending', requestedAt: '2026-06-14T09:00:00Z', completedAt: null, itemsDeleted: null },
-];
+// Dados fabricados de políticas/solicitações removidos: na falha do fetch a UI
+// mostra lista vazia (estado honesto) em vez de itens falsos.
 
 @Component({
   selector: 'app-data-retention',
@@ -243,11 +233,11 @@ export class DataRetentionComponent implements OnInit {
   load(): void {
     this.http.get<RetentionPolicy[]>('/api/admin/data-retention/policies').subscribe({
       next: (p) => this.policies.set(p),
-      error: () => this.policies.set(MOCK_POLICIES),
+      error: () => this.policies.set([]),
     });
     this.http.get<DeletionRequest[]>('/api/admin/data-retention/deletion-requests').subscribe({
       next: (r) => this.deletionRequests.set(r),
-      error: () => this.deletionRequests.set(MOCK_REQUESTS),
+      error: () => this.deletionRequests.set([]),
     });
   }
 
