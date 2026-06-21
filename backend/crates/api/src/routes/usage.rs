@@ -47,12 +47,32 @@ pub async fn get_usage(
         ctx.workspace_id
     ).fetch_one(&app.db).await.unwrap_or(Some(0)).unwrap_or(0);
 
+    // Tokens reais: soma prompt/completion das interacoes do workspace.
+    // (query_scalar nao-macro = checado em runtime; nao depende do cache .sqlx)
+    let total_tokens_input: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(prompt_tokens), 0)::bigint
+         FROM training_interactions WHERE workspace_id = $1",
+    )
+    .bind(ctx.workspace_id)
+    .fetch_one(&app.db)
+    .await
+    .unwrap_or(0);
+
+    let total_tokens_output: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(completion_tokens), 0)::bigint
+         FROM training_interactions WHERE workspace_id = $1",
+    )
+    .bind(ctx.workspace_id)
+    .fetch_one(&app.db)
+    .await
+    .unwrap_or(0);
+
     Ok(Json(UsageResponse {
         workspace_id: ctx.workspace_id.to_string(),
         period: "last_30_days".into(),
         total_requests: interactions,
-        total_tokens_input: 0,   // TODO: somar prompt_tokens
-        total_tokens_output: 0,  // TODO: somar completion_tokens
+        total_tokens_input,
+        total_tokens_output,
         total_documents: documents,
         total_interactions: interactions,
     }))

@@ -91,7 +91,8 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | Ticket | Descrição | Status |
 |---|---|---|
 | TKT-041 | Swagger real | ⏳ |
-| TKT-042/044 | usage_tracker + `/usage` | ⏳ |
+| TKT-042 | `/usage` tokens reais | ✅ feito — soma `prompt_tokens`/`completion_tokens` de `training_interactions` (antes `0 // TODO`); query runtime-checked (sem cache .sqlx); SQL validado no schema |
+| TKT-044 | `usage_tracker` middleware | ⏳ |
 | TKT-043 | rotas documents/training na api-public | ⏳ |
 | TKT-045/046 | CD (GHCR) + security scans | ⏳ |
 | TKT-047/048 | WebSocket + e-mails (`lettre`) | ⏸️ (SMTP→pendência) |
