@@ -1,7 +1,5 @@
-use dashmap::DashMap;
 use sqlx::PgPool;
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::services::admin_service::AdminService;
 
@@ -22,9 +20,9 @@ pub struct AppState {
     pub embedding_url: String,
     /// Serviço admin (métricas, usuários, configurações)
     pub admin_service: Arc<AdminService>,
-    /// Rastreia tentativas de login por IP para proteção de brute-force.
-    /// Valor: (contagem_de_falhas, timestamp_da_primeira_falha)
-    pub login_attempts: Arc<DashMap<String, (u32, Instant)>>,
+    /// Throttle de tentativas de login por IP — Redis distribuido (scale-safe)
+    /// com fallback em memoria.
+    pub login_throttle: crate::throttle::LoginThrottle,
 }
 
 impl Clone for AppState {
@@ -39,7 +37,7 @@ impl Clone for AppState {
             qdrant_url: self.qdrant_url.clone(),
             embedding_url: self.embedding_url.clone(),
             admin_service: Arc::clone(&self.admin_service),
-            login_attempts: Arc::clone(&self.login_attempts),
+            login_throttle: self.login_throttle.clone(),
         }
     }
 }

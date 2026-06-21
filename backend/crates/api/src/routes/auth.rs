@@ -150,9 +150,6 @@ async fn register(
     ))
 }
 
-const LOGIN_MAX_ATTEMPTS: u32 = 5;
-const LOGIN_WINDOW_SECS: u64 = 900; // 15 minutos
-
 fn extract_client_ip(headers: &HeaderMap) -> String {
     headers
         .get("X-Real-IP")
@@ -183,20 +180,10 @@ async fn login(
     dto.validate()?;
 
     let client_ip = extract_client_ip(&headers);
-    {
-        let now = std::time::Instant::now();
-        let mut entry = state
-            .login_attempts
-            .entry(client_ip.clone())
-            .or_insert((0, now));
-        let (count, since) = *entry;
-        if since.elapsed().as_secs() >= LOGIN_WINDOW_SECS {
-            *entry = (0, now);
-        } else if count >= LOGIN_MAX_ATTEMPTS {
-            return Err(AppError::too_many_requests(
-                "Muitas tentativas de login. Tente novamente em alguns minutos.",
-            ));
-        }
+    if state.login_throttle.is_blocked(&client_ip).await {
+        return Err(AppError::too_many_requests(
+            "Muitas tentativas de login. Tente novamente em alguns minutos.",
+        ));
     }
 
     let row: Option<(Uuid, Uuid, String, String, String, String)> = sqlx::query_as(
@@ -210,31 +197,17 @@ async fn login(
     .map_err(|_| AppError::internal("Erro interno"))?;
 
     let Some((user_id, workspace_id, name, _email, password_hash, role)) = row else {
-        state
-            .login_attempts
-            .entry(client_ip.clone())
-            .and_modify(|(c, t)| {
-                *c += 1;
-                *t = std::time::Instant::now();
-            })
-            .or_insert((1, std::time::Instant::now()));
+        state.login_throttle.record_failure(&client_ip).await;
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     };
 
     if !bcrypt::verify(&dto.password, &password_hash).map_err(|_| AppError::internal("Erro"))? {
-        state
-            .login_attempts
-            .entry(client_ip.clone())
-            .and_modify(|(c, t)| {
-                *c += 1;
-                *t = std::time::Instant::now();
-            })
-            .or_insert((1, std::time::Instant::now()));
+        state.login_throttle.record_failure(&client_ip).await;
         return Err(AppError::unauthorized("Email ou senha invalidos"));
     }
 
     // Login bem-sucedido: limpa contagem de tentativas
-    state.login_attempts.remove(&client_ip);
+    state.login_throttle.clear(&client_ip).await;
 
     sqlx::query("UPDATE users SET last_login_at = NOW() WHERE id = $1")
         .bind(user_id)

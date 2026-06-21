@@ -15,7 +15,6 @@ use std::sync::Arc;
 use api::routes;
 use api::services::admin_service::AdminService;
 use api::state::AppState;
-use dashmap::DashMap;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -63,6 +62,32 @@ async fn main() -> anyhow::Result<()> {
     let embedding_url =
         env::var("EMBEDDING_URL").unwrap_or_else(|_| "http://localhost:8001".into());
 
+    // Redis para o throttle de login distribuido (scale-safe). Best-effort: se
+    // REDIS_URL estiver ausente/indisponivel, cai para o throttle em memoria.
+    let redis_conn = match env::var("REDIS_URL") {
+        Ok(url) if !url.is_empty() => match redis::Client::open(url) {
+            Ok(client) => match redis::aio::ConnectionManager::new(client).await {
+                Ok(cm) => {
+                    tracing::info!("Redis conectado — throttle de login distribuido");
+                    Some(cm)
+                }
+                Err(e) => {
+                    tracing::warn!("Redis indisponivel ({e}); throttle de login em memoria");
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("REDIS_URL invalida ({e}); throttle de login em memoria");
+                None
+            }
+        },
+        _ => {
+            tracing::info!("REDIS_URL nao definido; throttle de login em memoria");
+            None
+        }
+    };
+    let login_throttle = api::throttle::LoginThrottle::new(redis_conn);
+
     tracing::info!(
         "LLM={} | Qdrant={} | Embedding={}",
         ollama_url,
@@ -87,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         qdrant_url,
         embedding_url,
         admin_service,
-        login_attempts: Arc::new(DashMap::new()),
+        login_throttle,
     };
 
     // Origens permitidas vêm de ALLOWED_ORIGINS (CSV); default: dev local Angular.
