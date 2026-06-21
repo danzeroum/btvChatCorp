@@ -1,7 +1,7 @@
 import {
   Component, OnInit, inject, signal, computed,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { OnboardingService } from './services/onboarding.service';
 
@@ -11,7 +11,7 @@ const TOTAL_STEPS = 7;
 @Component({
   selector: 'app-onboarding-wizard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterOutlet],
   template: `
     <div class="wizard-shell">
       <!-- Barra de progresso -->

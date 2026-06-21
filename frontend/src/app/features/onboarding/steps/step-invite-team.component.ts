@@ -72,7 +72,8 @@ export class StepInviteTeamComponent {
 
   get inviteLink(): string {
     const state = this.onboardingService.getState();
-    return `https://${state.workspace?.subdomain ?? 'workspace'}.aiplatform.com/join`;
+    const subdomain = state?.collectedData.workspace?.subdomain ?? 'workspace';
+    return `https://${subdomain}.aiplatform.com/join`;
   }
 
   addEmail(): void {

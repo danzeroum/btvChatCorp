@@ -3,9 +3,11 @@
 > Log vivo da execução autônoma do **Plano de Implementação Unificado**
 > (ver `docs/plano-implementacao-unificado.md`). Atualizado a cada PR.
 >
-> **Estratégia:** PRs focados por tema → `main`. Cada PR é verificado localmente
-> (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run build`)
-> antes do push, e só é mergeado com o CI verde.
+> **Estratégia (decidida com o usuário):** execução autônoma sprint a sprint na branch
+> `claude/optimistic-mendel-cwuuno`, com **auto-merge em `main` após verificação local**
+> (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run build`), já que
+> o CI não roda (P-09). App **tudo em Docker** (`docker compose up`) e arquitetado para
+> escalar (Redis, RLS no banco, API stateless, profiles para vLLM/training/observability).
 >
 > **Decisões que dependem do usuário** ficam em `docs/pendencia.v1.md` (não bloqueiam o resto).
 >
@@ -35,11 +37,11 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-001 | OnboardingService: `getState()` + `addUploadedDoc()` | ⏳ (PR onboarding; exige unificar os 2 `OnboardingState`) |
-| TKT-002 | Rota `/onboarding` em `app.routes.ts` | ⏳ (PR onboarding; só depois de TKT-001+039) |
+| TKT-001 | OnboardingService: `getState()` + `addUploadedDoc()` | ✅ feito — métodos add; `updateState` agora opera em `collectedData` |
+| TKT-002 | Rota `/onboarding` em `app.routes.ts` | ✅ feito — wizard como shell + 7 steps filhos (ng build EXIT=0 com onboarding no grafo) |
 | TKT-003 | `data-classification.guard` órfão + método inexistente | ✅ removido (PR #2) |
 | TKT-004 | Deletar `role.guard.ts` duplicado/órfão | ✅ removido (PR #2) |
-| TKT-005 | `APP_INITIALIZER` p/ `BrandingService` | ⏳ (PR onboarding/branding) |
+| TKT-005 | `APP_INITIALIZER` p/ `BrandingService` | ✅ feito — `initializeBranding` em `app.config.ts` |
 | TKT-006 | Corrigir `start.sh`/`healthcheck.sh` | ✅ feito (PR #2) |
 | TKT-007 | `seed-admin.sh` usar `$POSTGRES_USER`/`$POSTGRES_DB` | ✅ feito (PR #2) |
 
@@ -47,7 +49,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | Ticket | Descrição | Status |
 |---|---|---|
 | TKT-008 | Compose: `redis`/`vllm`/`reranker` (rag-searcher é lib, não entra) | ⏸️ (vLLM→pendência) |
-| TKT-009 | Unificar networks Docker | ⏳ |
+| TKT-009 | Unificar networks Docker | 🔄 parcial — `btv-prod-net` agora é gerenciada pelo compose (bridge), não mais externa |
 | TKT-010 | `QDRANT__SERVICE__API_KEY` no Qdrant | ⏳ |
 | TKT-011 | SSL/TLS no nginx + redirect + HSTS | ⏸️ (cert/domínio→pendência) |
 | TKT-012..015 | cert sync, SSE buffering, healthchecks, doc rede | ⏳ |
@@ -98,4 +100,10 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | Higiene | Remover stubs Python duplicados | ⏳ |
 
 ## Changelog de execução
-- _(em branco — primeira entrada abaixo ao abrir o PR #1)_
+- **Sprint 0 (auto-merge em `main`):** onboarding religado e `ng build` verde com a feature
+  no grafo de build — `OnboardingService.getState()/addUploadedDoc()`, `updateState` operando
+  em `collectedData`, rota `/onboarding` (wizard + 7 steps), `RouterOutlet` no wizard,
+  `APP_INITIALIZER` do branding (TKT-001/002/005). Docker self-contained: rede `btv-prod-net`
+  passou de externa → gerenciada (bridge) e corrigido bug de YAML em `OLLAMA_URL`
+  (`docker compose config` válido). Novo `scripts/gen-env.sh` gera `.env` com segredos
+  aleatórios para subir o stack com um comando.

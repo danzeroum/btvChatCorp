@@ -35,6 +35,24 @@ export const routes: Routes = [
       import('./features/admin/admin.routes').then(m => m.ADMIN_ROUTES),
   },
 
+  // Onboarding wizard — shell próprio com router-outlet filho (precisa de JWT válido)
+  {
+    path: 'onboarding',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/onboarding/onboarding-wizard.component').then(m => m.OnboardingWizardComponent),
+    children: [
+      { path: 'workspace',     loadComponent: () => import('./features/onboarding/steps/step-workspace.component').then(m => m.StepWorkspaceComponent) },
+      { path: 'branding',      loadComponent: () => import('./features/onboarding/steps/step-branding.component').then(m => m.StepBrandingComponent) },
+      { path: 'auth',          loadComponent: () => import('./features/onboarding/steps/step-auth.component').then(m => m.StepAuthComponent) },
+      { path: 'first-project', loadComponent: () => import('./features/onboarding/steps/step-first-project.component').then(m => m.StepFirstProjectComponent) },
+      { path: 'documents',     loadComponent: () => import('./features/onboarding/steps/step-documents.component').then(m => m.StepDocumentsComponent) },
+      { path: 'test-chat',     loadComponent: () => import('./features/onboarding/steps/step-test-chat.component').then(m => m.StepTestChatComponent) },
+      { path: 'invite-team',   loadComponent: () => import('./features/onboarding/steps/step-invite-team.component').then(m => m.StepInviteTeamComponent) },
+      { path: '', redirectTo: 'workspace', pathMatch: 'full' },
+    ],
+  },
+
   // App protegido (precisa de JWT válido)
   {
     path: '',

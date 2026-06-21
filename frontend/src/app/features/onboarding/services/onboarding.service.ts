@@ -55,12 +55,37 @@ export class OnboardingService {
     return !!this._state()?.completedAt;
   }
 
-  /** Atualiza parcialmente o estado local do onboarding sem persistir no servidor.
-   *  Chamado pelos componentes step-* para reflectir mudancas de UI antes do advanceStep. */
-  updateState(partial: Partial<OnboardingState>): void {
+  /** Faz merge parcial dos dados coletados (collectedData) no estado local, sem persistir.
+   *  Chamado pelos componentes step-* para refletir mudancas de UI antes do advanceStep. */
+  updateState(partial: Partial<OnboardingState['collectedData']>): void {
     const current = this._state();
     if (current) {
-      this._state.set({ ...current, ...partial });
+      this._state.set({
+        ...current,
+        collectedData: { ...current.collectedData, ...partial },
+      });
     }
+  }
+
+  /** Retorna o snapshot atual do estado do onboarding (ou null se ainda nao carregado). */
+  getState(): OnboardingState | null {
+    return this._state();
+  }
+
+  /** Registra no estado local o id de um documento enviado no step de documentos. */
+  addUploadedDoc(documentId: string): void {
+    const current = this._state();
+    if (!current) return;
+    const existing = current.collectedData.documents?.uploadedIds ?? [];
+    this._state.set({
+      ...current,
+      collectedData: {
+        ...current.collectedData,
+        documents: {
+          ...current.collectedData.documents,
+          uploadedIds: [...new Set([...existing, documentId])],
+        },
+      },
+    });
   }
 }
