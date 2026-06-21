@@ -83,7 +83,7 @@ export class StepTestChatComponent {
     const state = this.onboardingService.getState();
     this.http.post<{ response: string }>('/api/chat/onboarding-test', {
       message: text,
-      workspaceId: state.workspaceId,
+      workspaceId: state?.workspaceId ?? '',
     }).subscribe({
       next: (res) => {
         this.messages.update((m) => [...m, { role: 'assistant', content: res.response }]);

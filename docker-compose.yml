@@ -1,8 +1,9 @@
 # BTV Chat Corp — Docker Compose
 networks:
   btv-prod-net:
-    external: true
-    name: ops_btv-prod-net
+    # Rede gerenciada pelo proprio compose — `docker compose up` cria automaticamente.
+    # (Para anexar a uma rede externa de ops, sobrescreva em docker-compose.prod.yml.)
+    driver: bridge
 
 volumes:
   postgres_data:
@@ -44,7 +45,7 @@ services:
     restart: always
     environment:
       DATABASE_URL:     postgresql://${POSTGRES_USER:-btv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-btvchat}
-      OLLAMA_URL: ${OLLAMA_URL:?Erro: OLLAMA_URL obrigatorio — defina no .env}
+      OLLAMA_URL: "${OLLAMA_URL:?defina OLLAMA_URL no .env (ex.: http://host.docker.internal:11434 ou a URL do seu Ollama na VPS)}"
       OLLAMA_MODEL:     ${OLLAMA_MODEL:-llama3.2:3b}
       EMBEDDING_URL: http://embedding:8001
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
