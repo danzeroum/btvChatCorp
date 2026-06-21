@@ -43,6 +43,60 @@ async fn embed_query(embedding_url: &str, query: &str) -> Result<Vec<f32>> {
         .ok_or_else(|| anyhow::anyhow!("Serviço de embedding retornou lista vazia"))
 }
 
+// -- Reranking (cross-encoder — 2o estagio de qualidade do RAG)
+
+#[derive(Deserialize)]
+struct RerankResponse {
+    scores: Vec<f32>,
+}
+
+/// Reordena os chunks por relevancia usando o cross-encoder (servico `reranker`).
+/// Degrada graciosamente para a ordem vetorial original se o reranker falhar,
+/// o token interno faltar, ou o nº de scores nao bater com o nº de chunks.
+async fn rerank(reranker_url: &str, query: &str, chunks: Vec<RagChunk>) -> Vec<RagChunk> {
+    if chunks.len() <= 1 {
+        return chunks;
+    }
+    match try_rerank(reranker_url, query, &chunks).await {
+        Ok(scores) if scores.len() == chunks.len() => reorder_by_scores(scores, chunks),
+        Ok(_) => {
+            warn!("Reranker: nº de scores != nº de chunks, mantendo ordem vetorial");
+            chunks
+        }
+        Err(e) => {
+            warn!("Reranker indisponível, mantendo ordem vetorial: {}", e);
+            chunks
+        }
+    }
+}
+
+async fn try_rerank(reranker_url: &str, query: &str, chunks: &[RagChunk]) -> Result<Vec<f32>> {
+    let internal_token = std::env::var("INTERNAL_SERVICE_TOKEN")
+        .map_err(|_| anyhow::anyhow!("INTERNAL_SERVICE_TOKEN ausente"))?;
+    let documents: Vec<&str> = chunks.iter().map(|c| c.content.as_str()).collect();
+    let rr = reqwest::Client::new()
+        .post(format!("{}/rerank", reranker_url))
+        .header("X-Internal-Token", internal_token)
+        .json(&serde_json::json!({ "query": query, "documents": documents }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<RerankResponse>()
+        .await?;
+    Ok(rr.scores)
+}
+
+/// Reordena os chunks por score do cross-encoder (desc). Se o nº de scores nao
+/// bater com o nº de chunks, devolve a ordem original (no-op seguro).
+fn reorder_by_scores(scores: Vec<f32>, chunks: Vec<RagChunk>) -> Vec<RagChunk> {
+    if scores.len() != chunks.len() {
+        return chunks;
+    }
+    let mut paired: Vec<(f32, RagChunk)> = scores.into_iter().zip(chunks).collect();
+    paired.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    paired.into_iter().map(|(_, c)| c).collect()
+}
+
 // -- Qdrant search
 
 #[derive(Serialize)]
@@ -86,12 +140,19 @@ pub async fn search_rag(
         }
     };
 
-    // 2. Busca no Qdrant
+    // 2. Busca no Qdrant. Se o reranker estiver configurado, busca mais
+    // candidatos no vetor e deixa o cross-encoder escolher os melhores top_k.
+    let reranker_url = std::env::var("RERANKER_URL").ok().filter(|s| !s.is_empty());
+    let candidate_k = if reranker_url.is_some() {
+        (top_k * 4).clamp(top_k, 50)
+    } else {
+        top_k
+    };
     let collection = format!("workspace_{}", workspace_id.replace('-', ""));
 
     let body = QdrantSearchRequest {
         vector,
-        limit: top_k,
+        limit: candidate_k,
         with_payload: true,
         score_threshold: min_score,
         filter: serde_json::json!({
@@ -125,7 +186,7 @@ pub async fn search_rag(
     let json: serde_json::Value = resp.error_for_status()?.json().await?;
     let results = json["result"].as_array().cloned().unwrap_or_default();
 
-    let chunks = results
+    let chunks: Vec<RagChunk> = results
         .into_iter()
         .filter_map(|r| {
             let score = r["score"].as_f64()? as f32;
@@ -139,6 +200,16 @@ pub async fn search_rag(
             })
         })
         .collect();
+
+    // 3. Rerank (cross-encoder) se configurado; trunca para top_k.
+    let chunks = match &reranker_url {
+        Some(rurl) => rerank(rurl, query, chunks)
+            .await
+            .into_iter()
+            .take(top_k)
+            .collect(),
+        None => chunks,
+    };
 
     Ok(chunks)
 }
@@ -182,4 +253,36 @@ pub fn build_sources_json(chunks: &[RagChunk]) -> Option<serde_json::Value> {
             "score":       c.score,
         }))
         .collect::<Vec<_>>()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunk(content: &str) -> RagChunk {
+        RagChunk {
+            content: content.into(),
+            filename: "f".into(),
+            section: "s".into(),
+            chunk_index: 0,
+            score: 0.0,
+        }
+    }
+
+    #[test]
+    fn reorder_by_scores_sorts_desc() {
+        let chunks = vec![chunk("a"), chunk("b"), chunk("c")];
+        // scores a=0.1, b=0.9, c=0.5 -> ordem esperada b, c, a
+        let out = reorder_by_scores(vec![0.1, 0.9, 0.5], chunks);
+        let order: Vec<&str> = out.iter().map(|c| c.content.as_str()).collect();
+        assert_eq!(order, vec!["b", "c", "a"]);
+    }
+
+    #[test]
+    fn reorder_by_scores_mismatch_is_noop() {
+        let chunks = vec![chunk("a"), chunk("b")];
+        let out = reorder_by_scores(vec![0.9], chunks); // tamanho != chunks
+        let order: Vec<&str> = out.iter().map(|c| c.content.as_str()).collect();
+        assert_eq!(order, vec!["a", "b"]);
+    }
 }

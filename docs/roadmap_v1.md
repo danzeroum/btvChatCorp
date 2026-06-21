@@ -62,8 +62,8 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 |---|---|---|
 | TKT-018/019 | Linkar `ai-orchestrator` + montar rotas | ⏳ |
 | TKT-020 | Trocar `rag.rs` pelo crate `rag-searcher` | ⏳ |
-| TKT-020-A | Reranking via `/rerank` do embedding (quick-win) | ⏳ |
-| TKT-020-B | **Bug:** duplo-prefixo de embedding em `rag.rs` | ⏳ |
+| TKT-020-A | Reranking (cross-encoder) no `rag.rs` | ✅ feito — chama o serviço `reranker` (:8003): over-fetch de candidatos → rerank → top_k; degradação graciosa (sem `RERANKER_URL`/erro mantém ordem vetorial); testes de reorder ✓ |
+| TKT-020-B | "Bug" duplo-prefixo de embedding | ✅ **não era bug** — o serviço embeda os `texts` as-is; query usa `search_query:` (rag.rs) e doc usa `search_document:` (document-processor): convenção nomic-v2 **correta**. Apontamento da auditoria estava desatualizado. |
 | TKT-021 | Divergência vLLM × Ollama | ⏸️ (decisão→pendência) |
 | TKT-022 | Pipeline v2 do doc-processor (deletar ou wire) | ⏳ |
 | TKT-023/024 | service `training` no compose; `company_name` do DB | ⏳ |
