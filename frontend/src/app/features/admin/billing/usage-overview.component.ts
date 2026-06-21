@@ -15,23 +15,16 @@ interface DailyUsage {
   documents: number;
 }
 
-const MOCK_METRICS: UsageMetrics = {
-  period: '30d', totalTokensInput: 1_840_000, totalTokensOutput: 920_000, totalTokensEmbedding: 320_000,
-  totalChatRequests: 4_210, totalRagQueries: 1_870, totalDocumentsProcessed: 342,
-  totalTrainingRuns: 3, gpuHoursInference: 124.5, gpuHoursTraining: 18.2, gpuHoursEmbedding: 6.8,
-  storageDocumentsGb: 48.3, storageVectorDbGb: 12.1, storageModelsGb: 8.4,
-  estimatedCost: { gpu: 1_240, storage: 180, network: 60, total: 1_480, currency: 'BRL' },
-  byProject: [
-    { projectId: '1', projectName: 'Atendimento', chatCount: 2_100, tokensUsed: 980_000, percentOfTotal: 49 },
-    { projectId: '2', projectName: 'Jurídico',    chatCount: 1_200, tokensUsed: 620_000, percentOfTotal: 31 },
-    { projectId: '3', projectName: 'RH',          chatCount: 910,  tokensUsed: 160_000, percentOfTotal: 20 },
-  ],
-  byUser: [
-    { userId: 'u1', userName: 'Ana Lima',    chatCount: 820, tokensUsed: 390_000 },
-    { userId: 'u2', userName: 'Carlos Melo', chatCount: 640, tokensUsed: 310_000 },
-    { userId: 'u3', userName: 'Beatriz Sá',  chatCount: 510, tokensUsed: 210_000 },
-  ],
-  activeUsers: 87,
+// Estado vazio honesto — sem números fabricados. Na falha do fetch fica zerado.
+const EMPTY_METRICS: UsageMetrics = {
+  period: '30d', totalTokensInput: 0, totalTokensOutput: 0, totalTokensEmbedding: 0,
+  totalChatRequests: 0, totalRagQueries: 0, totalDocumentsProcessed: 0,
+  totalTrainingRuns: 0, gpuHoursInference: 0, gpuHoursTraining: 0, gpuHoursEmbedding: 0,
+  storageDocumentsGb: 0, storageVectorDbGb: 0, storageModelsGb: 0,
+  estimatedCost: { gpu: 0, storage: 0, network: 0, total: 0, currency: 'BRL' },
+  byProject: [],
+  byUser: [],
+  activeUsers: 0,
 };
 
 const BUDGET_LIMIT = 2_000;
@@ -243,7 +236,7 @@ export class UsageOverviewComponent implements OnInit {
 
   selectedPeriod = '30d';
   chartMetric    = signal<'messages' | 'tokens' | 'users' | 'documents'>('messages');
-  metrics        = signal<UsageMetrics>(MOCK_METRICS);
+  metrics        = signal<UsageMetrics>(EMPTY_METRICS);
   dailyUsage     = signal<DailyUsage[]>([]);
 
   budgetPct = computed(() => (this.metrics().estimatedCost.total / this.budgetLimit) * 100);
@@ -274,7 +267,7 @@ export class UsageOverviewComponent implements OnInit {
   load(): void {
     this.http.get<UsageMetrics>(`/api/admin/metrics?period=${this.selectedPeriod}`).subscribe({
       next: (m) => this.metrics.set(m),
-      error: () => this.metrics.set(MOCK_METRICS),
+      error: () => this.metrics.set(EMPTY_METRICS),
     });
     this.http.get<DailyUsage[]>(`/api/admin/metrics/daily?period=${this.selectedPeriod}`).subscribe({
       next: (d) => this.dailyUsage.set(d),
