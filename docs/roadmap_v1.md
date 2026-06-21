@@ -68,6 +68,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | TKT-022 | Pipeline v2 do doc-processor (deletar ou wire) | ✅ feito — deletados `cleaner.rs`/`pipeline.rs`/`strategy_selector.rs` (fora do mod tree, zero refs); doc-processor builda |
 | TKT-023 | service `training` no compose | ⏸️ profile GPU (P-06) |
 | TKT-024 | `company_name` do DB | ⏸️ depende de TKT-018 — o `// TODO` vive em `ai-orchestrator` (crate órfão); resolve ao linká-lo |
+| Webhooks | Religar dispatcher (crate órfã → linkada) + dispatch nos eventos | ✅ feito — `api` linka o crate `webhooks`; `AppState.webhooks` (dispatcher); dispatch em `chat_created`/`chat_completed`/`document_uploaded`/`training_feedback`. **Teste e2e**: webhook inscrito recebe a entrega assinada (HMAC) ✓. Falta: `retry_webhook_delivery` (admin_service.rs:793) enfileirar no dispatcher |
 
 ### Sprint 3 — Multi-tenant & Auth
 | Ticket | Descrição | Status |

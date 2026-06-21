@@ -168,6 +168,15 @@ async fn approve(
     if r.rows_affected() == 0 {
         return Err(AppError::not_found("Interacao nao encontrada"));
     }
+    state
+        .webhooks
+        .dispatch(webhooks::WebhookEvent {
+            event_type: webhooks::WebhookEventType::TrainingFeedbackReceived,
+            workspace_id: auth.workspace_id.to_string(),
+            data: serde_json::json!({ "interaction_id": id, "status": "approved" }),
+            meta: None,
+        })
+        .await;
     Ok(StatusCode::OK)
 }
 

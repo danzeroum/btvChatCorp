@@ -121,6 +121,15 @@ async fn create(
     .bind(auth.user_id)
     .fetch_one(&state.db)
     .await?;
+    state
+        .webhooks
+        .dispatch(webhooks::WebhookEvent {
+            event_type: webhooks::WebhookEventType::ChatCreated,
+            workspace_id: auth.workspace_id.to_string(),
+            data: serde_json::json!({ "chat_id": row.id, "project_id": row.project_id }),
+            meta: None,
+        })
+        .await;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -356,6 +365,16 @@ async fn send_message(
         chat_id,
         dto.content.clone(),
     ));
+
+    state
+        .webhooks
+        .dispatch(webhooks::WebhookEvent {
+            event_type: webhooks::WebhookEventType::ChatCompleted,
+            workspace_id: auth.workspace_id.to_string(),
+            data: serde_json::json!({ "chat_id": chat_id, "message_id": assistant_msg.id }),
+            meta: None,
+        })
+        .await;
 
     Ok(Json(assistant_msg))
 }
