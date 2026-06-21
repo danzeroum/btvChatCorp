@@ -1,42 +1,39 @@
 #!/usr/bin/env bash
 # ============================================================
-# gen-env.sh — bootstrap de um .env de desenvolvimento
+# gen-env.sh — bootstrap de desenvolvimento (1 comando)
 # ------------------------------------------------------------
-# Gera um arquivo .env funcional a partir do .env.example, preenchendo
-# automaticamente todos os segredos (POSTGRES_PASSWORD, JWT_SECRET,
-# API_KEY_HMAC_SECRET, INTERNAL_SERVICE_TOKEN, QDRANT_API_KEY, REDIS_PASSWORD)
-# com valores aleatorios fortes. Assim o stack sobe com UM comando:
+# 1) Gera um .env funcional a partir do .env.example, preenchendo todos os
+#    segredos (POSTGRES_PASSWORD, JWT_SECRET, API_KEY_HMAC_SECRET,
+#    INTERNAL_SERVICE_TOKEN, QDRANT_API_KEY, REDIS_PASSWORD) com valores fortes.
+# 2) Gera um certificado TLS self-signed para o nginx (nginx/ssl/), se ausente.
 #
+# Assim o stack sobe com:
 #     ./scripts/gen-env.sh && docker compose up -d
 #
-# Idempotente: nao sobrescreve um .env existente sem --force.
+# Idempotente: nao sobrescreve .env nem o cert existentes (use --force p/ .env).
 # ============================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FORCE="${1:-}"
-if [ -f .env ] && [ "$FORCE" != "--force" ]; then
-  echo "[gen-env] .env ja existe — nada a fazer (use --force para regenerar)."
-  exit 0
-fi
 
 hex32()  { openssl rand -hex 32; }
 b64pass() { openssl rand -base64 24 | tr -d '/+=' ; }
 
-PG_USER="btv"
-PG_DB="btvchat"
-PG_PASS="$(b64pass)"
-JWT="$(hex32)$(hex32)"          # >= 64 chars
-API_HMAC="$(hex32)"
-INTERNAL="$(hex32)"
-QDRANT_KEY="$(hex32)"
-REDIS_PASS="$(hex32)"
+# ---- 1) .env ----
+if [ -f .env ] && [ "$FORCE" != "--force" ]; then
+  echo "[gen-env] .env ja existe — mantido (use --force para regenerar)."
+else
+  PG_USER="btv"; PG_DB="btvchat"
+  PG_PASS="$(b64pass)"
+  JWT="$(hex32)$(hex32)"          # >= 64 chars
+  API_HMAC="$(hex32)"
+  INTERNAL="$(hex32)"
+  QDRANT_KEY="$(hex32)"
+  REDIS_PASS="$(hex32)"
+  OLLAMA_DEFAULT="http://host.docker.internal:11434"
 
-# OLLAMA: o usuario escolheu manter o Ollama externo (VPS). Por padrao apontamos
-# para host.docker.internal; ajuste OLLAMA_URL no .env para a URL da sua VPS.
-OLLAMA_DEFAULT="http://host.docker.internal:11434"
-
-cat > .env <<EOF
+  cat > .env <<EOF
 # Gerado por scripts/gen-env.sh em $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # NUNCA commite este arquivo (esta no .gitignore).
 
@@ -93,7 +90,20 @@ REDIS_PASSWORD=${REDIS_PASS}
 # ---- Logs ----
 RUST_LOG=info
 EOF
+  chmod 600 .env
+  echo "[gen-env] .env gerado com segredos aleatorios."
+  echo "[gen-env] AJUSTE OLLAMA_URL para a URL do seu Ollama (VPS) antes de 'docker compose up'."
+fi
 
-chmod 600 .env
-echo "[gen-env] .env gerado com segredos aleatorios."
-echo "[gen-env] AJUSTE OLLAMA_URL para a URL do seu Ollama (VPS) antes de 'docker compose up'."
+# ---- 2) cert TLS self-signed para o nginx (gitignore: nginx/ssl/) ----
+SSL_DIR="nginx/ssl"
+if [ ! -f "$SSL_DIR/fullchain.pem" ]; then
+  mkdir -p "$SSL_DIR"
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$SSL_DIR/privkey.pem" -out "$SSL_DIR/fullchain.pem" \
+    -days 365 -subj "/CN=localhost" >/dev/null 2>&1
+  chmod 600 "$SSL_DIR/privkey.pem"
+  echo "[gen-env] cert TLS self-signed gerado em $SSL_DIR/ (troque por ACME/Let's Encrypt em producao)."
+else
+  echo "[gen-env] cert TLS ja existe em $SSL_DIR/ — mantido."
+fi
