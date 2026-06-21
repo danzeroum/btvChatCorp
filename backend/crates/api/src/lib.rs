@@ -14,6 +14,7 @@ pub mod routes;
 pub mod security;
 pub mod services;
 pub mod state;
+pub mod throttle;
 
 #[cfg(test)]
 mod rag_test;

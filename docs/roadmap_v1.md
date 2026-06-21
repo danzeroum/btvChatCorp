@@ -55,7 +55,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 | TKT-014 | `proxy_buffering off` no SSE | ✅ feito — location dedicada `/api/v1/chat/stream` |
 | TKT-015 | healthchecks | 🔄 redis/reranker/embedding/api/nginx ok; qdrant usa `service_started` (imagem sem curl) |
 | TKT-016 | **Persistir `audit_logs`** | ✅ (PR #106) — middleware wired + INSERT, verificado (11 linhas em teste) |
-| TKT-017 | Rate limiter → Redis | 🔄 próximo commit (redis já no compose + rodando local) |
+| TKT-017 | Rate limiter → Redis | ✅ feito — throttle de login por IP em Redis (distribuído, scale-safe) + fallback em memória; `PerKeyRateLimiter` morto removido. Limiter do `api-public` (in-mem) fica p/ Sprint 5 (quando montado no `api`) |
 
 ### Sprint 2 — Núcleo de IA
 | Ticket | Descrição | Status |

@@ -9,7 +9,6 @@ pub mod helpers {
     use std::sync::Arc;
 
     use axum::Router;
-    use dashmap::DashMap;
     use jsonwebtoken::{encode, EncodingKey, Header};
     use serde::{Deserialize, Serialize};
     use uuid::Uuid;
@@ -123,7 +122,7 @@ pub mod helpers {
                 qdrant_url,
                 embedding_url,
             )),
-            login_attempts: Arc::new(DashMap::new()),
+            login_throttle: crate::throttle::LoginThrottle::new(None),
         };
 
         axum::Router::new()

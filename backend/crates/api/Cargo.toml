@@ -37,6 +37,7 @@ pdf-extract        = { workspace = true }
 zip                = { workspace = true }
 branding           = { path = "../branding" }
 onboarding         = { path = "../onboarding" }
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
 
 [dev-dependencies]
 tower = { workspace = true }
