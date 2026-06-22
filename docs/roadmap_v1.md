@@ -73,7 +73,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 ### Sprint 3 — Multi-tenant & Auth
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-026 | **RLS no Postgres** | ⏳ |
+| TKT-026 | **RLS no Postgres** | 🟡 **planejado + provado no DB, não habilitado no app** — achado crítico: `scoped_conn` usa `set_config(...,false)` (session-level) em conexões do pool → RLS ingênuo **vaza entre tenants**. Política estrita **validada no Postgres local** (NULLIF; scoped→isolado, unset→0 linhas, sem erro). Plano seguro em **`docs/rls-plan.md`** (GUC transaction-local em todo caminho tenant → migration estrita → verificação com app rodando). Não habilito isolamento de dados que não consigo verificar sob concorrência offline. |
 | TKT-027 | `extractors.rs` ler `role_id` | ⏳ |
 | TKT-028 | SSO OIDC | ⏸️ (client IDs/secrets→pendência) |
 | TKT-029 | MFA TOTP | ⏳ (código; ativação→pendência) |
