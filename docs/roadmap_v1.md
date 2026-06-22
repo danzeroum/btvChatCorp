@@ -60,14 +60,14 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 ### Sprint 2 — Núcleo de IA
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-018/019 | Linkar `ai-orchestrator` + montar rotas | ⏳ |
-| TKT-020 | Trocar `rag.rs` pelo crate `rag-searcher` (4 estágios) | ⏳ — rerank já adicionado ao `rag.rs` atual (TKT-020-A) |
+| TKT-018/019 | Linkar `ai-orchestrator` | ❌ **rejeitado** (investigação): o crate é dead code p/ outra arquitetura — **vLLM** (não Ollama), RAG `rag-searcher`, tabela `training_interactions`, SSE próprio, **sem basic-auth nem OLLAMA_MOCK**. Linká-lo **quebraria** o chat atual + 11 testes. O `api` já tem caminho LLM/RAG próprio (Ollama-compat + rerank). Stubs mortos `routes/chat.rs`/`feedback.rs` (importavam `ai_orchestrator`) removidos. |
+| TKT-020 | crate `rag-searcher` (4 estágios) | ❌ **rejeitado** — é o RAG do `ai-orchestrator` (mesma arquitetura vLLM). O `api::rag` já tem 4 estágios com rerank (TKT-020-A). |
 | TKT-020-A | Reranking (cross-encoder) no `rag.rs` | ✅ feito — chama o serviço `reranker` (:8003): over-fetch de candidatos → rerank → top_k; degradação graciosa (sem `RERANKER_URL`/erro mantém ordem vetorial); testes de reorder ✓ |
 | TKT-020-B | "Bug" duplo-prefixo de embedding | ✅ **não era bug** — o serviço embeda os `texts` as-is; query usa `search_query:` (rag.rs) e doc usa `search_document:` (document-processor): convenção nomic-v2 **correta**. Apontamento da auditoria estava desatualizado. |
 | TKT-021 | Divergência vLLM × Ollama | ✅ feito — ADR-001 atualizado: runtime = Ollama externo; vLLM/70B = profile de escala (GPU, P-06) |
 | TKT-022 | Pipeline v2 do doc-processor (deletar ou wire) | ✅ feito — deletados `cleaner.rs`/`pipeline.rs`/`strategy_selector.rs` (fora do mod tree, zero refs); doc-processor builda |
 | TKT-023 | service `training` no compose | ⏸️ profile GPU (P-06) |
-| TKT-024 | `company_name` do DB | ⏸️ depende de TKT-018 — o `// TODO` vive em `ai-orchestrator` (crate órfão); resolve ao linká-lo |
+| TKT-024 | `company_name` do DB | ⏸️ N/A no caminho vivo — o `// TODO` está no `ai-orchestrator` (morto, rejeitado). No `api` vivo, `branding.rs:142` usa "Empresa" só como **fallback** quando não há branding (aceitável). |
 | Webhooks | Religar dispatcher (crate órfã → linkada) + dispatch nos eventos | ✅ feito — `api` linka o crate `webhooks`; `AppState.webhooks` (dispatcher); dispatch em `chat_created`/`chat_completed`/`document_uploaded`/`training_feedback`. **Teste e2e**: webhook inscrito recebe a entrega assinada (HMAC) ✓. Falta: `retry_webhook_delivery` (admin_service.rs:793) enfileirar no dispatcher |
 
 ### Sprint 3 — Multi-tenant & Auth
@@ -82,7 +82,7 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 ### Sprint 4 — Frontend cleanup
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-032 | Deletar duplicatas do admin | ⏳ |
+| TKT-032 | Deletar duplicatas / dead code | 🔄 parcial — removidos 5 arquivos de rota **mortos** no `api` (`usage`/`webhooks`/`search`/`chat`/`feedback.rs`, duplicatas órfãs das rotas reais do `api-public`). Dedup de componentes admin do frontend ainda pendente. |
 | TKT-033/034 | Deletar duplicatas training + `chat.component` órfão | ⏳ |
 | TKT-035 | Remover `MOCK_*` → estado honesto | ✅ feito — removidos os 24 refs `MOCK_*` (admin-dashboard, usage-overview, data-retention); dados fabricados (148 users, A100, R$2525…) → estados vazios/zerados honestos; `ng build` EXIT=0. (Banner de erro explícito = polish futuro) |
 | TKT-036..040 | bulk suspend, OnPush, a11y, modelos, login | ⏳ |
@@ -90,8 +90,8 @@ ao wirar os órfãos. Separei os itens em "seguros" (PR #2) e "refactor" (PR ded
 ### Sprint 5 — API pública & CD
 | Ticket | Descrição | Status |
 |---|---|---|
-| TKT-041 | Swagger real | ⏳ |
-| TKT-042 | `/usage` tokens reais | ✅ feito — soma `prompt_tokens`/`completion_tokens` de `training_interactions` (antes `0 // TODO`); query runtime-checked (sem cache .sqlx); SQL validado no schema |
+| TKT-041 | Swagger real | ✅ **já feito** — `ApiDoc` (utoipa) com 40+ paths / 25+ schemas + `SwaggerUi` em `/docs` (`routes/mod.rs`); apontamento da auditoria desatualizado |
+| TKT-042 | usage com tokens reais | ✅ **já real** no caminho vivo — `admin_service.get_usage_metrics` soma `tokens_input/output` de `usage_events` (dashboard usa `/api/admin/metrics`, via `scoped_conn` com RLS). O `0 // TODO` estava no `api/routes/usage.rs` **morto** — arquivo deletado. (PR #113 editou esse arquivo morto; superado pela remoção.) |
 | TKT-044 | `usage_tracker` middleware | ⏳ |
 | TKT-043 | rotas documents/training na api-public | ⏳ |
 | TKT-045/046 | CD (GHCR) + security scans | ⏳ |
